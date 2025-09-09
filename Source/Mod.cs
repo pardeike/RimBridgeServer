@@ -1,24 +1,28 @@
 using Verse;
 
-namespace RimBridgeServer
-{
-	public class RimBridgeServerMod : Mod
-	{
-		public RimBridgeServerMod(ModContentPack content) : base(content)
-		{
-			Log.Message($"[RimBridgeServer] Loaded v{GetType().Assembly.GetName().Version}");
-		}
-	}
+namespace RimBridgeServer;
 
-	[StaticConstructorOnStartup]
-	static class Startup
+public class RimBridgeServerMod : Mod
+{
+	private static McpHttpServer _server;
+
+	public RimBridgeServerMod(ModContentPack content) : base(content)
 	{
-		static Startup()
+		if (_server == null)
 		{
-			// Initialization code at game startup goes here.
-			// For now, we just confirm the static constructor runs.
-			Log.Message("[RimBridgeServer] Startup initialized.");
+			_server = new McpHttpServer(new McpServerOptions
+			{
+				Prefixes = ["http://127.0.0.1:5174/mcp/"]
+			});
+			_server.Start();
 		}
 	}
 }
 
+public sealed class RimBridgeGameComponent : GameComponent
+{
+	private static GameThreadDispatcher _dispatcher;
+	public static void InstallDispatcher(GameThreadDispatcher d) => _dispatcher = d;
+	//public RimBridgeGameComponent(Game game) { }
+	public override void GameComponentUpdate() => _dispatcher?.Drain();
+}
