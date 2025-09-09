@@ -140,6 +140,7 @@ public sealed class McpHttpServer
 					break;
 
 				case "ping":
+					_log.Info($"rpc: ping from {req.RemoteEndPoint}");
 					response = JsonRpcResponse.Ok(rpc.Id, []); // empty result
 					break;
 

@@ -28,6 +28,11 @@ public sealed class CorePlugin : IMcpPlugin
 			["required"] = new JArray()
 		};
 		public Task<ToolResult> CallAsync(JObject args, ToolContext ctx, CancellationToken ct)
-			 => Task.FromResult(ToolResult.Text("pong"));
+		{
+			var client = string.IsNullOrEmpty(ctx?.ClientId) ? "unknown" : ctx.ClientId;
+			var proto = string.IsNullOrEmpty(ctx?.ProtocolVersion) ? "n/a" : ctx.ProtocolVersion;
+			ctx?.Logger?.Info($"tool call: {Name} from {client} (protocol {proto})");
+			return Task.FromResult(ToolResult.Text("pong"));
+		}
 	}
 }
