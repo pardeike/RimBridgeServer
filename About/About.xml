@@ -10,5 +10,5 @@
   <url>https://github.com/pardeike/RimBridgeServer</url>
   <description>RimBridgeServer spins up an MCP server inside RimWorld to enable automated, remote control of a running game. It is designed so AI agents or external tools can rapidly test and validate the mods they are developing by issuing commands and querying state through a stable protocol.
 
-The server is modular: core hosting is kept minimal and features are provided by opt-in modules (capabilities). Transports, message formats, and feature sets can evolve independently so you can tailor the server to your needs without impacting the core.</description>
+Includes a basic MCP implementation with a built-in connectivity tool: "rimbridge.core/ping" (responds with "pong"). The server is modular: core hosting is kept minimal and features are provided by opt-in modules (capabilities). Transports, message formats, and feature sets can evolve independently so you can tailor the server to your needs without impacting the core.</description>
 </ModMetaData>
