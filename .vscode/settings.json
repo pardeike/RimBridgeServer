@@ -1,0 +1,6 @@
+{
+  "files.exclude": {
+    "Source/obj": true
+  }
+}
+

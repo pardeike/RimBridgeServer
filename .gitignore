@@ -1,0 +1,35 @@
+## Visual Studio / .NET / general
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userprefs
+*.log
+*.tmp
+*.pdb
+*.cache
+*.dbmdl
+*.publishsettings
+*.nupkg
+*.nuget.props
+*.nuget.targets
+_ReSharper*/
+*.DotSettings.user
+*.VisualState.xml
+TestResult.xml
+
+## OS
+.DS_Store
+
+## Build artifacts
+[Dd]ebug*/
+[Rr]elease*/
+publish/
+artifacts/
+
+## Node
+node_modules/
+
+## RimWorld local+Source/*.reloaded
+

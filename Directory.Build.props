@@ -1,0 +1,10 @@
+<Project>
+    <PropertyGroup>
+        <ModName>RimBridgeServer</ModName>
+        <ModFileName>RimBridgeServer</ModFileName>
+        <Repository>https://github.com/pardeike/RimBridgeServer</Repository>
+        <ModVersion>0.1.0.0</ModVersion>
+        <ProjectGuid>{6A41B185-4CC6-43FD-A4D3-5D2819F4DC96}</ProjectGuid>
+    </PropertyGroup>
+</Project>
+

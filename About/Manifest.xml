@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Manifest>
+  <identifier>net.pardeike.rimworld.mod.rimbridgeserver</identifier>
+  <version>0.1.0.0</version>
+  <targetVersions>
+    <li>1.6.0</li>
+  </targetVersions>
+  <dependencies>
+  </dependencies>
+  <incompatibleWith>
+  </incompatibleWith>
+  <loadBefore>
+  </loadBefore>
+  <loadAfter>
+  </loadAfter>
+  <manifestUri>https://raw.githubusercontent.com/pardeike/RimBridgeServer/latest/About/Manifest.xml</manifestUri>
+  <downloadUri>https://github.com/pardeike/RimBridgeServer/releases/latest</downloadUri>
+</Manifest>
