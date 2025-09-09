@@ -6,17 +6,25 @@ public class RimBridgeServerMod : Mod
 {
 	private static McpHttpServer _server;
 
-	public RimBridgeServerMod(ModContentPack content) : base(content)
-	{
-		if (_server == null)
-		{
-			_server = new McpHttpServer(new McpServerOptions
-			{
-				Prefixes = ["http://127.0.0.1:5174/mcp/"]
-			});
-			_server.Start();
-		}
-	}
+    public RimBridgeServerMod(ModContentPack content) : base(content)
+    {
+        if (_server == null)
+        {
+            var opts = new McpServerOptions
+            {
+                Prefixes = ["http://127.0.0.1:5174/mcp/"]
+            };
+
+            if (ApiKeys.TryGetRimBridgeToken(out var token))
+            {
+                opts.RequireBearerToken = true;
+                opts.StaticBearerToken = token;
+            }
+
+            _server = new McpHttpServer(opts);
+            _server.Start();
+        }
+    }
 }
 
 public sealed class RimBridgeGameComponent : GameComponent

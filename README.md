@@ -54,7 +54,7 @@ Expected response includes content with text "pong".
 
 Notes:
 - A legacy convenience method `ping` also exists and returns an empty result.
-- Optional auth: bearer token support is stubbed; by default no token is required.
+- Auth: bearer token can be enabled by placing a token in `~/.api-keys` (see below). If present, the server requires `Authorization: Bearer <token>`.
 - CORS/Origin checks allow `null`, `file://`, `app://` by default.
 
 ## Build
@@ -72,3 +72,37 @@ Notes:
 ## License
 
 MIT — see `LICENSE`.
+
+## Authentication
+
+To require a bearer token for all HTTP requests, create a JSON file in your home directory named `.api-keys` with a top‑level key `RIMBRIDGE_TOKEN`:
+
+Example file (`~/.api-keys`):
+
+```
+{
+  "RIMBRIDGE_TOKEN": "your-long-random-token"
+}
+```
+
+On Windows, this is usually at `%USERPROFILE%\.api-keys`.
+
+When this key exists, RimBridgeServer enables bearer auth automatically and will reject requests without a matching header.
+
+Client request header:
+
+```
+Authorization: Bearer your-long-random-token
+```
+
+Codex MCP config example:
+
+```
+[mcp_servers.rimbridge]
+transport = "http"
+url = "http://127.0.0.1:5174/mcp/"
+
+[mcp_servers.rimbridge.request_headers]
+"MCP-Protocol-Version" = "2025-06-18"
+Authorization = "Bearer your-long-random-token"
+```

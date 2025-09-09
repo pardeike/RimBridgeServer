@@ -63,19 +63,25 @@ public sealed class McpHttpServer
 
 	private void SetCommonHeaders(HttpListenerResponse resp) => resp.AddHeader("Cache-Control", "no-store");
 
-	private bool CheckAuth(HttpListenerRequest req, HttpListenerResponse resp)
-	{
-		if (!_opts.RequireBearerToken) return true;
-		var auth = req.Headers["Authorization"];
-		if (auth == null || !auth.StartsWith("Bearer ") || auth[7..] != _opts.StaticBearerToken)
-		{
-			resp.StatusCode = 401;
-			// Minimal WWW-Authenticate hint; full OAuth flows are out-of-scope here
-			resp.AddHeader("WWW-Authenticate", "Bearer realm=\"RimBridgeServer\"");
-			return false;
-		}
-		return true;
-	}
+    private bool CheckAuth(HttpListenerRequest req, HttpListenerResponse resp)
+    {
+        if (!_opts.RequireBearerToken)
+        {
+            if (string.IsNullOrEmpty(_opts.StaticBearerToken))
+                _log.Warn("Auth disabled: no bearer token found in ~/.api-keys (key RIMBRIDGE_TOKEN). Requests are not authenticated.");
+            return true;
+        }
+
+        var auth = req.Headers["Authorization"];
+        if (auth == null || !auth.StartsWith("Bearer ") || auth[7..] != _opts.StaticBearerToken)
+        {
+            resp.StatusCode = 401;
+            // Minimal WWW-Authenticate hint; full OAuth flows are out-of-scope here
+            resp.AddHeader("WWW-Authenticate", "Bearer realm=\"RimBridgeServer\"");
+            return false;
+        }
+        return true;
+    }
 
 	private bool CheckOrigin(HttpListenerRequest req, HttpListenerResponse resp)
 	{
