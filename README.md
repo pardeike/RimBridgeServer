@@ -1,61 +1,62 @@
 # RimBridgeServer
 
-RimBridgeServer runs an MCP server inside RimWorld so AI agents and external tools can remotely control and observe a running game. The goal is to make automated testing of in‑development mods straightforward: load saves, perform actions, query world state, and validate outcomes via a stable protocol.
+RimBridgeServer runs a GABP (Game Agent Bridge Protocol) server inside RimWorld so AI agents and external tools can remotely control and observe a running game. The goal is to make automated testing of in‑development mods straightforward: load saves, perform actions, query world state, and validate outcomes via a stable protocol.
 
 Key points:
-- Modular design: core hosting with pluggable capability modules (features, transports, and message formats can evolve independently).
-- Includes a basic MCP implementation with a built‑in `ping` tool for connectivity testing.
-- HTTP endpoint (default): `http://127.0.0.1:5174/mcp/`
-- Targets RimWorld 1.6.
+- Uses **Lib.GAB** for GABP 1.0 compliant server implementation
+- **GABS Integration**: Automatically detects and integrates with [GABS](https://github.com/pardeike/GABS) environment
+- **TCP Transport**: Listens on 127.0.0.1 with automatic port configuration  
+- **Attribute-Based Tools**: Simple tool registration using C# attributes
+- **Minimal Codebase**: Leverages Lib.GAB to eliminate complex protocol handling
+- Targets RimWorld 1.6
 
-## Quick Start (MCP over HTTP)
+## Quick Start (GABP over TCP)
 
-1) Initialize session
+### Running with GABS
 
-curl example:
+When launched by GABS, RimBridgeServer automatically configures itself using environment variables:
 
+- `GABS_GAME_ID`: Game identifier
+- `GABP_SERVER_PORT`: Port to listen on  
+- `GABP_TOKEN`: Authentication token
+
+No manual configuration needed!
+
+### Standalone Usage
+
+When running standalone, RimBridgeServer will:
+1. Automatically select an available port (default fallback: 5174)
+2. Generate a random authentication token
+3. Log the connection details to RimWorld's console
+
+Check the RimWorld log for connection information:
 ```
-curl -sS -X POST \
-  -H "Content-Type: application/json" \
-  -d '{
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": { "protocolVersion": "2025-06-18" }
-      }' \
-  http://127.0.0.1:5174/mcp/
-```
-
-2) List tools
-
-```
-curl -sS -X POST \
-  -H "Content-Type: application/json" \
-  -d '{ "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} }' \
-  http://127.0.0.1:5174/mcp/
-```
-
-3) Call built‑in ping tool
-
-```
-curl -sS -X POST \
-  -H "Content-Type: application/json" \
-  -H "MCP-Protocol-Version: 2025-06-18" \
-  -d '{
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "tools/call",
-        "params": { "name": "rimbridge.core/ping", "arguments": {} }
-      }' \
-  http://127.0.0.1:5174/mcp/
+[RimBridge] GABP server running standalone on port 5174
+[RimBridge] Bridge token: abc123...
 ```
 
-Expected response includes content with text "pong".
+## Available Tools
 
-Notes:
-- A legacy convenience method `ping` also exists and returns an empty result.
-- Auth: bearer token can be enabled by placing a token in `~/.api-keys` (see below). If present, the server requires `Authorization: Bearer <token>`.
-- CORS/Origin checks allow `null`, `file://`, `app://` by default.
+RimBridgeServer provides these built-in tools:
+
+### Core Tools
+- `rimbridge.core/ping` - Connectivity test, returns "pong"
+
+### RimWorld Tools  
+- `rimworld/get_game_info` - Get current game status and basic information
+- `rimworld/pause_game` - Pause or unpause the game
+
+## Protocol
+
+RimBridgeServer implements GABP 1.0 specification:
+
+1. **Connect** via TCP to the server port
+2. **Authenticate** using `session/hello` with the token
+3. **List tools** using `tools/list` 
+4. **Call tools** using `tools/call`
+5. **Subscribe to events** using `events/subscribe`
+
+See the [GABP specification](https://github.com/pardeike/GABS) for complete protocol details.
 
 ## Build
 
@@ -65,44 +66,27 @@ Notes:
 ## Layout
 
 - `About/` mod metadata
-- `1.6/Assemblies/` build output
-- `Source/` project: MCP server (`Net.cs`), protocol types (`Protocol.cs`), abstractions (`Abstractions.cs`), plugins (`Plugins.cs`), mod entry (`Mod.cs`)
+- `1.6/Assemblies/` build output including Lib.GAB.dll
+- `Source/` project: simplified mod entry (`Mod.cs`) and project file
+- `lib/` local build artifacts (Lib.GAB.dll)
 - `.vscode/` quick build tasks
 
 ## License
 
 MIT — see `LICENSE`.
 
-## Authentication
+## Dependencies
 
-To require a bearer token for all HTTP requests, create a JSON file in your home directory named `.api-keys` with a top‑level key `RIMBRIDGE_TOKEN`:
+This mod uses [Lib.GAB](https://github.com/pardeike/Lib.GAB) as a local build artifact to provide GABP server functionality. Lib.GAB is included in the mod's assemblies directory.
 
-Example file (`~/.api-keys`):
+## Migration from MCP
 
-```
-{
-  "RIMBRIDGE_TOKEN": "your-long-random-token"
-}
-```
+Previous versions used a custom MCP (Model Context Protocol) implementation over HTTP. This version replaces it with:
 
-On Windows, this is usually at `%USERPROFILE%\.api-keys`.
+- **GABP over TCP** instead of MCP over HTTP
+- **Lib.GAB** instead of custom protocol implementation  
+- **Port 5174** (fallback) instead of fixed port
+- **Token-based auth** instead of bearer tokens from ~/.api-keys
+- **GABS integration** for automated AI control scenarios
 
-When this key exists, RimBridgeServer enables bearer auth automatically and will reject requests without a matching header.
-
-Client request header:
-
-```
-Authorization: Bearer your-long-random-token
-```
-
-Codex MCP config example:
-
-```
-[mcp_servers.rimbridge]
-transport = "http"
-url = "http://127.0.0.1:5174/mcp/"
-
-[mcp_servers.rimbridge.request_headers]
-"MCP-Protocol-Version" = "2025-06-18"
-Authorization = "Bearer your-long-random-token"
-```
+The core functionality remains the same - AI agents can still control RimWorld remotely.
