@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Lib.GAB;
 using Lib.GAB.Tools;
 using Lib.GAB.Server;
+using RimWorld;
 using Verse;
 
 namespace RimBridgeServer;
@@ -88,36 +89,27 @@ public class RimBridgeTools
     [Tool("rimworld/pause_game", Description = "Pause or unpause the game")]
     public object PauseGame([ToolParameter(Description = "True to pause, false to unpause")] bool pause = true)
     {
-        var currentGame = Current.Game;
-        if (currentGame == null)
+        if (Current.Game == null)
         {
             return new { success = false, message = "No game is currently loaded" };
         }
 
-        if (pause)
+        var currentlyPaused = Find.TickManager.Paused;
+        
+        // Only toggle if we need to change the current state
+        if (pause && !currentlyPaused)
         {
-            currentGame.tickManager.Pause();
+            Find.TickManager.TogglePaused();
         }
-        else
+        else if (!pause && currentlyPaused)
         {
-            // Try common variations - one of these should work
-            try 
-            {
-                // Most likely the correct method name based on RimWorld conventions
-                currentGame.tickManager.GetType().GetMethod("Unpause")?.Invoke(currentGame.tickManager, null);
-            }
-            catch
-            {
-                // If that doesn't work, try setting paused to false directly
-                var pausedField = currentGame.tickManager.GetType().GetField("paused", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                pausedField?.SetValue(currentGame.tickManager, false);
-            }
+            Find.TickManager.TogglePaused();
         }
 
         return new
         {
             success = true,
-            paused = currentGame.tickManager.Paused,
+            paused = Find.TickManager.Paused,
             message = pause ? "Game paused" : "Game unpaused"
         };
     }
