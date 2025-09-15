@@ -10,53 +10,42 @@ namespace RimBridgeServer;
 
 public class RimBridgeServerMod : Mod
 {
-    private static GabpServer _server;
+    private readonly GabpServer _server;
 
     public RimBridgeServerMod(ModContentPack content) : base(content)
     {
-        if (_server == null)
+        try
         {
-            try
+            // Create GABS-aware server that automatically adapts to environment
+            var tools = new RimBridgeTools();
+            _server = Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", "0.1.0", tools, fallbackPort: 5174);
+            
+            // Start the server
+            _server.StartAsync().ContinueWith(task =>
             {
-                // Create GABS-aware server that automatically adapts to environment
-                var tools = new RimBridgeTools();
-                _server = Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", "0.1.0", tools, fallbackPort: 5174);
-                
-                // Start the server
-                _server.StartAsync().ContinueWith(task =>
+                if (task.IsFaulted)
                 {
-                    if (task.IsFaulted)
+                    Log.Error($"[RimBridge] Failed to start server: {task.Exception}");
+                }
+                else
+                {
+                    if (Gabp.IsRunningUnderGabs())
                     {
-                        Log.Error($"[RimBridge] Failed to start server: {task.Exception}");
+                        Log.Message($"[RimBridge] GABP server connected to GABS on port {_server.Port}");
                     }
                     else
                     {
-                        if (Gabp.IsRunningUnderGabs())
-                        {
-                            Log.Message($"[RimBridge] GABP server connected to GABS on port {_server.Port}");
-                        }
-                        else
-                        {
-                            Log.Message($"[RimBridge] GABP server running standalone on port {_server.Port}");
-                            Log.Message($"[RimBridge] Bridge token: {_server.Token}");
-                        }
+                        Log.Message($"[RimBridge] GABP server running standalone on port {_server.Port}");
+                        Log.Message($"[RimBridge] Bridge token: {_server.Token}");
                     }
-                });
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"[RimBridge] Failed to initialize server: {ex}");
-            }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[RimBridge] Failed to initialize server: {ex}");
         }
     }
-}
-
-public sealed class RimBridgeGameComponent : GameComponent
-{
-    public RimBridgeGameComponent(Game game) { }
-    
-    // Game component no longer needed for thread dispatching with Lib.GAB
-    // Lib.GAB handles its own threading
 }
 
 // RimWorld-specific tools
