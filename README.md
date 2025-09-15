@@ -1,92 +1,111 @@
 # RimBridgeServer
 
-RimBridgeServer runs a GABP (Game Agent Bridge Protocol) server inside RimWorld so AI agents and external tools can remotely control and observe a running game. The goal is to make automated testing of in‑development mods straightforward: load saves, perform actions, query world state, and validate outcomes via a stable protocol.
+RimBridgeServer lets you control RimWorld from outside the game. This is useful for testing mods automatically or building tools that work with RimWorld.
 
-Key points:
-- Uses **Lib.GAB** for GABP 1.0 compliant server implementation
-- **GABS Integration**: Automatically detects and integrates with [GABS](https://github.com/pardeike/GABS) environment
-- **TCP Transport**: Listens on 127.0.0.1 with automatic port configuration  
-- **Attribute-Based Tools**: Simple tool registration using C# attributes
-- **Minimal Codebase**: Leverages Lib.GAB to eliminate complex protocol handling
-- Targets RimWorld 1.6
+## What does it do?
 
-## Quick Start (GABP over TCP)
+This mod creates a connection point (called a "server") inside RimWorld. Other programs can connect to this server to:
 
-### Running with GABS
+- Check if the game is running
+- Pause or unpause the game  
+- Get information about the current game
+- Control the game remotely
 
-When launched by GABS, RimBridgeServer automatically configures itself using environment variables:
+This is especially helpful for:
+- **Mod developers** who want to test their mods automatically
+- **AI tools** that need to interact with RimWorld
+- **External programs** that want to read game data
 
-- `GABS_GAME_ID`: Game identifier
-- `GABP_SERVER_PORT`: Port to listen on  
-- `GABP_TOKEN`: Authentication token
+## Features
 
-No manual configuration needed!
+- **Easy to use**: Works automatically when you start RimWorld
+- **Safe**: Only accepts connections from your own computer
+- **Simple**: Uses a standard protocol that many tools understand
+- **Compatible**: Works with RimWorld 1.6
 
-### Standalone Usage
+## How to get started
 
-When running standalone, RimBridgeServer will:
-1. Automatically select an available port (default fallback: 5174)
-2. Generate a random authentication token
-3. Log the connection details to RimWorld's console
+### Installation
 
-Check the RimWorld log for connection information:
+1. Download the mod and put it in your RimWorld Mods folder
+2. Enable the mod in RimWorld
+3. Start the game
+
+That's it! The server starts automatically when RimWorld loads.
+
+### How to connect
+
+When RimBridgeServer starts, it will show a message in the RimWorld log that looks like this:
+
 ```
-[RimBridge] GABP server running standalone on port 5174
-[RimBridge] Bridge token: abc123...
+[RimBridge] Server running on port 5174
+[RimBridge] Connection token: abc123...
 ```
 
-## Available Tools
+Your external program needs:
+- **Port number**: Usually 5174 (but check the log to be sure)
+- **Token**: The random text shown in the log (for security)
+- **Address**: Always 127.0.0.1 (your own computer only)
 
-RimBridgeServer provides these built-in tools:
+### Working with GABS
 
-### Core Tools
-- `rimbridge.core/ping` - Connectivity test, returns "pong"
+If you use [GABS](https://github.com/pardeike/GABS) (an AI gaming environment), RimBridgeServer will automatically configure itself. No extra setup needed!
 
-### RimWorld Tools  
-- `rimworld/get_game_info` - Get current game status and basic information
-- `rimworld/pause_game` - Pause or unpause the game
+## Available commands
 
-## Protocol
+Your external program can send these commands to RimBridgeServer:
 
-RimBridgeServer implements GABP 1.0 specification:
+### Basic commands
+- **ping** - Test if the connection is working (responds with "pong")
 
-1. **Connect** via TCP to the server port
-2. **Authenticate** using `session/hello` with the token
-3. **List tools** using `tools/list` 
-4. **Call tools** using `tools/call`
-5. **Subscribe to events** using `events/subscribe`
+### Game control
+- **get_game_info** - Get information about the current game
+- **pause_game** - Pause or unpause the game
 
-See the [GABP specification](https://github.com/pardeike/GABS) for complete protocol details.
+More commands may be added in future versions.
 
-## Build
+## For developers
 
-- `dotnet build` (Debug or Release)
-- Optionally set `RIMWORLD_MOD_DIR` to copy the built mod to your local Mods folder and zip it (see `Source/RimBridgeServer.csproj`).
+### How it works
 
-## Layout
+RimBridgeServer uses a communication protocol called GABP (Game Agent Bridge Protocol). This is a standard way for programs to talk to games.
 
-- `About/` mod metadata
-- `1.6/Assemblies/` build output including Lib.GAB.dll
-- `Source/` project: simplified mod entry (`Mod.cs`) and project file
-- `lib/` local build artifacts (Lib.GAB.dll)
-- `.vscode/` quick build tasks
+The basic steps are:
+1. Connect to the server using TCP (a network connection type)
+2. Say "hello" with your security token
+3. Ask for a list of available commands
+4. Send commands and receive responses
+5. Optionally, listen for events from the game
+
+For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABS).
+
+### Building the mod
+
+Requirements:
+- .NET SDK
+- RimWorld installed
+
+Steps:
+1. Clone this repository
+2. Run `dotnet build` in the main folder
+3. The built mod will be in the `1.6/Assemblies/` folder
+
+**Tip**: Set the `RIMWORLD_MOD_DIR` environment variable to automatically copy the built mod to your RimWorld Mods folder.
+
+### Project structure
+
+```
+About/          - Mod information for RimWorld
+1.6/Assemblies/ - Built mod files
+Source/         - Source code
+lib/            - External libraries
+.vscode/        - Visual Studio Code settings
+```
 
 ## License
 
-MIT — see `LICENSE`.
+This project uses the MIT License. See the `LICENSE` file for details.
 
 ## Dependencies
 
-This mod uses [Lib.GAB](https://github.com/pardeike/Lib.GAB) as a local build artifact to provide GABP server functionality. Lib.GAB is included in the mod's assemblies directory.
-
-## Migration from MCP
-
-Previous versions used a custom MCP (Model Context Protocol) implementation over HTTP. This version replaces it with:
-
-- **GABP over TCP** instead of MCP over HTTP
-- **Lib.GAB** instead of custom protocol implementation  
-- **Port 5174** (fallback) instead of fixed port
-- **Token-based auth** instead of bearer tokens from ~/.api-keys
-- **GABS integration** for automated AI control scenarios
-
-The core functionality remains the same - AI agents can still control RimWorld remotely.
+This mod includes [Lib.GAB](https://github.com/pardeike/Lib.GAB), which provides the GABP protocol implementation.
