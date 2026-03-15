@@ -60,6 +60,10 @@
 			<HintPath>..\lib\Lib.GAB.dll</HintPath>
 			<Private>true</Private>
 		</Reference>
+		<Reference Include="Gabp.Runtime">
+			<HintPath>..\lib\Gabp.Runtime.dll</HintPath>
+			<Private>true</Private>
+		</Reference>
 	</ItemGroup>
 
 	<Target Name="MyCode" BeforeTargets="UpdateReferences">

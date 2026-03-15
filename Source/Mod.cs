@@ -18,7 +18,7 @@ public class RimBridgeServerMod : Mod
         {
             // Create GABS-aware server that automatically adapts to environment
             var tools = new RimBridgeTools();
-            _server = Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", "0.1.0", tools, fallbackPort: 5174);
+            _server = Lib.GAB.Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", "0.1.0", tools, fallbackPort: 5174);
             
             // Start the server
             _server.StartAsync().ContinueWith(task =>
@@ -29,7 +29,7 @@ public class RimBridgeServerMod : Mod
                 }
                 else
                 {
-                    if (Gabp.IsRunningUnderGabs())
+                    if (Lib.GAB.Gabp.IsRunningUnderGabs())
                     {
                         Log.Message($"[RimBridge] GABP server connected to GABS on port {_server.Port}");
                     }
