@@ -20,6 +20,7 @@
 		<PackageProjectUrl>$(Repository)</PackageProjectUrl>
 		<RepositoryUrl>$(Repository)</RepositoryUrl>
 		<Product>$(ModName)</Product>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -45,6 +46,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4566" GeneratePathProperty="true" />
+		<PackageReference Include="Gabp.Runtime" Version="0.1.0-alpha.1" />
 		<PackageReference Include="Lib.Harmony.Ref" Version="2.4.1" />
 		<PackageReference Include="Microsoft.NETCore.Platforms" Version="7.0.4" />
 		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3">
@@ -58,10 +60,6 @@
 	<ItemGroup>
 		<Reference Include="Lib.GAB">
 			<HintPath>..\lib\Lib.GAB.dll</HintPath>
-			<Private>true</Private>
-		</Reference>
-		<Reference Include="Gabp.Runtime">
-			<HintPath>..\lib\Gabp.Runtime.dll</HintPath>
 			<Private>true</Private>
 		</Reference>
 	</ItemGroup>
