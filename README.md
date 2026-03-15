@@ -35,11 +35,11 @@ That's it! The server starts automatically when RimWorld loads.
 
 ### How to connect
 
-When RimBridgeServer starts, it will show a message in the RimWorld log that looks like this:
+When RimBridgeServer starts in standalone mode, it will show messages like:
 
 ```
-[RimBridge] Server running on port 5174
-[RimBridge] Connection token: abc123...
+[RimBridge] GABP server running standalone on port 5174
+[RimBridge] Bridge token: abc123...
 ```
 
 Your external program needs:
@@ -49,19 +49,21 @@ Your external program needs:
 
 ### Working with GABS
 
-If you use [GABS](https://github.com/pardeike/GABS) (an AI gaming environment), RimBridgeServer will automatically configure itself. No extra setup needed!
+If you use [GABS](https://github.com/pardeike/GABS) (an AI gaming environment), RimBridgeServer will automatically configure itself. No extra setup is needed, and the standalone token log line is omitted because GABS injects the bridge configuration through environment variables.
 
 ## Available commands
 
 Your external program can send these commands to RimBridgeServer:
 
 ### Basic commands
-- **ping** - Test if the connection is working (responds with "pong")
+- **`rimbridge/ping`** - Test if the connection is working (responds with `"pong"`)
 
 ### Game control
-- **get_game_info** - Get information about the current game
-- **pause_game** - Pause or unpause the game
-- **start_debug_game** - Start RimWorld's built-in quick test colony from the main menu
+- **`rimworld/get_game_info`** - Get information about the current game
+- **`rimworld/pause_game`** - Pause or unpause the game
+- **`rimworld/start_debug_game`** - Start RimWorld's built-in quick test colony from the main menu
+
+`rimworld/start_debug_game` mirrors RimWorld's own dev quick-test flow. It only works from the main menu and returns a detailed state snapshot when the request is rejected.
 
 More commands may be added in future versions.
 
@@ -78,7 +80,7 @@ The basic steps are:
 4. Send commands and receive responses
 5. Optionally, listen for events from the game
 
-For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABS).
+For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABP).
 
 ### Building the mod
 
