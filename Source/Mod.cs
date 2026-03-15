@@ -51,7 +51,18 @@ public class RimBridgeServerMod : Mod
 // RimWorld-specific tools
 public class RimBridgeTools
 {
-    [Tool("rimbridge.core/ping", Description = "Connectivity test. Returns 'pong'.")]
+    private static object ToolStateSnapshot()
+    {
+        return new
+        {
+            programState = Current.ProgramState.ToString(),
+            inEntryScene = GenScene.InEntryScene,
+            hasCurrentGame = Current.Game != null,
+            longEventPending = LongEventHandler.AnyEventNowOrWaiting
+        };
+    }
+
+    [Tool("rimbridge/ping", Description = "Connectivity test. Returns 'pong'.")]
     public object Ping()
     {
         return new { message = "pong", timestamp = DateTime.UtcNow };
@@ -100,6 +111,58 @@ public class RimBridgeTools
             success = true,
             paused = Find.TickManager.Paused,
             message = pause ? "Game paused" : "Game unpaused"
+        };
+    }
+
+    [Tool("rimworld/start_debug_game", Description = "Start RimWorld's built-in quick test colony from the main menu")]
+    public object StartDebugGame()
+    {
+        if (LongEventHandler.AnyEventNowOrWaiting)
+        {
+            return new
+            {
+                success = false,
+                message = "RimWorld is busy with another long event. Wait for it to finish before starting a debug game.",
+                state = ToolStateSnapshot()
+            };
+        }
+
+        if (!GenScene.InEntryScene || Current.ProgramState != ProgramState.Entry)
+        {
+            return new
+            {
+                success = false,
+                message = "Debug game start is only supported from the main menu entry scene.",
+                state = ToolStateSnapshot()
+            };
+        }
+
+        if (Current.Game != null)
+        {
+            return new
+            {
+                success = false,
+                message = "A game is already loaded. Return to the main menu before starting a new debug game.",
+                state = ToolStateSnapshot()
+            };
+        }
+
+        LongEventHandler.QueueLongEvent(delegate
+        {
+            Root_Play.SetupForQuickTestPlay();
+            PageUtility.InitGameStart();
+        }, "GeneratingMap", doAsynchronously: true, GameAndMapInitExceptionHandlers.ErrorWhileGeneratingMap);
+
+        return new
+        {
+            success = true,
+            status = "queued",
+            message = "Queued RimWorld quick test start.",
+            scenario = ScenarioDefOf.Crashlanded.defName,
+            storyteller = StorytellerDefOf.Cassandra.defName,
+            difficulty = DifficultyDefOf.Rough.defName,
+            mapSize = 250,
+            state = ToolStateSnapshot()
         };
     }
 }

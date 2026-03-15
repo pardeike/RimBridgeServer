@@ -61,6 +61,7 @@ Your external program can send these commands to RimBridgeServer:
 ### Game control
 - **get_game_info** - Get information about the current game
 - **pause_game** - Pause or unpause the game
+- **start_debug_game** - Start RimWorld's built-in quick test colony from the main menu
 
 More commands may be added in future versions.
 
