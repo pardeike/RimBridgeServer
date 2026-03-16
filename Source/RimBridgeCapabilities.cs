@@ -32,6 +32,12 @@ internal static class RimBridgeCapabilities
             aliasMetadataType: typeof(RimBridgeTools),
             source: CapabilitySourceKind.Core));
         registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
+            providerId: "rimbridge.core/input",
+            category: "input",
+            module: new InputCapabilityModule(),
+            aliasMetadataType: typeof(RimBridgeTools),
+            source: CapabilitySourceKind.Core));
+        registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
             providerId: "rimbridge.core/selection",
             category: "selection",
             module: new SelectionCapabilityModule(),

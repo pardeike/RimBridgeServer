@@ -12,6 +12,7 @@ public class SmokeScenarioCatalogTests
         var scenarios = SmokeScenarioCatalog.List();
 
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.DebugGameLoadScenarioName);
+        Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.ContextMenuCancelRoundTripScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.SelectionRoundTripScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.SaveLoadRoundTripScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.ScreenshotCaptureScenarioName);

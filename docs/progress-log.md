@@ -327,6 +327,39 @@ Next:
 
 - Step A10: start adding foreground-independent input-oriented live scenarios and the first internal abstractions for in-process mouse/keyboard injection so future UX tests are not tied to OS focus state
 
+## 2026-03-16 - Step A10 - Background-Safe UI Input Foundations
+
+Status:
+
+- completed
+
+Completed:
+
+- added [`RimWorldInput.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldInput.cs) as the first dedicated in-process input abstraction, centered on semantic UI actions and window-stack inspection instead of foreground-dependent desktop automation
+- added [`InputCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/InputCapabilityModule.cs) and registered it in [`RimBridgeCapabilities.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeCapabilities.cs), exposing the first background-safe input tools through the normal capability registry
+- extended [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) with `rimworld/get_ui_state`, `rimworld/press_accept`, `rimworld/press_cancel`, and `rimworld/close_window`
+- implemented `rimworld/get_ui_state` as a structured snapshot of the current `WindowStack`, including focused/top window information, input-related flags, and the live list of open windows
+- implemented `rimworld/press_accept` / `rimworld/press_cancel` through `WindowStack.Notify_PressedAccept()` / `Notify_PressedCancel()` and added `rimworld/close_window` as a typed window-stack fallback for cases where accept/cancel are not the correct semantic control surface
+- extended [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) with a new `context-menu-cancel-roundtrip` live scenario that normalizes away stray dialog windows, opens a real float menu, closes it through semantic cancel input, and records the exact resulting log/event window
+- updated [`SmokeScenarioCatalogTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/SmokeScenarioCatalogTests.cs) and [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) to cover the expanded scenario matrix and document the new input-oriented tools
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --list-scenarios`
+- `scripts/live-smoke.sh --scenario context-menu-cancel-roundtrip --game-id rimworld --stop-after`
+
+Notes:
+
+- this is intentionally the semantic half of the input stack first: it proves that useful keyboard-like flows can already be automated safely while RimWorld is backgrounded, without overcommitting to a generic physical input design too early
+- the structured `get_ui_state` snapshot gives later UX and debug-action work a stable discovery surface for active windows and input blockers, which should reduce trial-and-error waits in future scenarios
+- `close_window` is intentionally included beside `press_accept` and `press_cancel` because development environments frequently keep debug windows open, and automated UI flows need a deterministic way to normalize that state before testing higher-level interactions
+
+Next:
+
+- Step A11: build the first physical-targeting seam on top of this semantic foundation, likely starting with screenshot-linked target metadata and a narrowly scoped background-safe click path for known RimWorld UI surfaces
+
 ## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
 
 Status:

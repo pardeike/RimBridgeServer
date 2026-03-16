@@ -75,6 +75,10 @@ Your external program can send these commands to RimBridgeServer:
 ### Game control
 - **`rimworld/get_game_info`** - Get information about the current game
 - **`rimworld/pause_game`** - Pause or unpause the game
+- **`rimworld/get_ui_state`** - Inspect the current RimWorld window stack and UI/input state
+- **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
+- **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
+- **`rimworld/close_window`** - Close an open RimWorld window by type name or close the topmost window
 - **`rimworld/start_debug_game`** - Start RimWorld's built-in quick test colony from the main menu
 - **`rimworld/list_saves`** - List saved games
 - **`rimworld/spawn_thing`** - Spawn a thing on the current map at a target cell
@@ -135,6 +139,8 @@ The basic steps are:
 
 Most mutating tools are marshalled onto RimWorld's main thread before they touch UI or map state. This is important for selection, camera, save/load, screenshot capture, and context-menu operations.
 
+The new UI input helpers are intentionally semantic. `rimworld/press_accept`, `rimworld/press_cancel`, and `rimworld/close_window` drive RimWorld's own `WindowStack` APIs instead of foreground-dependent desktop input, which keeps them usable even when the game is running in the background during automated tests.
+
 For test automation, prefer the explicit wait tools over blind sleeps. `rimbridge/wait_for_game_loaded`, `rimbridge/wait_for_long_event_idle`, and `rimbridge/wait_for_operation` provide bounded waits with state snapshots so scripts can move quickly when the game is ready and fail with useful diagnostics when it is not.
 
 `rimbridge/get_bridge_status` also returns `latestLogSequence` and `latestOperationEventSequence`. Tests can snapshot those cursors before a command, execute the command, then call `rimbridge/list_logs` or `rimbridge/list_operation_events` with `afterSequence` to fetch only the new logs and events from that window.
@@ -173,6 +179,13 @@ The `selection-roundtrip` scenario reuses the same harness primitives against a 
 - lists current-map colonists and selects a real pawn
 - jumps the camera to that pawn, reads camera state, and clears the selection again
 - captures only the operation and log window for that interaction block
+
+The `context-menu-cancel-roundtrip` scenario exercises the first background-safe input path:
+
+- ensures a playable game exists and normalizes away any pre-existing dialog windows
+- selects a real colonist and opens a vanilla context menu through `rimworld/open_context_menu`
+- closes that menu again with `rimworld/press_cancel`
+- verifies the float-menu and window-stack state transitions without depending on OS focus
 
 The `save-load-roundtrip` scenario covers the real save/load lifecycle:
 

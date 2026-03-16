@@ -86,6 +86,30 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pause), pause)));
     }
 
+    [Tool("rimworld/get_ui_state", Description = "Get the current RimWorld window stack and input state for background-safe UI automation")]
+    public object GetUiState()
+    {
+        return InvokeAlias();
+    }
+
+    [Tool("rimworld/press_accept", Description = "Send semantic accept input to the active RimWorld window stack without requiring OS focus")]
+    public object PressAccept()
+    {
+        return InvokeAlias();
+    }
+
+    [Tool("rimworld/press_cancel", Description = "Send semantic cancel input to the active RimWorld window stack without requiring OS focus")]
+    public object PressCancel()
+    {
+        return InvokeAlias();
+    }
+
+    [Tool("rimworld/close_window", Description = "Close an open RimWorld window by type name or, if omitted, the topmost window")]
+    public object CloseWindow([ToolParameter(Description = "Optional short or full .NET type name of the target window")] string windowType = null)
+    {
+        return InvokeAlias(Arguments((nameof(windowType), windowType)));
+    }
+
     [Tool("rimworld/start_debug_game", Description = "Start RimWorld's built-in quick test colony from the main menu")]
     public object StartDebugGame()
     {

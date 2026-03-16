@@ -16,6 +16,7 @@ internal sealed class SmokeScenarioDefinition
 internal static class SmokeScenarioCatalog
 {
     public const string DebugGameLoadScenarioName = "debug-game-load";
+    public const string ContextMenuCancelRoundTripScenarioName = "context-menu-cancel-roundtrip";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
@@ -29,6 +30,12 @@ internal static class SmokeScenarioCatalog
                 Name = DebugGameLoadScenarioName,
                 Description = "Start RimWorld's debug colony from the main menu and capture the resulting operation/log window.",
                 RunAsync = RunDebugGameLoadAsync
+            },
+            [ContextMenuCancelRoundTripScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ContextMenuCancelRoundTripScenarioName,
+                Description = "Ensure a playable game exists, open a real context menu, and dismiss it again through background-safe semantic input.",
+                RunAsync = RunContextMenuCancelRoundTripAsync
             },
             [SelectionRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -96,6 +103,91 @@ internal static class SmokeScenarioCatalog
             "final_bridge_status",
             "collect_operation_events",
             "collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunContextMenuCancelRoundTripAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("context_menu.wait_for_long_event_idle", cancellationToken);
+
+        var baselineUiState = await EnsureNoDialogWindowsAsync(context, "context_menu.normalize", cancellationToken);
+        var baselineWindowCount = JsonNodeHelpers.ReadInt32(baselineUiState, "windowCount").GetValueOrDefault();
+
+        var colonists = await context.CallGameToolAsync("context_menu.list_colonists", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists for the context-menu cancel roundtrip");
+
+        var pawnName = ResolveFirstColonistName(colonists.StructuredContent);
+        var pawnPosition = ResolvePawnPosition(colonists.StructuredContent, pawnName);
+        context.Report.ColonistCount = JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count");
+
+        var selectPawn = await context.CallGameToolAsync("context_menu.select_pawn", "rimworld/select_pawn", new
+        {
+            pawnName,
+            append = false
+        }, cancellationToken);
+        context.EnsureSucceeded(selectPawn, $"Selecting colonist '{pawnName}' before opening a context menu");
+
+        var observationWindow = await context.BeginObservationWindowAsync("context_menu.snapshot_bridge_status", cancellationToken);
+
+        ToolInvocationResult? openContextMenu = null;
+        (int X, int Z) openedCell = default;
+        foreach (var candidateCell in BuildNearbyCells(pawnPosition.X, pawnPosition.Z))
+        {
+            var result = await context.CallGameToolAsync("context_menu.open_context_menu", "rimworld/open_context_menu", new
+            {
+                x = candidateCell.X,
+                z = candidateCell.Z,
+                mode = "vanilla"
+            }, cancellationToken);
+            context.EnsureSucceeded(result, $"Opening a vanilla context menu near colonist '{pawnName}'");
+
+            if (JsonNodeHelpers.ReadInt32(result.StructuredContent, "optionCount").GetValueOrDefault() > 0)
+            {
+                openContextMenu = result;
+                openedCell = candidateCell;
+                break;
+            }
+        }
+
+        if (openContextMenu == null)
+            throw new InvalidOperationException($"Could not open a context menu with executable options near colonist '{pawnName}'.");
+
+        var uiStateAfterOpen = await context.CallGameToolAsync("context_menu.get_ui_state_after_open", "rimworld/get_ui_state", new { }, cancellationToken);
+        context.EnsureSucceeded(uiStateAfterOpen, "Reading RimWorld UI state after opening a context menu");
+
+        var floatMenuOpenAfterOpen = JsonNodeHelpers.ReadBoolean(uiStateAfterOpen.StructuredContent, "floatMenuOpen") == true;
+        if (!floatMenuOpenAfterOpen)
+            throw new InvalidOperationException("Opening the context menu did not expose a float menu on the RimWorld window stack.");
+
+        var pressCancel = await context.CallGameToolAsync("context_menu.press_cancel", "rimworld/press_cancel", new { }, cancellationToken);
+        context.EnsureSucceeded(pressCancel, "Sending semantic cancel input to close the context menu");
+
+        var afterCancel = JsonNodeHelpers.GetPath(pressCancel.StructuredContent, "after");
+        var floatMenuOpenAfterCancel = JsonNodeHelpers.ReadBoolean(afterCancel, "floatMenuOpen") == true;
+        var closedWindowTypes = JsonNodeHelpers.ReadArray(pressCancel.StructuredContent, "closedWindowTypes");
+        if (floatMenuOpenAfterCancel || closedWindowTypes.Any(type => string.Equals(JsonNodeHelpers.ReadString(type), "Verse.FloatMenu", StringComparison.Ordinal)) == false)
+            throw new InvalidOperationException("Semantic cancel input did not close the context-menu float menu.");
+
+        context.SetSummaryValue("selectedPawn", pawnName);
+        context.SetSummaryValue("targetCell", $"{openedCell.X},{openedCell.Z}");
+        context.SetSummaryValue("openedWindowType", JsonNodeHelpers.ReadString(uiStateAfterOpen.StructuredContent, "topWindowType"));
+        context.SetSummaryValue("windowCountBeforeOpen", baselineWindowCount.ToString());
+        context.SetSummaryValue("windowCountAfterOpen", JsonNodeHelpers.ReadString(uiStateAfterOpen.StructuredContent, "windowCount"));
+        context.SetSummaryValue("windowCountAfterCancel", JsonNodeHelpers.ReadString(afterCancel, "windowCount"));
+        context.SetScenarioData("baselineUiState", baselineUiState);
+        context.SetScenarioData("openContextMenu", openContextMenu.StructuredContent);
+        context.SetScenarioData("uiStateAfterOpen", uiStateAfterOpen.StructuredContent);
+        context.SetScenarioData("pressCancel", pressCancel.StructuredContent);
+
+        var observation = await observationWindow.CaptureAsync(
+            "context_menu.final_bridge_status",
+            "context_menu.collect_operation_events",
+            "context_menu.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }
@@ -280,10 +372,90 @@ internal static class SmokeScenarioCatalog
         throw new InvalidOperationException("The current map did not expose any colonists that could be used for the selection roundtrip scenario.");
     }
 
+    private static (int X, int Z) ResolvePawnPosition(JsonNode? structuredContent, string pawnName)
+    {
+        var colonists = JsonNodeHelpers.ReadArray(structuredContent, "colonists");
+        foreach (var colonist in colonists)
+        {
+            if (!string.Equals(JsonNodeHelpers.ReadString(colonist, "name"), pawnName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var x = JsonNodeHelpers.ReadInt32(colonist, "position", "x");
+            var z = JsonNodeHelpers.ReadInt32(colonist, "position", "z");
+            if (x.HasValue && z.HasValue)
+                return (x.Value, z.Value);
+        }
+
+        throw new InvalidOperationException($"Could not resolve a current-map position for colonist '{pawnName}'.");
+    }
+
+    private static IEnumerable<(int X, int Z)> BuildNearbyCells(int x, int z)
+    {
+        yield return (x + 1, z);
+        yield return (x - 1, z);
+        yield return (x, z + 1);
+        yield return (x, z - 1);
+        yield return (x + 2, z);
+        yield return (x, z + 2);
+    }
+
     private static bool SaveListContains(JsonNode? structuredContent, string saveName)
     {
         var saves = JsonNodeHelpers.ReadArray(structuredContent, "saves");
         return saves.Any(save => string.Equals(JsonNodeHelpers.ReadString(save, "name"), saveName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<JsonNode?> EnsureNoDialogWindowsAsync(SmokeScenarioContext context, string stepPrefix, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            var uiState = await context.CallGameToolAsync(
+                $"{stepPrefix}.get_ui_state_{attempt}",
+                "rimworld/get_ui_state",
+                new { },
+                cancellationToken);
+            context.EnsureSucceeded(uiState, "Reading RimWorld UI state before the input smoke scenario");
+
+            if (JsonNodeHelpers.ReadBoolean(uiState.StructuredContent, "nonImmediateDialogWindowOpen") != true)
+                return uiState.StructuredContent;
+
+            var topWindowType = JsonNodeHelpers.ReadString(uiState.StructuredContent, "topWindowType");
+            if (string.Equals(topWindowType, "LudeonTK.Dialog_DevPalette", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(topWindowType, "Dialog_DevPalette", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Note($"Closing the dev palette before the input roundtrip scenario (attempt {attempt}).");
+                var closeWindow = await context.CallGameToolAsync(
+                    $"{stepPrefix}.close_window_{attempt}",
+                    "rimworld/close_window",
+                    new
+                    {
+                        windowType = "Dialog_DevPalette"
+                    },
+                    cancellationToken);
+                context.EnsureSucceeded(closeWindow, "Closing the pre-existing RimWorld dev palette before the input smoke scenario");
+                continue;
+            }
+
+            context.Note($"Dismissing a pre-existing dialog window before the input roundtrip scenario (attempt {attempt}).");
+            var pressCancel = await context.CallGameToolAsync(
+                $"{stepPrefix}.press_cancel_{attempt}",
+                "rimworld/press_cancel",
+                new { },
+                cancellationToken);
+            context.EnsureSucceeded(pressCancel, "Closing a pre-existing RimWorld dialog before the input smoke scenario");
+        }
+
+        var finalState = await context.CallGameToolAsync(
+            $"{stepPrefix}.get_ui_state_final",
+            "rimworld/get_ui_state",
+            new { },
+            cancellationToken);
+        context.EnsureSucceeded(finalState, "Reading final RimWorld UI state after dismissing pre-existing dialogs");
+
+        if (JsonNodeHelpers.ReadBoolean(finalState.StructuredContent, "nonImmediateDialogWindowOpen") == true)
+            throw new InvalidOperationException("Could not reach a clean UI state before starting the input roundtrip scenario.");
+
+        return finalState.StructuredContent;
     }
 
     private static string BuildScreenshotFileName(DateTimeOffset startedAtUtc)
