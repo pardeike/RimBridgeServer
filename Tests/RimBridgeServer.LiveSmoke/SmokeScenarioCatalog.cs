@@ -19,6 +19,7 @@ internal static class SmokeScenarioCatalog
     public const string DebugGameLoadScenarioName = "debug-game-load";
     public const string ContextMenuCancelRoundTripScenarioName = "context-menu-cancel-roundtrip";
     public const string DebugActionDiscoveryScenarioName = "debug-action-discovery";
+    public const string ArchitectWallPlacementScenarioName = "architect-wall-placement";
     public const string ScreenTargetClickRoundTripScenarioName = "screen-target-click-roundtrip";
     public const string ScreenTargetClipScenarioName = "screen-target-clip";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
@@ -46,6 +47,12 @@ internal static class SmokeScenarioCatalog
                 Name = DebugActionDiscoveryScenarioName,
                 Description = "Ensure a playable game exists, discover debug-action roots and children, then execute one low-side-effect direct leaf action by stable path.",
                 RunAsync = RunDebugActionDiscoveryAsync
+            },
+            [ArchitectWallPlacementScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ArchitectWallPlacementScenarioName,
+                Description = "Ensure a playable game exists, then verify wall placement becomes blueprint-based versus direct-build depending on god mode.",
+                RunAsync = RunArchitectWallPlacementAsync
             },
             [ScreenTargetClickRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -877,6 +884,187 @@ internal static class SmokeScenarioCatalog
         context.ApplyObservationWindow(observation);
     }
 
+    private static async Task RunArchitectWallPlacementAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("architect.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("architect.snapshot_bridge_status", cancellationToken);
+        var initialDesignatorState = await context.CallGameToolAsync("architect.get_designator_state", "rimworld/get_designator_state", new { }, cancellationToken);
+        context.EnsureSucceeded(initialDesignatorState, "Reading initial architect state");
+        var originalGodMode = JsonNodeHelpers.ReadBoolean(initialDesignatorState.StructuredContent, "godMode") == true;
+
+        Exception? scenarioError = null;
+        try
+        {
+            var categories = await context.CallGameToolAsync("architect.list_categories", "rimworld/list_architect_categories", new
+            {
+                includeHidden = false,
+                includeEmpty = false
+            }, cancellationToken);
+            context.EnsureSucceeded(categories, "Listing architect categories");
+
+            var categoryArray = JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories");
+            var structureCategoryId = ResolveArchitectCategoryId(categoryArray, "Structure");
+
+            var designators = await context.CallGameToolAsync("architect.list_structure_designators", "rimworld/list_architect_designators", new
+            {
+                categoryId = structureCategoryId,
+                includeHidden = false
+            }, cancellationToken);
+            context.EnsureSucceeded(designators, "Listing structure designators");
+
+            var designatorArray = JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators");
+            var wallDesignatorId = ResolveArchitectBuildDesignatorId(designatorArray, "Wall");
+
+            var colonists = await context.CallGameToolAsync("architect.list_colonists", "rimworld/list_colonists", new
+            {
+                currentMapOnly = true
+            }, cancellationToken);
+            context.EnsureSucceeded(colonists, "Listing current-map colonists for architect placement");
+
+            await EnsureGodModeAsync(context, "architect.disable_god_mode", false, cancellationToken);
+
+            var blockedCells = new HashSet<string>(StringComparer.Ordinal);
+            var blueprintCell = await FindAcceptedArchitectPlacementCellAsync(
+                context,
+                "architect.find_blueprint_cell",
+                wallDesignatorId,
+                colonists.StructuredContent,
+                blockedCells,
+                cancellationToken);
+            blockedCells.Add(CellKey(blueprintCell.X, blueprintCell.Z));
+
+            var blueprintPlacement = await context.CallGameToolAsync("architect.apply_blueprint_wall", "rimworld/apply_architect_designator", new
+            {
+                designatorId = wallDesignatorId,
+                x = blueprintCell.X,
+                z = blueprintCell.Z,
+                keepSelected = false
+            }, cancellationToken);
+            context.EnsureSucceeded(blueprintPlacement, "Applying wall designator with god mode disabled");
+
+            var blueprintCellInfo = await context.CallGameToolAsync("architect.get_blueprint_cell_info", "rimworld/get_cell_info", new
+            {
+                x = blueprintCell.X,
+                z = blueprintCell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(blueprintCellInfo, $"Reading cell info for blueprint wall cell ({blueprintCell.X}, {blueprintCell.Z})");
+
+            AssertCellContainsBuildBlueprint(blueprintCellInfo.StructuredContent, "Wall");
+            AssertCellDoesNotContainSolidThing(blueprintCellInfo.StructuredContent, "Wall");
+
+            if (context.HumanVerificationEnabled)
+            {
+                var jumpBlueprintCell = await context.CallGameToolAsync("architect.jump_camera_to_blueprint_cell", "rimworld/jump_camera_to_cell", new
+                {
+                    x = blueprintCell.X,
+                    z = blueprintCell.Z
+                }, cancellationToken);
+                context.EnsureSucceeded(jumpBlueprintCell, $"Jumping camera to architect blueprint cell ({blueprintCell.X}, {blueprintCell.Z})");
+
+                await context.CaptureHumanVerificationScreenshotAsync(
+                    "human_verify.architect_blueprint_wall",
+                    "architect_blueprint_wall",
+                    "A wall placed with god mode disabled should remain a blueprint while the game is paused.",
+                    [
+                        "A translucent wooden wall blueprint should be visible near the center of the view.",
+                        "There should not be a fully built wooden wall at that exact target cell.",
+                        "This confirms the non-god-mode Architect path creates blueprints instead of instant structures."
+                    ],
+                    cancellationToken);
+            }
+
+            await EnsureGodModeAsync(context, "architect.enable_god_mode", true, cancellationToken);
+
+            var directCell = await FindAcceptedArchitectPlacementCellAsync(
+                context,
+                "architect.find_direct_cell",
+                wallDesignatorId,
+                colonists.StructuredContent,
+                blockedCells,
+                cancellationToken);
+            blockedCells.Add(CellKey(directCell.X, directCell.Z));
+
+            var directPlacement = await context.CallGameToolAsync("architect.apply_direct_wall", "rimworld/apply_architect_designator", new
+            {
+                designatorId = wallDesignatorId,
+                x = directCell.X,
+                z = directCell.Z,
+                keepSelected = false
+            }, cancellationToken);
+            context.EnsureSucceeded(directPlacement, "Applying wall designator with god mode enabled");
+
+            var directCellInfo = await context.CallGameToolAsync("architect.get_direct_cell_info", "rimworld/get_cell_info", new
+            {
+                x = directCell.X,
+                z = directCell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(directCellInfo, $"Reading cell info for direct wall cell ({directCell.X}, {directCell.Z})");
+
+            AssertCellContainsSolidThing(directCellInfo.StructuredContent, "Wall");
+            AssertCellDoesNotContainBuildBlueprint(directCellInfo.StructuredContent, "Wall");
+
+            if (context.HumanVerificationEnabled)
+            {
+                var jumpDirectCell = await context.CallGameToolAsync("architect.jump_camera_to_direct_cell", "rimworld/jump_camera_to_cell", new
+                {
+                    x = directCell.X,
+                    z = directCell.Z
+                }, cancellationToken);
+                context.EnsureSucceeded(jumpDirectCell, $"Jumping camera to architect direct-build cell ({directCell.X}, {directCell.Z})");
+
+                await context.CaptureHumanVerificationScreenshotAsync(
+                    "human_verify.architect_direct_wall",
+                    "architect_direct_wall",
+                    "A wall placed with god mode enabled should appear immediately as a finished structure.",
+                    [
+                        "A solid wooden wall should be visible near the center of the view.",
+                        "There should not be a translucent blueprint overlay at that exact target cell.",
+                        "This confirms the god-mode Architect path creates the finished structure directly."
+                    ],
+                    cancellationToken);
+            }
+
+            context.SetSummaryValue("structureCategoryId", structureCategoryId);
+            context.SetSummaryValue("wallDesignatorId", wallDesignatorId);
+            context.SetSummaryValue("blueprintCell", $"{blueprintCell.X},{blueprintCell.Z}");
+            context.SetSummaryValue("directCell", $"{directCell.X},{directCell.Z}");
+            context.SetScenarioData("architectCategories", new JsonArray(categoryArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("structureDesignators", new JsonArray(designatorArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("blueprintPlacement", blueprintPlacement.StructuredContent);
+            context.SetScenarioData("blueprintCellInfo", blueprintCellInfo.StructuredContent);
+            context.SetScenarioData("directPlacement", directPlacement.StructuredContent);
+            context.SetScenarioData("directCellInfo", directCellInfo.StructuredContent);
+        }
+        catch (Exception ex)
+        {
+            scenarioError = ex;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                await EnsureGodModeAsync(context, "architect.restore_god_mode", originalGodMode, cancellationToken);
+            }
+            catch (Exception restoreError)
+            {
+                if (scenarioError is null)
+                    throw;
+
+                context.Note($"Failed to restore god mode after architect wall placement scenario: {restoreError.Message}");
+            }
+        }
+
+        var observation = await observationWindow.CaptureAsync(
+            "architect.final_bridge_status",
+            "architect.collect_operation_events",
+            "architect.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
     private static string ResolveFirstColonistName(JsonNode? structuredContent)
     {
         var colonists = JsonNodeHelpers.ReadArray(structuredContent, "colonists");
@@ -907,6 +1095,28 @@ internal static class SmokeScenarioCatalog
         throw new InvalidOperationException($"Could not resolve a current-map position for colonist '{pawnName}'.");
     }
 
+    private static (int X, int Z) ResolveColonistSearchOrigin(JsonNode? structuredContent)
+    {
+        var colonists = JsonNodeHelpers.ReadArray(structuredContent, "colonists");
+        var positions = colonists
+            .Select(colonist =>
+            {
+                var x = JsonNodeHelpers.ReadInt32(colonist, "position", "x");
+                var z = JsonNodeHelpers.ReadInt32(colonist, "position", "z");
+                return x.HasValue && z.HasValue ? (x.Value, z.Value) : ((int X, int Z)?)null;
+            })
+            .Where(position => position.HasValue)
+            .Select(position => position!.Value)
+            .ToList();
+
+        if (positions.Count == 0)
+            throw new InvalidOperationException("Could not resolve any colonist positions for architect placement probing.");
+
+        return (
+            (int)Math.Round(positions.Average(position => position.X)),
+            (int)Math.Round(positions.Average(position => position.Z)));
+    }
+
     private static IEnumerable<(int X, int Z)> BuildNearbyCells(int x, int z)
     {
         yield return (x + 1, z);
@@ -917,10 +1127,139 @@ internal static class SmokeScenarioCatalog
         yield return (x, z + 2);
     }
 
+    private static IEnumerable<(int X, int Z)> BuildArchitectProbeCells((int X, int Z) origin)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var radius = 6; radius <= 18; radius += 2)
+        {
+            for (var x = origin.X - radius; x <= origin.X + radius; x++)
+            {
+                if (seen.Add(CellKey(x, origin.Z - radius)))
+                    yield return (x, origin.Z - radius);
+                if (seen.Add(CellKey(x, origin.Z + radius)))
+                    yield return (x, origin.Z + radius);
+            }
+
+            for (var z = origin.Z - radius + 1; z <= origin.Z + radius - 1; z++)
+            {
+                if (seen.Add(CellKey(origin.X - radius, z)))
+                    yield return (origin.X - radius, z);
+                if (seen.Add(CellKey(origin.X + radius, z)))
+                    yield return (origin.X + radius, z);
+            }
+        }
+    }
+
     private static bool SaveListContains(JsonNode? structuredContent, string saveName)
     {
         var saves = JsonNodeHelpers.ReadArray(structuredContent, "saves");
         return saves.Any(save => string.Equals(JsonNodeHelpers.ReadString(save, "name"), saveName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string ResolveArchitectCategoryId(IReadOnlyList<JsonNode?> categories, string preferredDefName)
+    {
+        foreach (var category in categories)
+        {
+            var defName = JsonNodeHelpers.ReadString(category, "categoryDefName");
+            if (string.Equals(defName, preferredDefName, StringComparison.Ordinal))
+                return JsonNodeHelpers.ReadString(category, "id");
+        }
+
+        throw new InvalidOperationException($"Could not find Architect category '{preferredDefName}'.");
+    }
+
+    private static string ResolveArchitectBuildDesignatorId(IReadOnlyList<JsonNode?> designators, string buildableDefName)
+    {
+        foreach (var designator in designators)
+        {
+            var defName = JsonNodeHelpers.ReadString(designator, "buildableDefName");
+            if (string.Equals(defName, buildableDefName, StringComparison.Ordinal))
+                return JsonNodeHelpers.ReadString(designator, "id");
+        }
+
+        throw new InvalidOperationException($"Could not find Architect build designator '{buildableDefName}'.");
+    }
+
+    private static async Task EnsureGodModeAsync(SmokeScenarioContext context, string stepName, bool enabled, CancellationToken cancellationToken)
+    {
+        var setGodMode = await context.CallGameToolAsync(stepName, "rimworld/set_god_mode", new
+        {
+            enabled
+        }, cancellationToken);
+        context.EnsureSucceeded(setGodMode, $"Setting god mode to '{enabled}'");
+
+        if (JsonNodeHelpers.ReadBoolean(setGodMode.StructuredContent, "godMode") != enabled)
+            throw new InvalidOperationException($"God mode did not reach the requested value '{enabled}'.");
+    }
+
+    private static async Task<(int X, int Z)> FindAcceptedArchitectPlacementCellAsync(
+        SmokeScenarioContext context,
+        string stepPrefix,
+        string designatorId,
+        JsonNode? colonistsStructuredContent,
+        HashSet<string> blockedCells,
+        CancellationToken cancellationToken)
+    {
+        var origin = ResolveColonistSearchOrigin(colonistsStructuredContent);
+        var attempt = 0;
+
+        foreach (var candidateCell in BuildArchitectProbeCells(origin))
+        {
+            if (!blockedCells.Add(CellKey(candidateCell.X, candidateCell.Z)))
+                continue;
+
+            attempt++;
+            var dryRun = await context.CallGameToolAsync($"{stepPrefix}.dry_run_{attempt}", "rimworld/apply_architect_designator", new
+            {
+                designatorId,
+                x = candidateCell.X,
+                z = candidateCell.Z,
+                dryRun = true,
+                keepSelected = false
+            }, cancellationToken);
+            if (JsonNodeHelpers.ReadBoolean(dryRun.StructuredContent, "operation", "Success") != true)
+                throw new InvalidOperationException($"Architect placement probe failed for cell ({candidateCell.X}, {candidateCell.Z}). {dryRun.Message}".Trim());
+
+            if (JsonNodeHelpers.ReadInt32(dryRun.StructuredContent, "acceptedCellCount").GetValueOrDefault() <= 0)
+                continue;
+
+            return candidateCell;
+        }
+
+        throw new InvalidOperationException("Could not find an accepted architect placement cell for the wall designator.");
+    }
+
+    private static void AssertCellContainsBuildBlueprint(JsonNode? cellInfo, string buildDefName)
+    {
+        var blueprints = JsonNodeHelpers.ReadArray(cellInfo, "cell", "blueprintBuildDefs");
+        if (!blueprints.Any(item => string.Equals(JsonNodeHelpers.ReadString(item), buildDefName, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"Expected blueprint build def '{buildDefName}' was not present in the cell info response.");
+    }
+
+    private static void AssertCellDoesNotContainBuildBlueprint(JsonNode? cellInfo, string buildDefName)
+    {
+        var blueprints = JsonNodeHelpers.ReadArray(cellInfo, "cell", "blueprintBuildDefs");
+        if (blueprints.Any(item => string.Equals(JsonNodeHelpers.ReadString(item), buildDefName, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"Blueprint build def '{buildDefName}' was still present when the scenario expected a direct build.");
+    }
+
+    private static void AssertCellContainsSolidThing(JsonNode? cellInfo, string thingDefName)
+    {
+        var solidThings = JsonNodeHelpers.ReadArray(cellInfo, "cell", "solidThingDefs");
+        if (!solidThings.Any(item => string.Equals(JsonNodeHelpers.ReadString(item), thingDefName, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"Expected solid thing def '{thingDefName}' was not present in the cell info response.");
+    }
+
+    private static void AssertCellDoesNotContainSolidThing(JsonNode? cellInfo, string thingDefName)
+    {
+        var solidThings = JsonNodeHelpers.ReadArray(cellInfo, "cell", "solidThingDefs");
+        if (solidThings.Any(item => string.Equals(JsonNodeHelpers.ReadString(item), thingDefName, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"Solid thing def '{thingDefName}' was present when the scenario expected only a blueprint.");
+    }
+
+    private static string CellKey(int x, int z)
+    {
+        return x.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," + z.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string ResolveDebugActionRootPath(IReadOnlyList<JsonNode?> roots, string preferredPath)

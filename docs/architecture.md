@@ -829,4 +829,4 @@ Tests:
 
 ## Immediate Next Step
 
-The next implementation step should be explicit god-mode control plus Architect/designator discovery and application, followed by the script runner. The debug dialog is now the right internal seam for `Actions/tools`, `Settings`, and `Output`; the fastest remaining power increase comes from mapping `DesignationCategoryDef`, `DesignatorManager`, and designator application so the bridge can place real structures and blueprints, especially in god mode, before a later batch/script layer starts composing those actions.
+The next implementation step should expand the Architect/designator seam beyond the first wall-placement slice: dropdown-heavy categories, zone and area designators, richer drag semantics, and eventually a script layer that composes those higher-value actions. The bridge now has the right internal seams for both debug actions and build/designation workflows; the next power gain comes from widening the set of meaningful map mutations before the batch/script runner turns those capabilities into reusable fixture builders.

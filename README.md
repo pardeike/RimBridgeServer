@@ -11,7 +11,7 @@ This mod creates a connection point (called a "server") inside RimWorld. Other p
 - Check if the game is running
 - Pause or unpause the game
 - Get information about the current game
-- Inspect colonists, selection, camera, saves, screenshots, and screen-space UI targets
+- Inspect colonists, selection, camera, saves, screenshots, screen-space UI targets, and Architect designators
 - Open and execute context-menu actions for debugging mods
 
 This is especially helpful for:
@@ -25,7 +25,7 @@ This is especially helpful for:
 - **Safe**: Only accepts connections from your own computer
 - **Simple**: Uses a standard protocol that many tools understand
 - **Compatible**: Works with RimWorld 1.6
-- **Debuggable**: Exposes context-menu and screenshot tools that are useful for mod repro cases
+- **Debuggable**: Exposes debug-action, Architect, context-menu, and screenshot tools that are useful for mod repro cases
 
 ## How to get started
 
@@ -80,6 +80,13 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/get_debug_action`** - Get one debug node with metadata such as tab, toggle state, and execution mode
 - **`rimworld/execute_debug_action`** - Execute a directly supported debug action and return captured side effects such as logs and opened windows
 - **`rimworld/set_debug_setting`** - Set a debug settings toggle to a deterministic on/off state by stable path
+- **`rimworld/get_designator_state`** - Get the current Architect/designator selection state, including god mode and the selected designator
+- **`rimworld/set_god_mode`** - Enable or disable RimWorld god mode deterministically
+- **`rimworld/list_architect_categories`** - List the visible Architect categories with stable ids
+- **`rimworld/list_architect_designators`** - List Architect designators for one category, flattening dropdown widgets into actionable child ids
+- **`rimworld/select_architect_designator`** - Select an Architect designator by stable id without relying on foreground input
+- **`rimworld/apply_architect_designator`** - Apply an Architect designator to one cell or rectangle, with optional dry-run validation
+- **`rimworld/get_cell_info`** - Inspect one map cell, including blueprints, frames, solid things, and designations
 - **`rimworld/get_ui_state`** - Inspect the current RimWorld window stack and UI/input state
 - **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
 - **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
@@ -128,6 +135,12 @@ Your external program can send these commands to RimBridgeServer:
 `rimworld/execute_debug_action` is intentionally side-effect aware. Instead of pretending every debug action has a typed function return, the bridge captures what actually happened around the execution: new log entries, window opens/closes, and before/after game state snapshots. This makes the `Output` tab useful without bespoke wrappers for each individual output command.
 
 `rimworld/set_debug_setting` builds deterministic semantics on top of the same graph. Settings nodes already expose their current `on` state and a direct toggle action, so the bridge can move them to an explicit target value and report whether anything changed.
+
+### Architect and god-mode mapping
+
+`rimworld/list_architect_categories` and `rimworld/list_architect_designators` expose the same build/designation surface a player sees in the Architect menu, but with stable ids that are usable from automation. The bridge keeps the category structure, flattens dropdown widgets into actionable child ids, and reports build-specific metadata such as `buildableDefName` and `stuffDefName`.
+
+`rimworld/set_god_mode` and `rimworld/apply_architect_designator` make the important dev workflow deterministic. With god mode disabled, build designators create blueprints; with god mode enabled, the same designator can place the finished structure directly. `rimworld/get_cell_info` exists specifically so tests can verify those outcomes without OCR or pixel heuristics.
 
 ### Example workflow for Achtung Issue #95
 
@@ -244,6 +257,14 @@ The `screenshot-capture` scenario covers the current screenshot path:
 - verifies that the screenshot response includes the current screen-target snapshot
 - captures only the screenshot action's operation and log window
 
+The `architect-wall-placement` scenario covers the first Architect/designator seam:
+
+- ensures a playable game exists
+- discovers the `Structure` category and the `Wall` build designator by stable ids
+- disables god mode and verifies that placing a wall creates a `Blueprint_Build` for `Wall`
+- enables god mode and verifies that placing the same wall creates the solid `Wall` building directly
+- restores the original god-mode state after the scenario finishes
+
 The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.
 
 The runner looks for `gabs` on `PATH`, honors `GABS_BIN`, and also auto-detects a sibling checkout at `../GABS/gabs`. Use `--config-dir` or `GABS_CONFIG_DIR` if you need to point it at a non-default GABS configuration directory.
@@ -267,6 +288,7 @@ The current human-verification set covers:
 - `screen-target-click-roundtrip` before dismiss, before option click, and after the option click
 - `screen-target-clip` with a cropped image focused on one real actionable target
 - `screenshot-capture` by exporting the captured screenshot itself with a matching explanation file
+- `architect-wall-placement` with one screenshot showing the blueprint wall state and one showing the direct-build wall state
 
 The context-menu scenarios intentionally avoid creating empty float menus during target probing. Earlier harness revisions could emit RimWorld's red `Created FloatMenu with no options. Closing.` error while searching for a valid menu target; that probing path now checks for zero options before constructing the menu.
 

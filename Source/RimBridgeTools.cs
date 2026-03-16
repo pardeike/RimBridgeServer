@@ -125,6 +125,61 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(path), path), (nameof(enabled), enabled)));
     }
 
+    [Tool("rimworld/get_designator_state", Description = "Get the current Architect/designator selection state, including god mode and the selected designator")]
+    public object GetDesignatorState()
+    {
+        return InvokeAlias();
+    }
+
+    [Tool("rimworld/set_god_mode", Description = "Enable or disable RimWorld god mode deterministically")]
+    public object SetGodMode([ToolParameter(Description = "True to enable god mode, false to disable it")] bool enabled = true)
+    {
+        return InvokeAlias(Arguments((nameof(enabled), enabled)));
+    }
+
+    [Tool("rimworld/list_architect_categories", Description = "List RimWorld Architect categories using stable category ids")]
+    public object ListArchitectCategories(
+        [ToolParameter(Description = "Include categories that are currently hidden")] bool includeHidden = false,
+        [ToolParameter(Description = "Include categories even if they currently expose no designators")] bool includeEmpty = false)
+    {
+        return InvokeAlias(Arguments((nameof(includeHidden), includeHidden), (nameof(includeEmpty), includeEmpty)));
+    }
+
+    [Tool("rimworld/list_architect_designators", Description = "List Architect designators for one category, flattening dropdown widgets into actionable child designators")]
+    public object ListArchitectDesignators(
+        [ToolParameter(Description = "Stable category id from rimworld/list_architect_categories or the raw category defName")] string categoryId,
+        [ToolParameter(Description = "Include designators that are currently hidden")] bool includeHidden = false)
+    {
+        return InvokeAlias(Arguments((nameof(categoryId), categoryId), (nameof(includeHidden), includeHidden)));
+    }
+
+    [Tool("rimworld/select_architect_designator", Description = "Select an Architect designator by stable id without relying on foreground UI interaction")]
+    public object SelectArchitectDesignator([ToolParameter(Description = "Stable designator id returned by rimworld/list_architect_designators")] string designatorId)
+    {
+        return InvokeAlias(Arguments((nameof(designatorId), designatorId)));
+    }
+
+    [Tool("rimworld/apply_architect_designator", Description = "Apply an Architect designator to one cell or a rectangle, with optional dry-run validation")]
+    public object ApplyArchitectDesignator(
+        [ToolParameter(Description = "Stable designator id returned by rimworld/list_architect_designators")] string designatorId,
+        [ToolParameter(Description = "Target cell x coordinate")] int x,
+        [ToolParameter(Description = "Target cell z coordinate")] int z,
+        [ToolParameter(Description = "Rectangle width in cells starting at x/z")] int width = 1,
+        [ToolParameter(Description = "Rectangle height in cells starting at x/z")] int height = 1,
+        [ToolParameter(Description = "Validate placement without mutating the map")] bool dryRun = false,
+        [ToolParameter(Description = "Keep the designator selected after the call completes")] bool keepSelected = true)
+    {
+        return InvokeAlias(Arguments((nameof(designatorId), designatorId), (nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(dryRun), dryRun), (nameof(keepSelected), keepSelected)));
+    }
+
+    [Tool("rimworld/get_cell_info", Description = "Inspect one map cell, including things, blueprints, frames, and designations")]
+    public object GetCellInfo(
+        [ToolParameter(Description = "Target cell x coordinate")] int x,
+        [ToolParameter(Description = "Target cell z coordinate")] int z)
+    {
+        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z)));
+    }
+
     [Tool("rimworld/get_ui_state", Description = "Get the current RimWorld window stack and input state for background-safe UI automation")]
     public object GetUiState()
     {

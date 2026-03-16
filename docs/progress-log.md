@@ -427,6 +427,42 @@ Next:
 
 - Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots
 
+## 2026-03-16 - Step A15 - Architect and God-Mode Designator Service
+
+Status:
+
+- completed
+
+Completed:
+
+- added the shared Architect id contract in [`ArchitectDesignatorIds.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/ArchitectDesignatorIds.cs) with focused coverage in [`ArchitectDesignatorIdsTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/ArchitectDesignatorIdsTests.cs) so categories and designators now have stable ids independent of UI text formatting
+- added [`ArchitectCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ArchitectCapabilityModule.cs), registered it in [`RimBridgeCapabilities.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeCapabilities.cs), and exposed the new aliases in [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs)
+- added [`RimWorldArchitect.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldArchitect.cs) as the new runtime seam over `DesignationCategoryDef`, `DesignatorManager`, `DebugSettings.godMode`, `Blueprint_Build`, and `Frame`
+- implemented `rimworld/get_designator_state`, `rimworld/set_god_mode`, `rimworld/list_architect_categories`, `rimworld/list_architect_designators`, `rimworld/select_architect_designator`, `rimworld/apply_architect_designator`, and `rimworld/get_cell_info`
+- kept the Architect surface map-context aware so entry-scene probes return clean state without touching `Find.DesignatorManager`, while map-only operations fail with direct messages instead of leaking RimWorld exceptions
+- extended [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) and [`SmokeScenarioCatalogTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/SmokeScenarioCatalogTests.cs) with the new real-instance `architect-wall-placement` scenario
+- made that scenario discover the `Structure` category and `Wall` designator by stable ids, prove blueprint placement with god mode off, prove direct structure placement with god mode on, verify both cells through `rimworld/get_cell_info`, and restore the original god-mode state afterward
+- extended the human-verification flow so the architect scenario now exports Desktop screenshots and same-name `.txt` notes for both the blueprint and direct-build wall states
+- fixed a real harness bug in the architect cell-search probe by treating dry-run rejections as expected search results when the underlying operation completed cleanly
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --scenario architect-wall-placement --game-id rimworld --stop-after`
+- `scripts/live-smoke.sh --scenario architect-wall-placement --game-id rimworld --human-verify --stop-after`
+
+Notes:
+
+- the first live probe surfaced two legitimate edge cases that were fixed in this increment: `get_designator_state` originally enumerated Architect categories from the main menu, and selection-state reads originally touched `Find.DesignatorManager` outside map UI context
+- the initial live scenario failure was in the harness, not the bridge surface: dry-run placement rejections are normal search results and should not be treated like capability failures as long as the operation envelope itself reports success
+- the current architect payload already gives the AI enough structure to find the right category and build command without label heuristics, because build designators expose `buildableDefName`, `stuffDefName`, and stable ids
+- the live verification proved the core user-facing distinction we care about right now: `rimworld/apply_architect_designator` creates a `Blueprint_Build` for `Wall` when god mode is off and a solid `Wall` building when god mode is on
+
+Next:
+
+- Step A16: widen the Architect/designator surface into dropdown-heavy categories, zone and area designators, and richer drag semantics before returning to the batch/script layer
+
 ## 2026-03-16 - Step A14 - Debug Menu Graph, Output Effects, and Settings Toggles
 
 Status:
