@@ -145,6 +145,8 @@ The new UI input helpers are intentionally semantic. `rimworld/press_accept`, `r
 
 `rimworld/get_screen_targets` and the default `includeTargets: true` behavior on `rimworld/take_screenshot` expose a structured screen-space snapshot instead of forcing clients to infer UI geometry from logs or raw pixels. The current payload includes live window rects, selection, camera state, active float-menu option rects, and actionable target ids such as `dismissTargetId` and context-menu option `targetId` values. Automated screenshot calls also default to `suppressMessage: true`, which hides RimWorld's upper-left screenshot toast only for the duration of that tool-driven capture.
 
+`rimworld/take_screenshot` also supports target-relative clipping through `clipTargetId` and `clipPadding`. Pass a target id returned by `rimworld/get_screen_targets` and the bridge will write a cropped screenshot artifact plus `clipRect` metadata, while still reporting the original full-frame `sourcePath` for traceability.
+
 `rimworld/click_screen_target` is the first background-safe click seam on top of that metadata. It does not simulate desktop mouse input; instead it resolves known target ids in-process and dispatches the correct direct RimWorld action. The first supported targets are dismissible windows and context-menu options.
 
 For test automation, prefer the explicit wait tools over blind sleeps. `rimbridge/wait_for_game_loaded`, `rimbridge/wait_for_long_event_idle`, and `rimbridge/wait_for_operation` provide bounded waits with state snapshots so scripts can move quickly when the game is ready and fail with useful diagnostics when it is not.
@@ -204,6 +206,14 @@ The `screen-target-click-roundtrip` scenario exercises the first background-safe
 - clicks the float-menu dismiss target id through `rimworld/click_screen_target`
 - reopens the menu, clicks a direct option target id, and verifies the reported target/action metadata
 
+The `screen-target-clip` scenario exercises target-relative screenshot clipping:
+
+- ensures a playable game exists and opens a real context menu with an executable option
+- reads a real option `targetId` and `rect` from `rimworld/get_screen_targets`
+- captures a screenshot clipped to that option target with padding
+- verifies that the clipped PNG dimensions match the reported `clipRect`
+- keeps the original full-frame screenshot as `sourcePath` for comparison and debugging
+
 The `save-load-roundtrip` scenario covers the real save/load lifecycle:
 
 - ensures a playable game exists
@@ -242,6 +252,7 @@ The current human-verification set covers:
 - `save-load-roundtrip` after the colony has reloaded
 - `context-menu-cancel-roundtrip` with the menu open and after semantic cancel input
 - `screen-target-click-roundtrip` before dismiss, before option click, and after the option click
+- `screen-target-clip` with a cropped image focused on one real actionable target
 - `screenshot-capture` by exporting the captured screenshot itself with a matching explanation file
 
 The context-menu scenarios intentionally avoid creating empty float menus during target probing. Earlier harness revisions could emit RimWorld's red `Created FloatMenu with no options. Closing.` error while searching for a valid menu target; that probing path now checks for zero options before constructing the menu.

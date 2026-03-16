@@ -8,6 +8,17 @@ namespace RimBridgeServer;
 
 internal static class RimWorldTargeting
 {
+    internal sealed class ScreenTargetClipArea
+    {
+        public string TargetId { get; set; } = string.Empty;
+
+        public string TargetKind { get; set; } = string.Empty;
+
+        public string Label { get; set; } = string.Empty;
+
+        public UiRectSnapshot Rect { get; set; } = new();
+    }
+
     public static object GetScreenTargetsResponse()
     {
         return new
@@ -44,6 +55,30 @@ internal static class RimWorldTargeting
         };
     }
 
+    public static bool TryResolveClipArea(string targetId, out ScreenTargetClipArea clipArea, out string error)
+    {
+        clipArea = null;
+        error = string.Empty;
+
+        if (!ScreenTargetIds.TryParse(targetId, out var target))
+        {
+            error = $"Target id '{targetId}' is not a supported screen target identifier.";
+            return false;
+        }
+
+        switch (target.Kind)
+        {
+            case ScreenTargetKind.Window:
+            case ScreenTargetKind.WindowDismiss:
+                return TryResolveWindowClipArea(target, out clipArea, out error);
+            case ScreenTargetKind.ContextMenuOption:
+                return TryResolveContextMenuOptionClipArea(target, out clipArea, out error);
+            default:
+                error = $"Target id '{targetId}' is not clip-capable.";
+                return false;
+        }
+    }
+
     private static object CreateContextMenuPayload()
     {
         var snapshot = RimBridgeContextMenus.Current;
@@ -57,18 +92,7 @@ internal static class RimWorldTargeting
         var menuWindowType = menu.GetType().FullName ?? menu.GetType().Name;
         var menuWindowTargetId = ScreenTargetIds.CreateWindowTargetId(menu.ID, menuWindowType);
         var dismissTargetId = ScreenTargetIds.CreateWindowDismissTargetId(menu.ID, menuWindowType);
-        var optionRects = FloatMenuTargetLayoutCalculator.Compute(new FloatMenuTargetLayoutRequest
-        {
-            WindowX = menu.windowRect.x,
-            WindowY = menu.windowRect.y,
-            Margin = menu.Margin,
-            ColumnWidth = menu.ColumnWidth,
-            ColumnCount = Math.Max(menu.ColumnCount, 1),
-            MaxViewHeight = menu.MaxViewHeight,
-            OptionSpacing = FloatMenu.OptionSpacing,
-            TitleHeight = 0f,
-            OptionHeights = snapshot.Options.Select(option => option.RequiredHeight).ToList()
-        });
+        var optionRects = ComputeContextMenuOptionRects(menu, snapshot);
 
         var options = snapshot.Options.Select((option, index) =>
         {
@@ -183,5 +207,95 @@ internal static class RimWorldTargeting
             || window.CloseOnCancel
             || string.Equals(window.Layer, "Dialog", StringComparison.Ordinal)
             || string.Equals(window.Layer, "Super", StringComparison.Ordinal);
+    }
+
+    private static bool TryResolveWindowClipArea(ScreenTargetReference target, out ScreenTargetClipArea clipArea, out string error)
+    {
+        clipArea = null;
+        error = string.Empty;
+
+        var uiState = RimWorldInput.GetUiState();
+        var window = uiState.Windows.LastOrDefault(candidate =>
+            candidate.Id == target.WindowId
+            && string.Equals(candidate.Type, target.WindowType, StringComparison.Ordinal));
+        if (window == null)
+        {
+            error = $"Could not find an open window matching target id '{target.TargetId}'.";
+            return false;
+        }
+
+        clipArea = new ScreenTargetClipArea
+        {
+            TargetId = target.TargetId,
+            TargetKind = target.Kind == ScreenTargetKind.WindowDismiss ? "window_dismiss" : "window",
+            Label = string.IsNullOrWhiteSpace(window.Title) ? window.Type : window.Title,
+            Rect = new UiRectSnapshot
+            {
+                X = window.Rect.X,
+                Y = window.Rect.Y,
+                Width = window.Rect.Width,
+                Height = window.Rect.Height
+            }
+        };
+        return true;
+    }
+
+    private static bool TryResolveContextMenuOptionClipArea(ScreenTargetReference target, out ScreenTargetClipArea clipArea, out string error)
+    {
+        clipArea = null;
+        error = string.Empty;
+
+        var snapshot = RimBridgeContextMenus.Current;
+        if (snapshot?.Menu == null || !ReferenceEquals(Find.WindowStack?.FloatMenu, snapshot.Menu))
+        {
+            error = $"Could not find an open context menu matching target id '{target.TargetId}'.";
+            return false;
+        }
+
+        if (snapshot.Id != target.MenuId)
+        {
+            error = $"The active context menu does not match target id '{target.TargetId}'.";
+            return false;
+        }
+
+        var optionRects = ComputeContextMenuOptionRects(snapshot.Menu, snapshot);
+        if (target.OptionIndex <= 0 || target.OptionIndex > optionRects.Count || target.OptionIndex > snapshot.Options.Count)
+        {
+            error = $"Context menu option target '{target.TargetId}' is out of range.";
+            return false;
+        }
+
+        var rect = optionRects[target.OptionIndex - 1];
+        var option = snapshot.Options[target.OptionIndex - 1];
+        clipArea = new ScreenTargetClipArea
+        {
+            TargetId = target.TargetId,
+            TargetKind = "context_menu_option",
+            Label = option.Label ?? string.Empty,
+            Rect = new UiRectSnapshot
+            {
+                X = rect.X,
+                Y = rect.Y,
+                Width = rect.Width,
+                Height = rect.Height
+            }
+        };
+        return true;
+    }
+
+    private static IReadOnlyList<FloatMenuTargetRect> ComputeContextMenuOptionRects(FloatMenu menu, ContextMenuSnapshot snapshot)
+    {
+        return FloatMenuTargetLayoutCalculator.Compute(new FloatMenuTargetLayoutRequest
+        {
+            WindowX = menu.windowRect.x,
+            WindowY = menu.windowRect.y,
+            Margin = menu.Margin,
+            ColumnWidth = menu.ColumnWidth,
+            ColumnCount = Math.Max(menu.ColumnCount, 1),
+            MaxViewHeight = menu.MaxViewHeight,
+            OptionSpacing = FloatMenu.OptionSpacing,
+            TitleHeight = 0f,
+            OptionHeights = snapshot.Options.Select(option => option.RequiredHeight).ToList()
+        });
     }
 }

@@ -5,6 +5,7 @@ SCENARIOS=(
   "save-load-roundtrip"
   "context-menu-cancel-roundtrip"
   "screen-target-click-roundtrip"
+  "screen-target-clip"
   "screenshot-capture"
 )
 

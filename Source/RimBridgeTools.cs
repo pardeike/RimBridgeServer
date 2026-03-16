@@ -214,9 +214,11 @@ public class RimBridgeTools
     public object TakeScreenshot(
         [ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null,
         [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true,
-        [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true)
+        [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true,
+        [ToolParameter(Description = "Optional target id from rimworld/get_screen_targets to crop around")] string clipTargetId = null,
+        [ToolParameter(Description = "Logical screen-pixel padding to include around the clip target")] int clipPadding = 8)
     {
-        return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage)));
+        return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(clipTargetId), clipTargetId), (nameof(clipPadding), clipPadding)));
     }
 
     [Tool("rimworld/get_achtung_state", Description = "Get Achtung-specific debug state when the mod is loaded")]

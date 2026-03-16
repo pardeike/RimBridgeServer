@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using UnityEngine;
+using RimBridgeServer.Core;
 using Verse;
 
 namespace RimBridgeServer;
@@ -14,9 +15,34 @@ internal sealed class ViewCapabilityModule
     {
         public string ExpectedPath { get; set; } = string.Empty;
 
+        public string OutputPath { get; set; } = string.Empty;
+
+        public string OutputFileName { get; set; } = string.Empty;
+
         public object ScreenTargets { get; set; }
 
         public bool RestoreSuppressMessage { get; set; }
+
+        public string ErrorMessage { get; set; } = string.Empty;
+
+        public string ClipTargetId { get; set; } = string.Empty;
+
+        public string ClipTargetKind { get; set; } = string.Empty;
+
+        public string ClipTargetLabel { get; set; } = string.Empty;
+
+        public int ClipPadding { get; set; }
+
+        public UiRectSnapshot ClipRect { get; set; }
+    }
+
+    private sealed class ScreenshotCropResult
+    {
+        public bool Success { get; set; }
+
+        public ScreenshotPixelRect ClipRect { get; set; }
+
+        public string ErrorMessage { get; set; } = string.Empty;
     }
 
     public object GetCameraState()
@@ -124,24 +150,57 @@ internal sealed class ViewCapabilityModule
         };
     }
 
-    public object TakeScreenshot(string fileName = null, bool includeTargets = true, bool suppressMessage = true)
+    public object TakeScreenshot(string fileName = null, bool includeTargets = true, bool suppressMessage = true, string clipTargetId = null, int clipPadding = 8)
     {
         var safeName = RimWorldState.SanitizeName(fileName, "rimbridge");
         var capture = RimBridgeMainThread.Invoke(() =>
         {
             var screenTargets = includeTargets ? RimWorldTargeting.CreateScreenTargetsPayload() : null;
+            RimWorldTargeting.ScreenTargetClipArea clipArea = null;
+            if (!string.IsNullOrWhiteSpace(clipTargetId)
+                && !RimWorldTargeting.TryResolveClipArea(clipTargetId, out clipArea, out var clipError))
+            {
+                return new PendingScreenshotCapture
+                {
+                    ErrorMessage = clipError
+                };
+            }
+
             var restoreSuppressMessage = ScreenshotTaker.suppressMessage;
             if (suppressMessage)
                 ScreenshotTaker.suppressMessage = true;
 
             ScreenshotTaker.TakeNonSteamShot(safeName);
+            var outputFileName = string.IsNullOrWhiteSpace(clipTargetId) ? safeName : safeName + "__clip";
             return new PendingScreenshotCapture
             {
                 ExpectedPath = Path.Combine(GenFilePaths.ScreenshotFolderPath, safeName + ".png"),
+                OutputPath = Path.Combine(GenFilePaths.ScreenshotFolderPath, outputFileName + ".png"),
+                OutputFileName = outputFileName,
                 ScreenTargets = screenTargets,
-                RestoreSuppressMessage = restoreSuppressMessage
+                RestoreSuppressMessage = restoreSuppressMessage,
+                ClipTargetId = clipTargetId ?? string.Empty,
+                ClipTargetKind = clipArea?.TargetKind ?? string.Empty,
+                ClipTargetLabel = clipArea?.Label ?? string.Empty,
+                ClipPadding = Math.Max(clipPadding, 0),
+                ClipRect = clipArea?.Rect == null ? null : new UiRectSnapshot
+                {
+                    X = clipArea.Rect.X,
+                    Y = clipArea.Rect.Y,
+                    Width = clipArea.Rect.Width,
+                    Height = clipArea.Rect.Height
+                }
             };
         }, timeoutMs: 5000);
+
+        if (!string.IsNullOrWhiteSpace(capture.ErrorMessage))
+        {
+            return new
+            {
+                success = false,
+                message = capture.ErrorMessage
+            };
+        }
 
         try
         {
@@ -153,15 +212,50 @@ internal sealed class ViewCapabilityModule
                     var info = new FileInfo(capture.ExpectedPath);
                     if (info.Length > 0)
                     {
+                        ScreenshotPixelRect? clipRect = null;
+                        string clipPath = null;
+                        if (!string.IsNullOrWhiteSpace(capture.ClipTargetId))
+                        {
+                            if (!TryCropScreenshot(capture.ExpectedPath, capture.ClipRect, capture.OutputPath, capture.ClipTargetId, capture.ClipPadding, out var clippedRect, out var clipError))
+                            {
+                                return new
+                                {
+                                    success = false,
+                                    message = clipError,
+                                    path = capture.ExpectedPath,
+                                    sourcePath = capture.ExpectedPath,
+                                    fileName = safeName
+                                };
+                            }
+
+                            clipRect = clippedRect;
+                            clipPath = capture.OutputPath;
+                            info = new FileInfo(clipPath);
+                        }
+
                         return new
                         {
                             success = true,
-                            path = capture.ExpectedPath,
-                            fileName = safeName,
+                            path = clipPath ?? capture.ExpectedPath,
+                            sourcePath = string.IsNullOrWhiteSpace(clipPath) ? null : capture.ExpectedPath,
+                            fileName = string.IsNullOrWhiteSpace(clipPath) ? safeName : capture.OutputFileName,
+                            requestedFileName = safeName,
                             screenshotFolder = GenFilePaths.ScreenshotFolderPath,
                             sizeBytes = info.Length,
                             capturedAtUtc = DateTime.UtcNow,
                             suppressMessage,
+                            clipped = clipRect.HasValue,
+                            clipTargetId = string.IsNullOrWhiteSpace(capture.ClipTargetId) ? null : capture.ClipTargetId,
+                            clipTargetKind = string.IsNullOrWhiteSpace(capture.ClipTargetKind) ? null : capture.ClipTargetKind,
+                            clipTargetLabel = string.IsNullOrWhiteSpace(capture.ClipTargetLabel) ? null : capture.ClipTargetLabel,
+                            clipPadding = clipRect.HasValue ? capture.ClipPadding : 0,
+                            clipRect = clipRect.HasValue ? new
+                            {
+                                x = clipRect.Value.X,
+                                y = clipRect.Value.Y,
+                                width = clipRect.Value.Width,
+                                height = clipRect.Value.Height
+                            } : null,
                             screenTargets = capture.ScreenTargets
                         };
                     }
@@ -188,5 +282,94 @@ internal sealed class ViewCapabilityModule
                 }, timeoutMs: 5000);
             }
         }
+    }
+
+    private static bool TryCropScreenshot(
+        string sourcePath,
+        UiRectSnapshot clipArea,
+        string outputPath,
+        string clipTargetId,
+        int clipPadding,
+        out ScreenshotPixelRect clipRect,
+        out string error)
+    {
+        if (!File.Exists(sourcePath))
+        {
+            clipRect = default(ScreenshotPixelRect);
+            error = $"Screenshot source '{sourcePath}' does not exist.";
+            return false;
+        }
+
+        var cropResult = RimBridgeMainThread.Invoke(() =>
+        {
+            if (clipArea == null)
+            {
+                return new ScreenshotCropResult
+                {
+                    Success = false,
+                    ErrorMessage = $"Target id '{clipTargetId}' did not resolve to a valid clip rect."
+                };
+            }
+
+            var bytes = File.ReadAllBytes(sourcePath);
+            var sourceTexture = new Texture2D(2, 2, TextureFormat.ARGB32, mipChain: false);
+            Texture2D clippedTexture = null;
+
+            try
+            {
+                if (!sourceTexture.LoadImage(bytes))
+                {
+                    return new ScreenshotCropResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"RimWorld could not decode screenshot '{sourcePath}'."
+                    };
+                }
+
+                if (!ScreenshotClipMath.TryCreatePixelRect(
+                        clipArea.X,
+                        clipArea.Y,
+                        clipArea.Width,
+                        clipArea.Height,
+                        UI.screenWidth,
+                        UI.screenHeight,
+                        sourceTexture.width,
+                        sourceTexture.height,
+                        clipPadding,
+                        out var computedClipRect))
+                {
+                    return new ScreenshotCropResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Target id '{clipTargetId}' did not resolve to a valid clip rect."
+                    };
+                }
+
+                var colors = sourceTexture.GetPixels(
+                    computedClipRect.X,
+                    computedClipRect.BottomLeftY(sourceTexture.height),
+                    computedClipRect.Width,
+                    computedClipRect.Height);
+                clippedTexture = new Texture2D(computedClipRect.Width, computedClipRect.Height, TextureFormat.ARGB32, mipChain: false);
+                clippedTexture.SetPixels(colors);
+                clippedTexture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+                File.WriteAllBytes(outputPath, clippedTexture.EncodeToPNG());
+                return new ScreenshotCropResult
+                {
+                    Success = true,
+                    ClipRect = computedClipRect
+                };
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(sourceTexture);
+                if (clippedTexture != null)
+                    UnityEngine.Object.Destroy(clippedTexture);
+            }
+        }, timeoutMs: 5000);
+
+        clipRect = cropResult.ClipRect;
+        error = cropResult.ErrorMessage;
+        return cropResult.Success;
     }
 }

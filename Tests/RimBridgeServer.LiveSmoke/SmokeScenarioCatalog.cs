@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text.Json.Nodes;
 
 namespace RimBridgeServer.LiveSmoke;
@@ -18,6 +19,7 @@ internal static class SmokeScenarioCatalog
     public const string DebugGameLoadScenarioName = "debug-game-load";
     public const string ContextMenuCancelRoundTripScenarioName = "context-menu-cancel-roundtrip";
     public const string ScreenTargetClickRoundTripScenarioName = "screen-target-click-roundtrip";
+    public const string ScreenTargetClipScenarioName = "screen-target-clip";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
@@ -43,6 +45,12 @@ internal static class SmokeScenarioCatalog
                 Name = ScreenTargetClickRoundTripScenarioName,
                 Description = "Ensure a playable game exists, then click real dismiss and option target ids returned by rimworld/get_screen_targets.",
                 RunAsync = RunScreenTargetClickRoundTripAsync
+            },
+            [ScreenTargetClipScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ScreenTargetClipScenarioName,
+                Description = "Ensure a playable game exists, then capture a screenshot clipped to a real target id returned by rimworld/get_screen_targets.",
+                RunAsync = RunScreenTargetClipAsync
             },
             [SelectionRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -471,6 +479,132 @@ internal static class SmokeScenarioCatalog
         context.ApplyObservationWindow(observation);
     }
 
+    private static async Task RunScreenTargetClipAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("target_clip.wait_for_long_event_idle", cancellationToken);
+
+        await EnsureNoDialogWindowsAsync(context, "target_clip.normalize", cancellationToken);
+
+        var colonists = await context.CallGameToolAsync("target_clip.list_colonists", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists for the screen-target clip scenario");
+
+        var pawnName = ResolveFirstColonistName(colonists.StructuredContent);
+        var pawnPosition = ResolvePawnPosition(colonists.StructuredContent, pawnName);
+        context.Report.ColonistCount = JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count");
+
+        var selectPawn = await context.CallGameToolAsync("target_clip.select_pawn", "rimworld/select_pawn", new
+        {
+            pawnName,
+            append = false
+        }, cancellationToken);
+        context.EnsureSucceeded(selectPawn, $"Selecting colonist '{pawnName}' before clipping a target screenshot");
+
+        var observationWindow = await context.BeginObservationWindowAsync("target_clip.snapshot_bridge_status", cancellationToken);
+
+        var optionMenu = await OpenVanillaContextMenuNearPawnAsync(
+            context,
+            "target_clip.option",
+            pawnName,
+            pawnPosition,
+            cancellationToken,
+            requireDirectExecutableOption: true);
+        var optionTargets = await context.CallGameToolAsync("target_clip.option.get_screen_targets", "rimworld/get_screen_targets", new { }, cancellationToken);
+        context.EnsureSucceeded(optionTargets, "Reading screen targets before taking a clipped screenshot");
+
+        var optionContextMenuTargets = JsonNodeHelpers.GetPath(optionTargets.StructuredContent, "targets", "contextMenu");
+        if (optionContextMenuTargets == null)
+            throw new InvalidOperationException("Screen target metadata did not expose the active context menu before clipping a screenshot.");
+
+        var optionTargetNodes = JsonNodeHelpers.ReadArray(optionContextMenuTargets, "options");
+        if (optionMenu.DirectOptionIndex <= 0 || optionMenu.DirectOptionIndex > optionTargetNodes.Count)
+            throw new InvalidOperationException("Could not align the executable context-menu option with the current screen target metadata for clipping.");
+
+        var optionTarget = optionTargetNodes[optionMenu.DirectOptionIndex - 1];
+        var optionTargetId = JsonNodeHelpers.ReadString(optionTarget, "targetId");
+        var optionLabel = JsonNodeHelpers.ReadString(optionTarget, "label");
+        var optionRect = JsonNodeHelpers.GetPath(optionTarget, "rect");
+        if (string.IsNullOrWhiteSpace(optionTargetId) || optionRect == null)
+            throw new InvalidOperationException("Screen target metadata did not expose a target id and rect for the clip target.");
+
+        var clipPadding = 12;
+        var screenshotFileName = BuildScreenshotFileName(context.Report.StartedAtUtc) + "_target_clip";
+        var screenshot = await context.CallGameToolAsync("target_clip.take_screenshot", "rimworld/take_screenshot", new
+        {
+            fileName = screenshotFileName,
+            includeTargets = true,
+            clipTargetId = optionTargetId,
+            clipPadding
+        }, cancellationToken);
+        context.EnsureSucceeded(screenshot, $"Capturing clipped screenshot for target '{optionTargetId}'");
+
+        var clipped = JsonNodeHelpers.ReadBoolean(screenshot.StructuredContent, "clipped") == true;
+        var screenshotPath = JsonNodeHelpers.ReadString(screenshot.StructuredContent, "path");
+        var sourcePath = JsonNodeHelpers.ReadString(screenshot.StructuredContent, "sourcePath");
+        var clipTargetKind = JsonNodeHelpers.ReadString(screenshot.StructuredContent, "clipTargetKind");
+        var clipRect = JsonNodeHelpers.GetPath(screenshot.StructuredContent, "clipRect");
+        if (!clipped
+            || string.IsNullOrWhiteSpace(screenshotPath)
+            || string.IsNullOrWhiteSpace(sourcePath)
+            || string.Equals(sourcePath, screenshotPath, StringComparison.Ordinal)
+            || clipRect == null)
+        {
+            throw new InvalidOperationException("The clipped screenshot response did not include the expected clipped path and clip metadata.");
+        }
+
+        if (!File.Exists(screenshotPath) || !File.Exists(sourcePath))
+            throw new InvalidOperationException("The clipped screenshot response did not point to valid on-disk artifacts.");
+
+        if (!string.Equals(JsonNodeHelpers.ReadString(screenshot.StructuredContent, "clipTargetId"), optionTargetId, StringComparison.Ordinal)
+            || !string.Equals(clipTargetKind, "context_menu_option", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The clipped screenshot response did not preserve the requested target identity.");
+        }
+
+        var clippedImageSize = ReadPngDimensions(screenshotPath);
+        var fullImageSize = ReadPngDimensions(sourcePath);
+        var clipWidth = JsonNodeHelpers.ReadInt32(clipRect, "width").GetValueOrDefault();
+        var clipHeight = JsonNodeHelpers.ReadInt32(clipRect, "height").GetValueOrDefault();
+        if (clippedImageSize.Width != clipWidth || clippedImageSize.Height != clipHeight)
+            throw new InvalidOperationException("The clipped screenshot image dimensions did not match the reported clip rect.");
+        if (clippedImageSize.Width >= fullImageSize.Width || clippedImageSize.Height >= fullImageSize.Height)
+            throw new InvalidOperationException("The clipped screenshot was not smaller than the full source screenshot.");
+
+        if (context.HumanVerificationEnabled)
+        {
+            await context.ExportHumanVerificationArtifactAsync(
+                "screen_target_option_clip",
+                screenshotPath,
+                "The clipped screenshot artifact produced from a real context-menu option target id.",
+                [
+                    $"The clipped image should focus on the option labeled '{optionLabel}'.",
+                    "Only a small area around the target should be visible because the screenshot was cropped to the target rect plus padding.",
+                    "This proves that target-id metadata can drive focused visual assertions without relying on full-frame screenshots."
+                ],
+                cancellationToken);
+        }
+
+        context.SetSummaryValue("selectedPawn", pawnName);
+        context.SetSummaryValue("clipTargetId", optionTargetId);
+        context.SetSummaryValue("clipTargetKind", clipTargetKind);
+        context.SetSummaryValue("clipPadding", clipPadding.ToString());
+        context.SetSummaryValue("clipWidth", clipWidth.ToString());
+        context.SetSummaryValue("clipHeight", clipHeight.ToString());
+        context.SetSummaryValue("clipLabel", optionLabel);
+        context.SetScenarioData("optionScreenTargets", JsonNodeHelpers.GetPath(optionTargets.StructuredContent, "targets"));
+        context.SetScenarioData("clippedScreenshot", screenshot.StructuredContent);
+
+        var observation = await observationWindow.CaptureAsync(
+            "target_clip.final_bridge_status",
+            "target_clip.collect_operation_events",
+            "target_clip.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
     private static async Task RunSaveLoadRoundTripAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
     {
         await context.EnsurePlayableGameAsync(cancellationToken);
@@ -783,5 +917,22 @@ internal static class SmokeScenarioCatalog
     private static string BuildScreenshotFileName(DateTimeOffset startedAtUtc)
     {
         return $"rimbridge_live_smoke_{startedAtUtc:yyyyMMdd_HHmmss}";
+    }
+
+    private static (int Width, int Height) ReadPngDimensions(string path)
+    {
+        var header = File.ReadAllBytes(path).Take(24).ToArray();
+        if (header.Length < 24
+            || header[0] != 0x89
+            || header[1] != 0x50
+            || header[2] != 0x4E
+            || header[3] != 0x47)
+        {
+            throw new InvalidOperationException($"File '{path}' is not a valid PNG image.");
+        }
+
+        var width = BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(16, 4));
+        var height = BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(20, 4));
+        return (width, height);
     }
 }

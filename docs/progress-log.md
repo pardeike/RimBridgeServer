@@ -427,6 +427,35 @@ Next:
 
 - Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots
 
+## 2026-03-16 - Step A13 - Target-Relative Screenshot Clipping
+
+Status:
+
+- completed
+
+Completed:
+
+- added shared clipping math in [`ScreenshotClipMath.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/ScreenshotClipMath.cs) with focused coverage in [`ScreenshotClipMathTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/ScreenshotClipMathTests.cs) so target rects can be scaled into screenshot pixel space consistently across normal and high-DPI captures
+- extended [`RimWorldTargeting.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldTargeting.cs) so existing `window`, `window-dismiss`, and `context-menu-option` target ids can be resolved back into clip-capable UI rects without introducing a second targeting model
+- extended [`ViewCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ViewCapabilityModule.cs) and [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) so `rimworld/take_screenshot` accepts `clipTargetId` and `clipPadding`, preserves the full-frame `sourcePath`, and writes a clipped artifact with `clipRect`, `clipTargetId`, `clipTargetKind`, and `clipTargetLabel`
+- added a real-instance `screen-target-clip` live scenario in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) and updated [`SmokeScenarioCatalogTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/SmokeScenarioCatalogTests.cs) so the harness now validates clipped screenshot dimensions against a live target rect from RimWorld
+- documented the clipping surface in [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md)
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --scenario screen-target-clip --game-id rimworld --human-verify --stop-after`
+
+Notes:
+
+- clipping uses the target rect captured at screenshot request time rather than re-reading later UI state, which keeps the cropped artifact aligned with the frame that was actually written
+- the first supported clipping targets are the same ones that already have stable screen-space geometry today: windows, window dismiss targets, and context-menu options
+
+Next:
+
+- Step A14: expose explicit scriptable clip and target-selection patterns in the bulk execution layer so screenshot assertions can be composed into higher-level automated test scripts
+
 ## 2026-03-16 - Step A12.2 - Automation-Ready Load Waits
 
 Status:
