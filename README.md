@@ -71,6 +71,7 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimbridge/wait_for_operation`** - Wait until a recorded operation reaches a terminal status
 - **`rimbridge/wait_for_game_loaded`** - Wait until RimWorld has finished loading a playable game
 - **`rimbridge/wait_for_long_event_idle`** - Wait until RimWorld reports no long event in progress
+- **`rimbridge/run_script`** - Execute a JSON script containing an ordered list of capability calls and return a step-by-step report
 
 ### Game control
 - **`rimworld/get_game_info`** - Get information about the current game
@@ -153,6 +154,38 @@ The designator payload now also reports drag and targeting metadata from RimWorl
 `rimworld/set_god_mode` and `rimworld/apply_architect_designator` make the important dev workflow deterministic. With god mode disabled, build designators create blueprints; with god mode enabled, the same designator can place the finished structure directly. `rimworld/list_zones`, `rimworld/list_areas`, and `rimworld/get_cell_info` exist specifically so tests can verify zone, area, and structure outcomes without OCR or pixel heuristics.
 
 The stateful parts of RimWorld's Zone menu now also have explicit bridge controls instead of hidden UI context. `rimworld/create_allowed_area` and `rimworld/select_allowed_area` control the allowed-area target used by `Designator_AreaAllowedExpand`, while `rimworld/set_zone_target` pins a zone-add designator to an existing zone so later placement expands that specific zone instead of creating a new one. `rimworld/clear_area`, `rimworld/delete_area`, and `rimworld/delete_zone` provide the corresponding cleanup seam for test fixture teardown.
+
+### Batch scripting
+
+`rimbridge/run_script` is the first low-risk batch layer on top of the capability registry. It accepts a JSON payload with ordinary capability calls as steps, executes them in order, and returns a uniform per-step report with child operation ids, timings, success/failure state, and optional step results.
+
+Current first-shape example:
+
+```json
+{
+  "name": "wall-sequence",
+  "continueOnError": false,
+  "steps": [
+    {
+      "id": "god_on",
+      "call": "rimworld/set_god_mode",
+      "arguments": { "enabled": true }
+    },
+    {
+      "id": "place_wall",
+      "call": "rimworld/apply_architect_designator",
+      "arguments": {
+        "designatorId": "architect-designator:structure:build-wall",
+        "x": 99,
+        "z": 121,
+        "keepSelected": false
+      }
+    }
+  ]
+}
+```
+
+This first version deliberately keeps the model simple: every step is just another registered capability call, so waits, screenshots, debug actions, Architect operations, and future extension capabilities can all participate without a separate script-specific runtime path. The next obvious power-up is step-to-step value passing, but even the current static-call form already removes RPC round trips and returns one detailed batch report.
 
 ### Example workflow for Achtung Issue #95
 
@@ -301,6 +334,14 @@ The `architect-stateful-targeting` scenario covers the remaining mutable Archite
 - creates a stockpile zone, pins the stockpile designator to that zone with `rimworld/set_zone_target`, then expands the same zone into a second rectangle without increasing the zone count
 - tears the fixture back down with `rimworld/delete_zone`, `rimworld/clear_area`, and `rimworld/delete_area`
 
+The `script-wall-sequence` scenario covers the first script-runner slice:
+
+- ensures a playable game exists
+- discovers the `Wall` designator through the normal Architect metadata flow
+- precomputes two accepted wall cells, then runs one JSON script that enables god mode, places both walls, and captures a screenshot
+- verifies the script report shape, child step execution order, and the on-disk screenshot artifact
+- confirms both target cells contain directly built `Wall` things instead of blueprints
+
 The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.
 
 The runner looks for `gabs` on `PATH`, honors `GABS_BIN`, and also auto-detects a sibling checkout at `../GABS/gabs`. Use `--config-dir` or `GABS_CONFIG_DIR` if you need to point it at a non-default GABS configuration directory.
@@ -325,6 +366,7 @@ The current human-verification set covers:
 - `screen-target-clip` with a cropped image focused on one real actionable target
 - `screenshot-capture` by exporting the captured screenshot itself with a matching explanation file
 - `architect-floor-dropdown` with one screenshot showing a directly placed dropdown-selected floor patch
+- `script-wall-sequence` with the screenshot artifact produced by the script itself after placing two direct-build walls
 - `architect-stateful-targeting` with one screenshot showing a custom allowed area overlay and one showing an explicitly targeted stockpile expansion
 - `architect-wall-placement` with one screenshot showing the blueprint wall state and one showing the direct-build wall state
 - `architect-zone-area-drag` with one screenshot showing a stockpile zone overlay and one showing a home-area overlay

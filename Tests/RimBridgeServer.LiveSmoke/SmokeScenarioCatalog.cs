@@ -25,6 +25,7 @@ internal static class SmokeScenarioCatalog
     public const string ArchitectZoneAreaDragScenarioName = "architect-zone-area-drag";
     public const string ScreenTargetClickRoundTripScenarioName = "screen-target-click-roundtrip";
     public const string ScreenTargetClipScenarioName = "screen-target-clip";
+    public const string ScriptWallSequenceScenarioName = "script-wall-sequence";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
@@ -86,6 +87,12 @@ internal static class SmokeScenarioCatalog
                 Name = ScreenTargetClipScenarioName,
                 Description = "Ensure a playable game exists, then capture a screenshot clipped to a real target id returned by rimworld/get_screen_targets.",
                 RunAsync = RunScreenTargetClipAsync
+            },
+            [ScriptWallSequenceScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ScriptWallSequenceScenarioName,
+                Description = "Ensure a playable game exists, then execute a JSON script that toggles god mode, places two walls, and captures a screenshot as one batch.",
+                RunAsync = RunScriptWallSequenceAsync
             },
             [SelectionRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -751,6 +758,210 @@ internal static class SmokeScenarioCatalog
             "target_clip.final_bridge_status",
             "target_clip.collect_operation_events",
             "target_clip.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunScriptWallSequenceAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("script_wall.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("script_wall.snapshot_bridge_status", cancellationToken);
+        var initialDesignatorState = await context.CallGameToolAsync("script_wall.get_designator_state_before", "rimworld/get_designator_state", new { }, cancellationToken);
+        context.EnsureSucceeded(initialDesignatorState, "Reading initial architect state for the script wall sequence");
+        var originalGodMode = JsonNodeHelpers.ReadBoolean(initialDesignatorState.StructuredContent, "godMode") == true;
+
+        Exception? scenarioError = null;
+
+        try
+        {
+            var categories = await context.CallGameToolAsync("script_wall.list_categories", "rimworld/list_architect_categories", new
+            {
+                includeHidden = false,
+                includeEmpty = false
+            }, cancellationToken);
+            context.EnsureSucceeded(categories, "Listing architect categories for the script wall sequence");
+
+            var categoryArray = JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories");
+            var structureCategoryId = ResolveArchitectCategoryId(categoryArray, "Structure");
+
+            var designators = await context.CallGameToolAsync("script_wall.list_structure_designators", "rimworld/list_architect_designators", new
+            {
+                categoryId = structureCategoryId,
+                includeHidden = false
+            }, cancellationToken);
+            context.EnsureSucceeded(designators, "Listing structure designators for the script wall sequence");
+
+            var designatorArray = JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators");
+            var wallDesignatorId = ResolveArchitectBuildDesignatorId(designatorArray, "Wall");
+
+            var colonists = await context.CallGameToolAsync("script_wall.list_colonists", "rimworld/list_colonists", new
+            {
+                currentMapOnly = true
+            }, cancellationToken);
+            context.EnsureSucceeded(colonists, "Listing current-map colonists for the script wall sequence");
+
+            var blockedCells = new HashSet<string>(StringComparer.Ordinal);
+            var firstWallCell = await FindAcceptedArchitectPlacementCellAsync(
+                context,
+                "script_wall.find_first_cell",
+                wallDesignatorId,
+                colonists.StructuredContent,
+                blockedCells,
+                cancellationToken,
+                minRadius: 18,
+                maxRadius: 30);
+            var secondWallCell = await FindAcceptedArchitectPlacementCellAsync(
+                context,
+                "script_wall.find_second_cell",
+                wallDesignatorId,
+                colonists.StructuredContent,
+                blockedCells,
+                cancellationToken,
+                minRadius: 18,
+                maxRadius: 34);
+
+            var screenshotFileName = "rimbridge_script_wall_sequence_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+            var scriptJson = new JsonObject
+            {
+                ["name"] = "script-wall-sequence",
+                ["continueOnError"] = false,
+                ["steps"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["id"] = "god_on",
+                        ["call"] = "rimworld/set_god_mode",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["enabled"] = true
+                        }
+                    },
+                    new JsonObject
+                    {
+                        ["id"] = "wall_a",
+                        ["call"] = "rimworld/apply_architect_designator",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["designatorId"] = wallDesignatorId,
+                            ["x"] = firstWallCell.X,
+                            ["z"] = firstWallCell.Z,
+                            ["keepSelected"] = false
+                        }
+                    },
+                    new JsonObject
+                    {
+                        ["id"] = "wall_b",
+                        ["call"] = "rimworld/apply_architect_designator",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["designatorId"] = wallDesignatorId,
+                            ["x"] = secondWallCell.X,
+                            ["z"] = secondWallCell.Z,
+                            ["keepSelected"] = false
+                        }
+                    },
+                    new JsonObject
+                    {
+                        ["id"] = "capture",
+                        ["call"] = "rimworld/take_screenshot",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["fileName"] = screenshotFileName,
+                            ["includeTargets"] = false
+                        }
+                    }
+                }
+            }.ToJsonString();
+
+            var runScript = await context.CallGameToolAsync("script_wall.run_script", "rimbridge/run_script", new
+            {
+                scriptJson,
+                includeStepResults = true
+            }, cancellationToken);
+            context.EnsureSucceeded(runScript, "Running the script-driven wall placement sequence");
+
+            var scriptReport = JsonNodeHelpers.ReadObject(runScript.StructuredContent, "script");
+            if (JsonNodeHelpers.ReadInt32(scriptReport, "stepCount").GetValueOrDefault() != 4)
+                throw new InvalidOperationException("Expected the wall sequence script to report exactly four steps.");
+            if (JsonNodeHelpers.ReadInt32(scriptReport, "executedStepCount").GetValueOrDefault() != 4)
+                throw new InvalidOperationException("Expected the wall sequence script to execute all four steps.");
+            if (JsonNodeHelpers.ReadBoolean(scriptReport, "success") != true)
+                throw new InvalidOperationException("Expected the wall sequence script report to succeed.");
+
+            var scriptSteps = JsonNodeHelpers.ReadArray(scriptReport, "steps");
+            var captureStep = scriptSteps.FirstOrDefault(step => string.Equals(JsonNodeHelpers.ReadString(step, "id"), "capture", StringComparison.Ordinal));
+            var scriptScreenshotPath = JsonNodeHelpers.ReadString(captureStep, "result", "path");
+            if (string.IsNullOrWhiteSpace(scriptScreenshotPath) || !File.Exists(scriptScreenshotPath))
+                throw new InvalidOperationException("Expected the capture step to produce a valid screenshot artifact.");
+
+            var firstCellInfo = await context.CallGameToolAsync("script_wall.get_first_cell_info", "rimworld/get_cell_info", new
+            {
+                x = firstWallCell.X,
+                z = firstWallCell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(firstCellInfo, $"Reading cell info for script-placed wall cell ({firstWallCell.X}, {firstWallCell.Z})");
+            AssertCellDoesNotContainBuildBlueprint(firstCellInfo.StructuredContent, "Wall");
+            AssertCellContainsSolidThing(firstCellInfo.StructuredContent, "Wall");
+
+            var secondCellInfo = await context.CallGameToolAsync("script_wall.get_second_cell_info", "rimworld/get_cell_info", new
+            {
+                x = secondWallCell.X,
+                z = secondWallCell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(secondCellInfo, $"Reading cell info for script-placed wall cell ({secondWallCell.X}, {secondWallCell.Z})");
+            AssertCellDoesNotContainBuildBlueprint(secondCellInfo.StructuredContent, "Wall");
+            AssertCellContainsSolidThing(secondCellInfo.StructuredContent, "Wall");
+
+            if (context.HumanVerificationEnabled)
+            {
+                await context.ExportHumanVerificationArtifactAsync(
+                    "script_wall_sequence",
+                    scriptScreenshotPath,
+                    "The script-driven wall sequence should have produced two directly built walls and captured its own screenshot artifact.",
+                    [
+                        "Two freshly placed walls should be visible near the center region of the view.",
+                        "This image was produced by the script itself through a rimworld/take_screenshot step rather than by a separate harness capture."
+                    ],
+                    cancellationToken);
+            }
+
+            context.SetSummaryValue("structureCategoryId", structureCategoryId);
+            context.SetSummaryValue("wallDesignatorId", wallDesignatorId);
+            context.SetSummaryValue("firstWallCell", $"{firstWallCell.X},{firstWallCell.Z}");
+            context.SetSummaryValue("secondWallCell", $"{secondWallCell.X},{secondWallCell.Z}");
+            context.SetSummaryValue("scriptScreenshotPath", scriptScreenshotPath);
+            context.SetScenarioData("architectCategories", new JsonArray(categoryArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("structureDesignators", new JsonArray(designatorArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("runScript", runScript.StructuredContent);
+            context.SetScenarioData("firstWallCellInfo", firstCellInfo.StructuredContent);
+            context.SetScenarioData("secondWallCellInfo", secondCellInfo.StructuredContent);
+        }
+        catch (Exception ex)
+        {
+            scenarioError = ex;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                await EnsureGodModeAsync(context, "script_wall.restore_god_mode", originalGodMode, cancellationToken);
+            }
+            catch (Exception restoreError)
+            {
+                if (scenarioError is null)
+                    throw;
+
+                context.Note($"Failed to restore god mode after the script wall sequence: {restoreError.Message}");
+            }
+        }
+
+        var observation = await observationWindow.CaptureAsync(
+            "script_wall.final_bridge_status",
+            "script_wall.collect_operation_events",
+            "script_wall.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }

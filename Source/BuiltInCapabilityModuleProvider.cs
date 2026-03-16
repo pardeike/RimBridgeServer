@@ -175,6 +175,7 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             "rimbridge/wait_for_operation" => CapabilityExecutionKind.Immediate,
             "rimbridge/wait_for_game_loaded" => CapabilityExecutionKind.Immediate,
             "rimbridge/wait_for_long_event_idle" => CapabilityExecutionKind.Immediate,
+            "rimbridge/run_script" => CapabilityExecutionKind.Immediate,
             "rimworld/start_debug_game" => CapabilityExecutionKind.LongEventBound,
             "rimworld/load_game" => CapabilityExecutionKind.LongEventBound,
             "rimworld/take_screenshot" => CapabilityExecutionKind.BackgroundObserved,

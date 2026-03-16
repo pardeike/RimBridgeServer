@@ -789,6 +789,12 @@ Tests:
 - rollback and failure reporting semantics
 - end-to-end script execution
 
+Notes:
+
+- v1 should stay deliberately small: ordered capability calls, explicit per-step reports, and no separate DSL runtime
+- every registered capability, including future extension capabilities, should be scriptable automatically through the shared registry rather than a second plugin model
+- the next increment after the first runnable slice should add controlled step-output references so scripts can create something in one step and consume its id in a later step
+
 ### Step A10. Extension system
 
 Deliverables:
@@ -829,4 +835,4 @@ Tests:
 
 ## Immediate Next Step
 
-The next implementation step should return to the batch or script layer. The bridge now already covers direct structures, dropdown floor tools, stockpile zones, home-area drag semantics, explicit allowed-area selection and creation, explicit existing-zone targeting, and cleanup helpers for tearing those fixtures back down. That is the threshold where a bulk execution layer starts paying off: it can now compose meaningful scenario setup such as rooms, stockpiles, and reusable colony fixtures instead of only batching low-value primitive calls.
+The first low-risk script slice should be in place before the next implementation step moves deeper into scripting ergonomics. Once ordered capability batching works end-to-end, the next highest-value addition is controlled step-output references so later steps can consume ids and values returned by earlier ones. That keeps the scripting model compact while unlocking practical fixture-building flows such as create area -> select returned area id -> paint area, or discover/create something once and use it in several later steps without leaving the batch.

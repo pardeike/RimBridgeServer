@@ -82,6 +82,14 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs)));
     }
 
+    [Tool("rimbridge/run_script", Description = "Execute a JSON script containing an ordered list of capability calls and return a step-by-step report")]
+    public object RunScript(
+        [ToolParameter(Description = "Structured JSON script. Example: {\"name\":\"setup\",\"continueOnError\":false,\"steps\":[{\"id\":\"pause\",\"call\":\"rimworld/pause_game\",\"arguments\":{\"pause\":true}}]}")] string scriptJson,
+        [ToolParameter(Description = "Include each step's result payload in the returned script report")] bool includeStepResults = true)
+    {
+        return InvokeAlias(Arguments((nameof(scriptJson), scriptJson), (nameof(includeStepResults), includeStepResults)));
+    }
+
     [Tool("rimworld/pause_game", Description = "Pause or unpause the game")]
     public object PauseGame([ToolParameter(Description = "True to pause, false to unpause")] bool pause = true)
     {

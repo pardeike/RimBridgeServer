@@ -77,4 +77,37 @@ public class ContractTests
         Assert.Contains("\"CapabilityId\"", json);
         Assert.Contains("\"Success\":true", json);
     }
+
+    [Fact]
+    public void ScriptContractsSerializeWithStablePropertyNames()
+    {
+        var report = new CapabilityScriptReport
+        {
+            Name = "sample",
+            ContinueOnError = false,
+            Success = true,
+            StepCount = 1,
+            ExecutedStepCount = 1,
+            SucceededStepCount = 1,
+            Steps =
+            [
+                new CapabilityScriptStepReport
+                {
+                    Index = 1,
+                    Id = "ping",
+                    Call = "rimbridge/ping",
+                    CapabilityId = "rimbridge.core/diagnostics/ping",
+                    OperationId = "op_1",
+                    Status = OperationStatus.Completed,
+                    Success = true
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(report);
+
+        Assert.Contains("\"StepCount\":1", json);
+        Assert.Contains("\"ExecutedStepCount\":1", json);
+        Assert.Contains("\"CapabilityId\":\"rimbridge.core/diagnostics/ping\"", json);
+    }
 }

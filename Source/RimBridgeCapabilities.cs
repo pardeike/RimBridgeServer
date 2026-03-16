@@ -26,6 +26,12 @@ internal static class RimBridgeCapabilities
             aliasMetadataType: typeof(RimBridgeTools),
             source: CapabilitySourceKind.Core));
         registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
+            providerId: "rimbridge.core/scripting",
+            category: "scripting",
+            module: new ScriptingCapabilityModule(registry),
+            aliasMetadataType: typeof(RimBridgeTools),
+            source: CapabilitySourceKind.Core));
+        registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
             providerId: "rimbridge.core/lifecycle",
             category: "lifecycle",
             module: new LifecycleCapabilityModule(),

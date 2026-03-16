@@ -8,6 +8,7 @@ SCENARIOS=(
   "screen-target-clip"
   "screenshot-capture"
   "architect-floor-dropdown"
+  "script-wall-sequence"
   "architect-stateful-targeting"
   "architect-wall-placement"
   "architect-zone-area-drag"

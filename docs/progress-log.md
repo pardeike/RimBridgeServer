@@ -687,3 +687,36 @@ Notes:
 Next:
 
 - Step A18: return to the bulk/script layer now that debug actions, designator discovery, and deterministic Architect state control exist for meaningful scenario construction
+
+## 2026-03-16 - Step A18 - First Registry-Backed Script Runner Slice
+
+Status:
+
+- completed
+
+Completed:
+
+- added shared script contracts in [`CapabilityScriptContracts.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Contracts/CapabilityScriptContracts.cs) for script definitions, ordered steps, per-step reports, and full script reports so the batch layer has a stable transport shape outside the host assembly
+- added the pure execution engine in [`CapabilityScriptRunner.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptRunner.cs), which executes ordinary capability calls in order through the registry, records child operation metadata, supports `continueOnError`, and rejects nested `rimbridge/run_script` recursion
+- added first-step unit coverage in [`CapabilityScriptRunnerTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptRunnerTests.cs) and extended [`ContractTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Contracts.Tests/ContractTests.cs) so the script layer is covered for success, halt-on-failure, continue-on-error, recursion rejection, and contract serialization
+- added [`ScriptingCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ScriptingCapabilityModule.cs), registered it in [`RimBridgeCapabilities.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeCapabilities.cs), exposed the alias in [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs), and marked `rimbridge/run_script` as `Immediate` in [`BuiltInCapabilityModuleProvider.cs`](/Users/ap/Projects/RimBridgeServer/Source/BuiltInCapabilityModuleProvider.cs) so the outer script orchestration stays off the RimWorld main thread while each child step still uses its own execution policy
+- kept the v1 script format intentionally small: JSON only, no custom DSL, no variable system yet, and every step is just another normal capability call with `id`, `call`, and `arguments`
+- extended the live harness with the new real-instance `script-wall-sequence` scenario in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) and [`SmokeScenarioCatalogTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/SmokeScenarioCatalogTests.cs)
+- made `script-wall-sequence` prove a meaningful batch setup path end-to-end: discover the wall designator through the normal Architect metadata flow, precompute two accepted cells, run one script that enables god mode, places both walls, and captures a screenshot, then verify both direct-built walls plus the script-produced screenshot artifact
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) and [`scripts/human-verify.sh`](/Users/ap/Projects/RimBridgeServer/scripts/human-verify.sh) so the new scripting surface and scenario are visible in both normal docs and the curated manual-review path
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --scenario script-wall-sequence --game-id rimworld --human-verify --stop-after`
+
+Notes:
+
+- the first live attempt found a real report-shape bug: the scripting module initially returned the internal typed report with `PascalCase` property names, while the rest of the bridge exposes lower-case transport fields; the final implementation fixes that projection inside [`ScriptingCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ScriptingCapabilityModule.cs) instead of teaching the harness a special case
+- `rimbridge/run_script` is intentionally registry-backed rather than script-runtime-specific, which means future first-party and third-party extension capabilities automatically become scriptable as long as they are registered normally
+- the current limitation is deliberate: later steps cannot yet reference values produced by earlier steps, so callers still need to precompute dynamic ids outside the script when a workflow depends on newly created objects
+
+Next:
+
+- Step A19: add controlled step-output references so later script steps can bind to values returned by earlier steps without introducing a full custom DSL
