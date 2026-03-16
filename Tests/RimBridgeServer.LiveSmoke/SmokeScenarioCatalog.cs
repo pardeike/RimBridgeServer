@@ -17,6 +17,9 @@ internal static class SmokeScenarioCatalog
 {
     public const string DebugGameLoadScenarioName = "debug-game-load";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
+    public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
+    public const string ScreenshotCaptureScenarioName = "screenshot-capture";
+    private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
 
     private static readonly IReadOnlyDictionary<string, SmokeScenarioDefinition> Definitions =
         new Dictionary<string, SmokeScenarioDefinition>(StringComparer.Ordinal)
@@ -32,6 +35,18 @@ internal static class SmokeScenarioCatalog
                 Name = SelectionRoundTripScenarioName,
                 Description = "Ensure a playable game exists, then exercise selection and camera tools around a real colonist.",
                 RunAsync = RunSelectionRoundTripAsync
+            },
+            [SaveLoadRoundTripScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = SaveLoadRoundTripScenarioName,
+                Description = "Ensure a playable game exists, save it to a stable test slot, load it again, and verify the colony comes back.",
+                RunAsync = RunSaveLoadRoundTripAsync
+            },
+            [ScreenshotCaptureScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ScreenshotCaptureScenarioName,
+                Description = "Ensure a playable game exists, frame a real pawn, capture a screenshot, and verify the file artifact.",
+                RunAsync = RunScreenshotCaptureAsync
             }
         };
 
@@ -144,6 +159,114 @@ internal static class SmokeScenarioCatalog
         context.ApplyObservationWindow(observation);
     }
 
+    private static async Task RunSaveLoadRoundTripAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("save_load.wait_for_long_event_idle_before_save", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("save_load.snapshot_bridge_status", cancellationToken);
+
+        var saveGame = await context.CallGameToolAsync("save_load.save_game", "rimworld/save_game", new
+        {
+            saveName = SaveLoadRoundTripSaveName
+        }, cancellationToken);
+        context.EnsureSucceeded(saveGame, $"Saving RimWorld game to '{SaveLoadRoundTripSaveName}'");
+
+        var savePath = JsonNodeHelpers.ReadString(saveGame.StructuredContent, "path");
+        var saveExists = JsonNodeHelpers.ReadBoolean(saveGame.StructuredContent, "exists");
+        var sizeBytes = JsonNodeHelpers.ReadInt64(saveGame.StructuredContent, "sizeBytes");
+        if (string.IsNullOrWhiteSpace(savePath) || saveExists != true || sizeBytes.GetValueOrDefault() <= 0)
+            throw new InvalidOperationException($"Save '{SaveLoadRoundTripSaveName}' did not produce a valid on-disk artifact.");
+
+        var listSaves = await context.CallGameToolAsync("save_load.list_saves", "rimworld/list_saves", new { }, cancellationToken);
+        context.EnsureSucceeded(listSaves, "Listing saves after writing the live smoke save");
+        if (!SaveListContains(listSaves.StructuredContent, SaveLoadRoundTripSaveName))
+            throw new InvalidOperationException($"Save '{SaveLoadRoundTripSaveName}' was not returned by rimworld/list_saves after being written.");
+
+        var loadGame = await context.CallGameToolAsync("save_load.load_game", "rimworld/load_game", new
+        {
+            saveName = SaveLoadRoundTripSaveName
+        }, cancellationToken);
+        context.EnsureSucceeded(loadGame, $"Loading RimWorld save '{SaveLoadRoundTripSaveName}'");
+
+        await context.WaitForLongEventIdleAsync("save_load.wait_for_long_event_idle_after_load", cancellationToken);
+        await context.WaitForGameLoadedAsync("save_load.wait_for_game_loaded_after_load", cancellationToken);
+
+        var colonists = await context.CallGameToolAsync("save_load.list_colonists_after_load", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing colonists after reloading the save");
+
+        context.Report.ColonistCount = JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count");
+        if (context.Report.ColonistCount.GetValueOrDefault() <= 0)
+            throw new InvalidOperationException($"Reloading save '{SaveLoadRoundTripSaveName}' did not restore any current-map colonists.");
+
+        context.SetSummaryValue("saveName", SaveLoadRoundTripSaveName);
+        context.SetSummaryValue("savePath", savePath);
+        context.SetSummaryValue("saveSizeBytes", sizeBytes?.ToString() ?? "0");
+        context.SetScenarioData("saveGame", saveGame.StructuredContent);
+        context.SetScenarioData("listSaves", JsonNodeHelpers.GetPath(listSaves.StructuredContent, "saves"));
+        context.SetScenarioData("colonistsAfterLoad", JsonNodeHelpers.GetPath(colonists.StructuredContent, "colonists"));
+
+        var observation = await observationWindow.CaptureAsync(
+            "save_load.final_bridge_status",
+            "save_load.collect_operation_events",
+            "save_load.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunScreenshotCaptureAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+
+        var colonists = await context.CallGameToolAsync("screenshot.list_colonists", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists before capturing a screenshot");
+
+        var pawnName = ResolveFirstColonistName(colonists.StructuredContent);
+        context.Report.ColonistCount = JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count");
+
+        var jumpCamera = await context.CallGameToolAsync("screenshot.jump_camera_to_pawn", "rimworld/jump_camera_to_pawn", new
+        {
+            pawnName
+        }, cancellationToken);
+        context.EnsureSucceeded(jumpCamera, $"Jumping camera to colonist '{pawnName}' before capturing a screenshot");
+
+        await context.WaitForLongEventIdleAsync("screenshot.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("screenshot.snapshot_bridge_status", cancellationToken);
+        var screenshotFileName = BuildScreenshotFileName(context.Report.StartedAtUtc);
+
+        var screenshot = await context.CallGameToolAsync("screenshot.take_screenshot", "rimworld/take_screenshot", new
+        {
+            fileName = screenshotFileName
+        }, cancellationToken);
+        context.EnsureSucceeded(screenshot, $"Capturing screenshot '{screenshotFileName}'");
+
+        var screenshotPath = JsonNodeHelpers.ReadString(screenshot.StructuredContent, "path");
+        var screenshotSizeBytes = JsonNodeHelpers.ReadInt64(screenshot.StructuredContent, "sizeBytes");
+        if (string.IsNullOrWhiteSpace(screenshotPath) || screenshotSizeBytes.GetValueOrDefault() <= 0)
+            throw new InvalidOperationException($"Screenshot '{screenshotFileName}' did not report a valid file artifact.");
+
+        context.SetSummaryValue("selectedPawn", pawnName);
+        context.SetSummaryValue("screenshotFileName", screenshotFileName);
+        context.SetSummaryValue("screenshotPath", screenshotPath);
+        context.SetSummaryValue("screenshotSizeBytes", screenshotSizeBytes?.ToString() ?? "0");
+        context.SetScenarioData("camera", JsonNodeHelpers.GetPath(jumpCamera.StructuredContent, "camera"));
+        context.SetScenarioData("screenshot", screenshot.StructuredContent);
+
+        var observation = await observationWindow.CaptureAsync(
+            "screenshot.final_bridge_status",
+            "screenshot.collect_operation_events",
+            "screenshot.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
     private static string ResolveFirstColonistName(JsonNode? structuredContent)
     {
         var colonists = JsonNodeHelpers.ReadArray(structuredContent, "colonists");
@@ -155,5 +278,16 @@ internal static class SmokeScenarioCatalog
         }
 
         throw new InvalidOperationException("The current map did not expose any colonists that could be used for the selection roundtrip scenario.");
+    }
+
+    private static bool SaveListContains(JsonNode? structuredContent, string saveName)
+    {
+        var saves = JsonNodeHelpers.ReadArray(structuredContent, "saves");
+        return saves.Any(save => string.Equals(JsonNodeHelpers.ReadString(save, "name"), saveName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string BuildScreenshotFileName(DateTimeOffset startedAtUtc)
+    {
+        return $"rimbridge_live_smoke_{startedAtUtc:yyyyMMdd_HHmmss}";
     }
 }

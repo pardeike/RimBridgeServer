@@ -174,11 +174,29 @@ The `selection-roundtrip` scenario reuses the same harness primitives against a 
 - jumps the camera to that pawn, reads camera state, and clears the selection again
 - captures only the operation and log window for that interaction block
 
+The `save-load-roundtrip` scenario covers the real save/load lifecycle:
+
+- ensures a playable game exists
+- writes a stable live-smoke save through `rimworld/save_game`
+- verifies that the save appears in `rimworld/list_saves`
+- loads the same save again and waits for playable state
+- confirms the reloaded colony still exposes current-map colonists
+
+The `screenshot-capture` scenario covers the current screenshot path:
+
+- ensures a playable game exists
+- jumps the camera to a real colonist for deterministic framing
+- captures a screenshot with a run-specific file name
+- verifies that the reported screenshot path and file size are valid
+- captures only the screenshot action's operation and log window
+
 The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.
 
 The runner looks for `gabs` on `PATH`, honors `GABS_BIN`, and also auto-detects a sibling checkout at `../GABS/gabs`. Use `--config-dir` or `GABS_CONFIG_DIR` if you need to point it at a non-default GABS configuration directory.
 
 The shared observation-window helper is intentionally generic: scenarios can start a bounded cursor window immediately before the action under test, choose their own event/log filters, and then collect the exact delta afterward without introducing global logging modes or ad hoc sleeps.
+
+Use `scripts/live-smoke.sh --list-scenarios` to see the current scenario matrix and descriptions.
 
 For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABP).
 

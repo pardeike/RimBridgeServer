@@ -294,6 +294,39 @@ Next:
 
 - Step A9: add the first save/load and screenshot-oriented live scenarios on top of the reusable harness so we start covering longer-running lifecycle and UX flows with the same observation model
 
+## 2026-03-16 - Step A9 - Save/Load and Screenshot Live Scenarios
+
+Status:
+
+- completed
+
+Completed:
+
+- extended [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) with two additional real-instance scenarios: `save-load-roundtrip` and `screenshot-capture`
+- added the first lifecycle-focused live case, `save-load-roundtrip`, which uses the shared playable-game precondition, writes a stable test save, verifies that it appears in `rimworld/list_saves`, reloads it through `rimworld/load_game`, waits for a playable state again, and confirms the colony still exposes colonists on the current map
+- added the first screenshot-focused live case, `screenshot-capture`, which positions the camera on a real colonist, captures a screenshot with a run-specific file name, validates the reported path and file size, and records the resulting operation/log window
+- reused the shared observation-window and scenario-context primitives so both new cases capture bounded deltas rather than broad journal snapshots
+- expanded [`SmokeScenarioCatalogTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/SmokeScenarioCatalogTests.cs) so the live-smoke unit layer now guards the full scenario matrix and default-scenario contract
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) with the new scenario descriptions and the growing live-smoke matrix
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --list-scenarios`
+- `scripts/live-smoke.sh --scenario save-load-roundtrip --game-id rimworld --stop-after`
+- `scripts/live-smoke.sh --scenario screenshot-capture --game-id rimworld --stop-after`
+
+Notes:
+
+- the save/load path is intentionally tested as a full roundtrip instead of only asserting the save file exists, because the reload wait and colony verification are where async lifecycle failures tend to surface
+- the screenshot case currently validates the file artifact and captures the surrounding journal window; later UX work can extend this toward clipped captures and visual assertions without changing the harness contract
+- I attempted to use the RimWorld decompiler for these seams first, but the current MCP decompiler instance failed on assembly loading with `Cannot access a disposed object` for `AssemblyContextManager`, so this increment relied on the existing verified runtime surface instead
+
+Next:
+
+- Step A10: start adding foreground-independent input-oriented live scenarios and the first internal abstractions for in-process mouse/keyboard injection so future UX tests are not tied to OS focus state
+
 ## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
 
 Status:

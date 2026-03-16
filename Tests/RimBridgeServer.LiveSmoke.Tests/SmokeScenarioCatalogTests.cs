@@ -13,6 +13,8 @@ public class SmokeScenarioCatalogTests
 
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.DebugGameLoadScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.SelectionRoundTripScenarioName);
+        Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.SaveLoadRoundTripScenarioName);
+        Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.ScreenshotCaptureScenarioName);
     }
 
     [Fact]
@@ -31,5 +33,11 @@ public class SmokeScenarioCatalogTests
         var error = Assert.Throws<System.InvalidOperationException>(() => SmokeScenarioCatalog.GetOrThrow("missing"));
 
         Assert.Contains("Unknown scenario", error.Message);
+    }
+
+    [Fact]
+    public void UsesDebugGameLoadAsDefaultScenario()
+    {
+        Assert.Equal(SmokeScenarioCatalog.DebugGameLoadScenarioName, SmokeScenarioCatalog.DefaultScenarioName);
     }
 }
