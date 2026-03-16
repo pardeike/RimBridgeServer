@@ -2,6 +2,8 @@
 
 RimBridgeServer lets you control RimWorld from outside the game. This is useful for testing mods automatically or building tools that work with RimWorld.
 
+Project planning and the implementation roadmap live in [`docs/architecture.md`](docs/architecture.md) and [`docs/progress-log.md`](docs/progress-log.md).
+
 ## What does it do?
 
 This mod creates a connection point (called a "server") inside RimWorld. Other programs can connect to this server to:
