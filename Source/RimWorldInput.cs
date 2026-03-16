@@ -34,7 +34,18 @@ internal sealed class UiWindowSnapshot
 
     public bool DrawInScreenshotMode { get; set; }
 
-    public object Rect { get; set; }
+    public UiRectSnapshot Rect { get; set; } = new();
+}
+
+internal sealed class UiRectSnapshot
+{
+    public float X { get; set; }
+
+    public float Y { get; set; }
+
+    public float Width { get; set; }
+
+    public float Height { get; set; }
 }
 
 internal sealed class UiStateSnapshot
@@ -278,12 +289,12 @@ internal static class RimWorldInput
             PreventCameraMotion = window.preventCameraMotion,
             AbsorbInputAroundWindow = window.absorbInputAroundWindow,
             DrawInScreenshotMode = window.drawInScreenshotMode,
-            Rect = new
+            Rect = new UiRectSnapshot
             {
-                x = window.windowRect.x,
-                y = window.windowRect.y,
-                width = window.windowRect.width,
-                height = window.windowRect.height
+                X = window.windowRect.x,
+                Y = window.windowRect.y,
+                Width = window.windowRect.width,
+                Height = window.windowRect.height
             }
         };
     }
@@ -361,7 +372,18 @@ internal static class RimWorldInput
             preventCameraMotion = window.PreventCameraMotion,
             absorbInputAroundWindow = window.AbsorbInputAroundWindow,
             drawInScreenshotMode = window.DrawInScreenshotMode,
-            rect = window.Rect
+            rect = ToToolResponse(window.Rect)
+        };
+    }
+
+    private static object ToToolResponse(UiRectSnapshot rect)
+    {
+        return new
+        {
+            x = rect.X,
+            y = rect.Y,
+            width = rect.Width,
+            height = rect.Height
         };
     }
 

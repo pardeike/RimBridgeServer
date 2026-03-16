@@ -360,6 +360,40 @@ Next:
 
 - Step A11: build the first physical-targeting seam on top of this semantic foundation, likely starting with screenshot-linked target metadata and a narrowly scoped background-safe click path for known RimWorld UI surfaces
 
+## 2026-03-16 - Step A11 - Screen Target Metadata Foundations
+
+Status:
+
+- completed
+
+Completed:
+
+- added [`RimWorldTargeting.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldTargeting.cs) as the first screen-target aggregation seam, combining window-stack state, camera state, selection, and active context-menu geometry into one structured payload
+- added [`FloatMenuTargetLayoutCalculator.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/FloatMenuTargetLayoutCalculator.cs) and [`FloatMenuTargetLayoutCalculatorTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/FloatMenuTargetLayoutCalculatorTests.cs) so float-menu option rects are derived in a pure, unit-tested core component instead of being mixed into host-side UI code
+- extended [`ViewCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ViewCapabilityModule.cs) with `GetScreenTargets()` and updated `TakeScreenshot(...)` so screenshots can attach the same target snapshot that a caller can fetch independently
+- extended [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) with `rimworld/get_screen_targets` and the `includeTargets` parameter on `rimworld/take_screenshot`
+- refined [`RimWorldInput.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldInput.cs) with a typed UI-rect snapshot so screen-target and input code share the same rect model
+- extended the live smoke harness in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) so `context-menu-cancel-roundtrip` validates real float-menu option rects and `screenshot-capture` validates that screenshot responses include target metadata
+- hardened [`SmokeScenarioContext.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioContext.cs) to retry `start_debug_game` when RimWorld reports the transient "busy with another long event" race immediately after an idle wait
+- updated [`JsonNodeHelpers.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/JsonNodeHelpers.cs), [`JsonNodeHelpersTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/JsonNodeHelpersTests.cs), and [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) to document and verify the new payload shape
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --scenario context-menu-cancel-roundtrip --game-id rimworld --stop-after`
+- `scripts/live-smoke.sh --scenario screenshot-capture --game-id rimworld --stop-after`
+
+Notes:
+
+- the new targeting surface is intentionally descriptive before it is interactive: it gives later click and clipping work a deterministic geometry API without committing to physical input semantics too early
+- `rimworld/take_screenshot` now captures the target snapshot before the screenshot write is awaited, so the metadata reflects the UI state that produced the image instead of a later state
+- the live harness now validates both a real float-menu geometry path and a screenshot-attached target snapshot, which reduces the risk of silently drifting payload contracts as the UI tooling expands
+
+Next:
+
+- Step A12: build the first narrowly scoped background-safe click path on top of `rimworld/get_screen_targets`, starting with known float-menu option and window targets before expanding toward broader physical input coverage
+
 ## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
 
 Status:

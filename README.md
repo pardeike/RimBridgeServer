@@ -11,7 +11,7 @@ This mod creates a connection point (called a "server") inside RimWorld. Other p
 - Check if the game is running
 - Pause or unpause the game
 - Get information about the current game
-- Inspect colonists, selection, camera, saves, and screenshots
+- Inspect colonists, selection, camera, saves, screenshots, and screen-space UI targets
 - Open and execute context-menu actions for debugging mods
 
 This is especially helpful for:
@@ -92,15 +92,16 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/deselect_pawn`** - Deselect one selected colonist by name
 - **`rimworld/set_draft`** - Draft or undraft a colonist by name
 
-### Camera and screenshots
+### Camera, targeting, and screenshots
 - **`rimworld/get_camera_state`** - Report camera position, zoom, and current view rect
+- **`rimworld/get_screen_targets`** - Report current screen-space targets such as open windows, focused dialogs, and active context-menu option rects
 - **`rimworld/jump_camera_to_pawn`** - Jump the camera to a pawn and select it
 - **`rimworld/jump_camera_to_cell`** - Jump the camera to a specific map cell
 - **`rimworld/move_camera`** - Move the camera by a cell offset
 - **`rimworld/zoom_camera`** - Adjust camera zoom relative to the current root size
 - **`rimworld/set_camera_zoom`** - Set camera root size directly
 - **`rimworld/frame_pawns`** - Frame several pawns together in view
-- **`rimworld/take_screenshot`** - Save an in-game screenshot and return the file path
+- **`rimworld/take_screenshot`** - Save an in-game screenshot and return the file path plus optional screen-target metadata
 
 ### Context-menu debugging
 - **`rimworld/get_achtung_state`** - Report Achtung debug settings relevant to menu repro cases
@@ -140,6 +141,8 @@ The basic steps are:
 Most mutating tools are marshalled onto RimWorld's main thread before they touch UI or map state. This is important for selection, camera, save/load, screenshot capture, and context-menu operations.
 
 The new UI input helpers are intentionally semantic. `rimworld/press_accept`, `rimworld/press_cancel`, and `rimworld/close_window` drive RimWorld's own `WindowStack` APIs instead of foreground-dependent desktop input, which keeps them usable even when the game is running in the background during automated tests.
+
+`rimworld/get_screen_targets` and the default `includeTargets: true` behavior on `rimworld/take_screenshot` expose a structured screen-space snapshot instead of forcing clients to infer UI geometry from logs or raw pixels. The current payload includes live window rects, selection, camera state, and active float-menu option rects when a context menu is open.
 
 For test automation, prefer the explicit wait tools over blind sleeps. `rimbridge/wait_for_game_loaded`, `rimbridge/wait_for_long_event_idle`, and `rimbridge/wait_for_operation` provide bounded waits with state snapshots so scripts can move quickly when the game is ready and fail with useful diagnostics when it is not.
 
@@ -184,6 +187,7 @@ The `context-menu-cancel-roundtrip` scenario exercises the first background-safe
 
 - ensures a playable game exists and normalizes away any pre-existing dialog windows
 - selects a real colonist and opens a vanilla context menu through `rimworld/open_context_menu`
+- captures `rimworld/get_screen_targets` while the menu is open and verifies the reported option geometry
 - closes that menu again with `rimworld/press_cancel`
 - verifies the float-menu and window-stack state transitions without depending on OS focus
 
@@ -201,6 +205,7 @@ The `screenshot-capture` scenario covers the current screenshot path:
 - jumps the camera to a real colonist for deterministic framing
 - captures a screenshot with a run-specific file name
 - verifies that the reported screenshot path and file size are valid
+- verifies that the screenshot response includes the current screen-target snapshot
 - captures only the screenshot action's operation and log window
 
 The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.

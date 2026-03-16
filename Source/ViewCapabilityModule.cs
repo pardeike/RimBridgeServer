@@ -10,9 +10,21 @@ namespace RimBridgeServer;
 
 internal sealed class ViewCapabilityModule
 {
+    private sealed class PendingScreenshotCapture
+    {
+        public string ExpectedPath { get; set; } = string.Empty;
+
+        public object ScreenTargets { get; set; }
+    }
+
     public object GetCameraState()
     {
         return RimWorldState.DescribeCamera();
+    }
+
+    public object GetScreenTargets()
+    {
+        return RimWorldTargeting.GetScreenTargetsResponse();
     }
 
     public object JumpCameraToPawn(string pawnName)
@@ -110,29 +122,37 @@ internal sealed class ViewCapabilityModule
         };
     }
 
-    public object TakeScreenshot(string fileName = null)
+    public object TakeScreenshot(string fileName = null, bool includeTargets = true)
     {
         var safeName = RimWorldState.SanitizeName(fileName, "rimbridge");
-        var expectedPath = RimBridgeMainThread.Invoke(() =>
+        var capture = RimBridgeMainThread.Invoke(() =>
         {
+            var screenTargets = includeTargets ? RimWorldTargeting.CreateScreenTargetsPayload() : null;
             ScreenshotTaker.TakeNonSteamShot(safeName);
-            return Path.Combine(GenFilePaths.ScreenshotFolderPath, safeName + ".png");
+            return new PendingScreenshotCapture
+            {
+                ExpectedPath = Path.Combine(GenFilePaths.ScreenshotFolderPath, safeName + ".png"),
+                ScreenTargets = screenTargets
+            };
         }, timeoutMs: 5000);
 
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (DateTime.UtcNow < deadline)
         {
-            if (File.Exists(expectedPath))
+            if (File.Exists(capture.ExpectedPath))
             {
-                var info = new FileInfo(expectedPath);
+                var info = new FileInfo(capture.ExpectedPath);
                 if (info.Length > 0)
                 {
                     return new
                     {
                         success = true,
-                        path = expectedPath,
+                        path = capture.ExpectedPath,
+                        fileName = safeName,
                         screenshotFolder = GenFilePaths.ScreenshotFolderPath,
-                        sizeBytes = info.Length
+                        sizeBytes = info.Length,
+                        capturedAtUtc = DateTime.UtcNow,
+                        screenTargets = capture.ScreenTargets
                     };
                 }
             }
@@ -144,7 +164,7 @@ internal sealed class ViewCapabilityModule
         {
             success = false,
             message = "Timed out waiting for RimWorld to finish writing the screenshot file.",
-            expectedPath
+            expectedPath = capture.ExpectedPath
         };
     }
 }

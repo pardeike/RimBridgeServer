@@ -156,6 +156,12 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
+    [Tool("rimworld/get_screen_targets", Description = "Get current screen-space targets such as open windows and active context-menu geometry")]
+    public object GetScreenTargets()
+    {
+        return InvokeAlias();
+    }
+
     [Tool("rimworld/jump_camera_to_pawn", Description = "Jump the camera to a pawn by name")]
     public object JumpCameraToPawn([ToolParameter(Description = "Pawn name on the current map")] string pawnName)
     {
@@ -196,10 +202,12 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pawnNamesCsv), pawnNamesCsv)));
     }
 
-    [Tool("rimworld/take_screenshot", Description = "Take an in-game screenshot and return the saved file path")]
-    public object TakeScreenshot([ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null)
+    [Tool("rimworld/take_screenshot", Description = "Take an in-game screenshot and return the saved file path plus optional target metadata")]
+    public object TakeScreenshot(
+        [ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null,
+        [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true)
     {
-        return InvokeAlias(Arguments((nameof(fileName), fileName)));
+        return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets)));
     }
 
     [Tool("rimworld/get_achtung_state", Description = "Get Achtung-specific debug state when the mod is loaded")]

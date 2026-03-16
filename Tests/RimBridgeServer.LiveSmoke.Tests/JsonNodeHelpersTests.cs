@@ -26,6 +26,7 @@ public class JsonNodeHelpersTests
         Assert.Equal("Playing", JsonNodeHelpers.ReadString(node, "state", "programState"));
         Assert.True(JsonNodeHelpers.ReadBoolean(node, "state", "hasCurrentGame"));
         Assert.Equal(12L, JsonNodeHelpers.ReadInt64(node, "latestOperationEventSequence"));
+        Assert.Equal(3d, JsonNodeHelpers.ReadDouble(node, "count"));
     }
 
     [Fact]

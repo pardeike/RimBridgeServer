@@ -164,6 +164,26 @@ internal static class SmokeScenarioCatalog
         if (!floatMenuOpenAfterOpen)
             throw new InvalidOperationException("Opening the context menu did not expose a float menu on the RimWorld window stack.");
 
+        var screenTargets = await context.CallGameToolAsync("context_menu.get_screen_targets", "rimworld/get_screen_targets", new { }, cancellationToken);
+        context.EnsureSucceeded(screenTargets, "Reading screen-space target metadata after opening a context menu");
+        var contextMenuTargets = JsonNodeHelpers.GetPath(screenTargets.StructuredContent, "targets", "contextMenu");
+        if (contextMenuTargets == null)
+            throw new InvalidOperationException("Screen target metadata did not expose the active context menu.");
+
+        var targetOptionCount = JsonNodeHelpers.ReadInt32(contextMenuTargets, "optionCount").GetValueOrDefault();
+        var openedOptionCount = JsonNodeHelpers.ReadInt32(openContextMenu.StructuredContent, "optionCount").GetValueOrDefault();
+        if (targetOptionCount != openedOptionCount)
+            throw new InvalidOperationException("Screen target metadata did not report the same number of context-menu options as the open-context-menu call.");
+
+        var optionTargets = JsonNodeHelpers.ReadArray(contextMenuTargets, "options");
+        var firstOptionRect = optionTargets.Count > 0 ? JsonNodeHelpers.GetPath(optionTargets[0], "rect") : null;
+        if (firstOptionRect == null
+            || JsonNodeHelpers.ReadDouble(firstOptionRect, "width").GetValueOrDefault() <= 0
+            || JsonNodeHelpers.ReadDouble(firstOptionRect, "height").GetValueOrDefault() <= 0)
+        {
+            throw new InvalidOperationException("Context-menu target metadata did not include a valid rect for the first option.");
+        }
+
         var pressCancel = await context.CallGameToolAsync("context_menu.press_cancel", "rimworld/press_cancel", new { }, cancellationToken);
         context.EnsureSucceeded(pressCancel, "Sending semantic cancel input to close the context menu");
 
@@ -182,6 +202,7 @@ internal static class SmokeScenarioCatalog
         context.SetScenarioData("baselineUiState", baselineUiState);
         context.SetScenarioData("openContextMenu", openContextMenu.StructuredContent);
         context.SetScenarioData("uiStateAfterOpen", uiStateAfterOpen.StructuredContent);
+        context.SetScenarioData("screenTargets", JsonNodeHelpers.GetPath(screenTargets.StructuredContent, "targets"));
         context.SetScenarioData("pressCancel", pressCancel.StructuredContent);
 
         var observation = await observationWindow.CaptureAsync(
@@ -335,7 +356,8 @@ internal static class SmokeScenarioCatalog
 
         var screenshot = await context.CallGameToolAsync("screenshot.take_screenshot", "rimworld/take_screenshot", new
         {
-            fileName = screenshotFileName
+            fileName = screenshotFileName,
+            includeTargets = true
         }, cancellationToken);
         context.EnsureSucceeded(screenshot, $"Capturing screenshot '{screenshotFileName}'");
 
@@ -344,11 +366,24 @@ internal static class SmokeScenarioCatalog
         if (string.IsNullOrWhiteSpace(screenshotPath) || screenshotSizeBytes.GetValueOrDefault() <= 0)
             throw new InvalidOperationException($"Screenshot '{screenshotFileName}' did not report a valid file artifact.");
 
+        var screenshotTargets = JsonNodeHelpers.GetPath(screenshot.StructuredContent, "screenTargets");
+        if (screenshotTargets == null)
+            throw new InvalidOperationException($"Screenshot '{screenshotFileName}' did not include screen target metadata.");
+
+        var screenshotWindowCount = JsonNodeHelpers.ReadInt32(screenshotTargets, "uiState", "windowCount").GetValueOrDefault();
+        if (screenshotWindowCount <= 0)
+            throw new InvalidOperationException($"Screenshot '{screenshotFileName}' did not report any live UI windows in its target metadata.");
+
+        var selectedPawns = JsonNodeHelpers.ReadArray(screenshotTargets, "selectedPawns");
+        if (selectedPawns.Count == 0)
+            throw new InvalidOperationException($"Screenshot '{screenshotFileName}' did not preserve the current selection in its target metadata.");
+
         context.SetSummaryValue("selectedPawn", pawnName);
         context.SetSummaryValue("screenshotFileName", screenshotFileName);
         context.SetSummaryValue("screenshotPath", screenshotPath);
         context.SetSummaryValue("screenshotSizeBytes", screenshotSizeBytes?.ToString() ?? "0");
         context.SetScenarioData("camera", JsonNodeHelpers.GetPath(jumpCamera.StructuredContent, "camera"));
+        context.SetScenarioData("screenTargets", screenshotTargets);
         context.SetScenarioData("screenshot", screenshot.StructuredContent);
 
         var observation = await observationWindow.CaptureAsync(

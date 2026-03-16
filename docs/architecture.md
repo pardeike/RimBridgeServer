@@ -827,4 +827,4 @@ Tests:
 
 ## Immediate Next Step
 
-The next implementation step should be Step A1: extract the shared contracts and the operation envelope without changing externally visible tool names. That creates the seam needed for every later feature while keeping the risk low.
+The next implementation step should be Step A12: build the first narrowly scoped background-safe click path on top of `rimworld/get_screen_targets`, starting with known float-menu option and window targets before expanding toward broader physical input coverage. That keeps the risk low by reusing the new descriptive geometry surface instead of jumping directly to unrestricted physical input simulation.

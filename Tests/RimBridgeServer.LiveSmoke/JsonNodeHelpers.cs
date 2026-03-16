@@ -89,6 +89,33 @@ internal static class JsonNodeHelpers
         return null;
     }
 
+    public static double? ReadDouble(JsonNode? node, params string[] path)
+    {
+        var valueNode = GetPath(node, path);
+        if (valueNode is not JsonValue value)
+            return null;
+
+        if (value.TryGetValue(out double doubleValue))
+            return doubleValue;
+
+        if (value.TryGetValue(out float floatValue))
+            return floatValue;
+
+        if (value.TryGetValue(out decimal decimalValue))
+            return (double)decimalValue;
+
+        if (value.TryGetValue(out int intValue))
+            return intValue;
+
+        if (value.TryGetValue(out long longValue))
+            return longValue;
+
+        if (value.TryGetValue(out string? stringValue) && double.TryParse(stringValue, out var parsed))
+            return parsed;
+
+        return null;
+    }
+
     public static List<JsonNode?> ReadArray(JsonNode? node, params string[] path)
     {
         return GetPath(node, path) is JsonArray array

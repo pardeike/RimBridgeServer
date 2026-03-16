@@ -111,8 +111,21 @@ internal sealed class SmokeScenarioContext
         if (!IsEntryState(idleStatus.StructuredContent))
             throw new InvalidOperationException("The live smoke precondition requires either a loaded game or the RimWorld main menu entry scene so a debug game can be started safely.");
 
-        var startDebugGame = await CallGameToolAsync("ensure_playable.start_debug_game", "rimworld/start_debug_game", new { }, cancellationToken);
-        EnsureSucceeded(startDebugGame, "Starting RimWorld debug game for the playable-game precondition");
+        ToolInvocationResult? startDebugGame = null;
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            startDebugGame = await CallGameToolAsync($"ensure_playable.start_debug_game_{attempt}", "rimworld/start_debug_game", new { }, cancellationToken);
+            if (startDebugGame.Success)
+                break;
+
+            if (startDebugGame.Message.IndexOf("busy with another long event", StringComparison.OrdinalIgnoreCase) < 0)
+                break;
+
+            Note($"Retrying debug-game precondition after a transient long-event race (attempt {attempt}).");
+            await WaitForLongEventIdleAsync($"ensure_playable.wait_for_long_event_idle_retry_{attempt}", cancellationToken);
+        }
+
+        EnsureSucceeded(startDebugGame ?? throw new InvalidOperationException("The playable-game precondition did not return a start-debug-game result."), "Starting RimWorld debug game for the playable-game precondition");
 
         var operationId = RequireOperationId(startDebugGame, "Starting RimWorld debug game for the playable-game precondition");
         await WaitForOperationAsync("ensure_playable.wait_for_operation", operationId, cancellationToken);
