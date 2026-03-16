@@ -119,10 +119,12 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(path), path), (nameof(includeChildren), includeChildren), (nameof(includeHiddenChildren), includeHiddenChildren)));
     }
 
-    [Tool("rimworld/execute_debug_action", Description = "Execute a directly supported RimWorld debug action leaf by stable path")]
-    public object ExecuteDebugAction([ToolParameter(Description = "Stable debug action path returned by the discovery tools")] string path)
+    [Tool("rimworld/execute_debug_action", Description = "Execute a supported RimWorld debug action leaf by stable path, including pawn-target actions when pawnName is provided")]
+    public object ExecuteDebugAction(
+        [ToolParameter(Description = "Stable debug action path returned by the discovery tools")] string path,
+        [ToolParameter(Description = "Current-map pawn name for ToolMapForPawns debug actions such as T: Toggle Job Logging")] string pawnName = null)
     {
-        return InvokeAlias(Arguments((nameof(path), path)));
+        return InvokeAlias(Arguments((nameof(path), path), (nameof(pawnName), pawnName)));
     }
 
     [Tool("rimworld/set_debug_setting", Description = "Set a RimWorld debug setting toggle by stable path to a deterministic on/off state")]

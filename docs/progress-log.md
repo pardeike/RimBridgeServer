@@ -719,4 +719,36 @@ Notes:
 
 Next:
 
-- Step A19: add controlled step-output references so later script steps can bind to values returned by earlier steps without introducing a full custom DSL
+- Step A19: add generic pawn-target debug-action execution so high-value built-in developer tools such as job logging can be driven through the existing debug-action graph
+
+## 2026-03-16 - Step A19 - Pawn-Target Debug Actions and Job-Logging Bootstrap
+
+Status:
+
+- completed
+
+Completed:
+
+- extended [`DebugActionExecutionPolicy.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/DebugActionExecutionPolicy.cs) so pawn-target debug actions are no longer treated as permanently unsupported; discovery now reports them as executable leaves with `requiredTargetKind = "pawn"` while still keeping map and world targets disabled
+- extended [`RimWorldDebugActions.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldDebugActions.cs), [`DebugActionsCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/DebugActionsCapabilityModule.cs), and [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) so `rimworld/execute_debug_action` accepts an optional `pawnName` and can invoke `DebugActionNode.pawnAction` directly against a resolved current-map pawn
+- kept the result shape side-effect aware for targeted actions too: the execution response now includes the resolved `targetPawn`, before/after state snapshots, and the same captured log/window effects as direct debug actions
+- added coverage in [`DebugActionExecutionPolicyTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/DebugActionExecutionPolicyTests.cs) for the new pawn-target assessment semantics
+- added a new real-instance smoke scenario, `debug-action-pawn-target`, in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) and [`SmokeScenarioCatalogTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/SmokeScenarioCatalogTests.cs)
+- made `debug-action-pawn-target` prove the exact user-relevant seam end-to-end: discover `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details`, confirm discovery reports `requiredTargetKind: pawn`, execute both actions for a real colonist by `pawnName`, and verify the details action emits a captured job log row
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) so the debug-action documentation now explains targeted execution and calls out the job-logging actions explicitly
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --scenario debug-action-pawn-target --game-id rimworld --stop-after`
+
+Notes:
+
+- the live run confirmed the exact stable paths and behavior we wanted to bootstrap from: `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details` both resolve through the normal debug-action tree and execute successfully when `pawnName` is provided
+- `T: Log Job Details` produced a captured info log for colonist `Legend` with the current `GotoWander` job and driver toil, which proves the targeted execution path and log capture work together for real dev diagnostics
+- `T: Toggle Job Logging` itself currently does not expose a target-aware `on` state through the generic debug node metadata, so the bridge now treats it as an executable targeted action rather than as a deterministic boolean setting; that is acceptable for now because the goal of this step is reachability, not a full structured pawn-event API
+
+Next:
+
+- Step A20: add a bounded structured pawn-event journal for `job_changed`, `draft_changed`, and `mental_state_changed`, with push when supported and cursor-based pull as the correctness path

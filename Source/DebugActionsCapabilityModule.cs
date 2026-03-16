@@ -17,9 +17,9 @@ internal sealed class DebugActionsCapabilityModule
         return RimWorldDebugActions.GetDebugActionResponse(path, includeChildren, includeHiddenChildren);
     }
 
-    public object ExecuteDebugAction(string path)
+    public object ExecuteDebugAction(string path, string pawnName = null)
     {
-        return RimWorldDebugActions.ExecuteDebugActionResponse(path);
+        return RimWorldDebugActions.ExecuteDebugActionResponse(path, pawnName);
     }
 
     public object SetDebugSetting(string path, bool enabled)

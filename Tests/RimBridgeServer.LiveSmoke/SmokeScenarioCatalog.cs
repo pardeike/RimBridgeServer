@@ -19,6 +19,7 @@ internal static class SmokeScenarioCatalog
     public const string DebugGameLoadScenarioName = "debug-game-load";
     public const string ContextMenuCancelRoundTripScenarioName = "context-menu-cancel-roundtrip";
     public const string DebugActionDiscoveryScenarioName = "debug-action-discovery";
+    public const string DebugActionPawnTargetScenarioName = "debug-action-pawn-target";
     public const string ArchitectFloorDropdownScenarioName = "architect-floor-dropdown";
     public const string ArchitectStatefulTargetingScenarioName = "architect-stateful-targeting";
     public const string ArchitectWallPlacementScenarioName = "architect-wall-placement";
@@ -51,6 +52,12 @@ internal static class SmokeScenarioCatalog
                 Name = DebugActionDiscoveryScenarioName,
                 Description = "Ensure a playable game exists, discover debug-action roots and children, then execute one low-side-effect direct leaf action by stable path.",
                 RunAsync = RunDebugActionDiscoveryAsync
+            },
+            [DebugActionPawnTargetScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = DebugActionPawnTargetScenarioName,
+                Description = "Ensure a playable game exists, then execute pawn-target debug actions such as Toggle Job Logging and Log Job Details by stable path.",
+                RunAsync = RunDebugActionPawnTargetAsync
             },
             [ArchitectFloorDropdownScenarioName] = new SmokeScenarioDefinition
             {
@@ -289,6 +296,127 @@ internal static class SmokeScenarioCatalog
             "debug_actions.final_bridge_status",
             "debug_actions.collect_operation_events",
             "debug_actions.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunDebugActionPawnTargetAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("debug_actions_pawn.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("debug_actions_pawn.snapshot_bridge_status", cancellationToken);
+
+        var roots = await context.CallGameToolAsync("debug_actions_pawn.list_roots", "rimworld/list_debug_action_roots", new
+        {
+            includeHidden = false
+        }, cancellationToken);
+        context.EnsureSucceeded(roots, "Listing RimWorld debug-action roots for the pawn-target scenario");
+
+        var rootArray = JsonNodeHelpers.ReadArray(roots.StructuredContent, "roots");
+        var actionsRootPath = ResolveDebugActionRootPath(rootArray, "Actions");
+
+        var actionChildren = await context.CallGameToolAsync("debug_actions_pawn.list_action_children", "rimworld/list_debug_action_children", new
+        {
+            path = actionsRootPath,
+            includeHidden = false
+        }, cancellationToken);
+        context.EnsureSucceeded(actionChildren, $"Listing debug-action children under '{actionsRootPath}'");
+
+        var actionChildArray = JsonNodeHelpers.ReadArray(actionChildren.StructuredContent, "children");
+        var toggleJobLoggingPath = ResolveDebugActionPath(actionChildArray, @"Actions\T: Toggle Job Logging");
+        var logJobDetailsPath = ResolveDebugActionPath(actionChildArray, @"Actions\T: Log Job Details");
+
+        var colonists = await context.CallGameToolAsync("debug_actions_pawn.list_colonists", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists for the pawn-target debug-action scenario");
+
+        var pawnName = ResolveFirstColonistName(colonists.StructuredContent);
+
+        var toggleNode = await context.CallGameToolAsync("debug_actions_pawn.get_toggle", "rimworld/get_debug_action", new
+        {
+            path = toggleJobLoggingPath,
+            includeChildren = false
+        }, cancellationToken);
+        context.EnsureSucceeded(toggleNode, $"Reading debug-action metadata for '{toggleJobLoggingPath}'");
+
+        if (!string.Equals(JsonNodeHelpers.ReadString(toggleNode.StructuredContent, "node", "execution", "kind"), "PawnTarget", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Debug action '{toggleJobLoggingPath}' was not reported as a pawn-target action.");
+        if (JsonNodeHelpers.ReadBoolean(toggleNode.StructuredContent, "node", "execution", "supported") != true)
+            throw new InvalidOperationException($"Debug action '{toggleJobLoggingPath}' was not reported as executable with a pawn target.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(toggleNode.StructuredContent, "node", "execution", "requiredTargetKind"), "pawn", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Debug action '{toggleJobLoggingPath}' did not report the required target kind as 'pawn'.");
+
+        var originalToggleState = JsonNodeHelpers.ReadBoolean(toggleNode.StructuredContent, "node", "on") == true;
+        var currentToggleState = originalToggleState;
+
+        try
+        {
+            if (currentToggleState)
+            {
+                var disableToggle = await context.CallGameToolAsync("debug_actions_pawn.disable_toggle", "rimworld/execute_debug_action", new
+                {
+                    path = toggleJobLoggingPath,
+                    pawnName
+                }, cancellationToken);
+                context.EnsureSucceeded(disableToggle, $"Disabling pawn job logging for '{pawnName}'");
+                currentToggleState = false;
+            }
+
+            var enableToggle = await context.CallGameToolAsync("debug_actions_pawn.enable_toggle", "rimworld/execute_debug_action", new
+            {
+                path = toggleJobLoggingPath,
+                pawnName
+            }, cancellationToken);
+            context.EnsureSucceeded(enableToggle, $"Enabling pawn job logging for '{pawnName}'");
+            currentToggleState = true;
+
+            var toggleTargetName = JsonNodeHelpers.ReadString(enableToggle.StructuredContent, "targetPawn", "name");
+            if (!string.Equals(toggleTargetName, pawnName, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Debug-action execution targeted '{toggleTargetName}' instead of '{pawnName}'.");
+
+            var logJobDetails = await context.CallGameToolAsync("debug_actions_pawn.log_job_details", "rimworld/execute_debug_action", new
+            {
+                path = logJobDetailsPath,
+                pawnName
+            }, cancellationToken);
+            context.EnsureSucceeded(logJobDetails, $"Logging job details for '{pawnName}'");
+
+            var detailLogArray = JsonNodeHelpers.ReadArray(logJobDetails.StructuredContent, "effects", "logs");
+            if (detailLogArray.Count == 0)
+                throw new InvalidOperationException($"Debug action '{logJobDetailsPath}' did not emit any captured logs for '{pawnName}'.");
+
+            context.SetSummaryValue("actionsRootPath", actionsRootPath);
+            context.SetSummaryValue("targetPawn", pawnName);
+            context.SetSummaryValue("toggleJobLoggingPath", toggleJobLoggingPath);
+            context.SetSummaryValue("logJobDetailsPath", logJobDetailsPath);
+            context.SetSummaryValue("jobDetailLogCount", detailLogArray.Count.ToString());
+            context.SetScenarioData("roots", new JsonArray(rootArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("actionChildren", new JsonArray(actionChildArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("toggleNode", toggleNode.StructuredContent);
+            context.SetScenarioData("enableToggle", enableToggle.StructuredContent);
+            context.SetScenarioData("logJobDetails", logJobDetails.StructuredContent);
+        }
+        finally
+        {
+            if (currentToggleState != originalToggleState)
+            {
+                var restoreToggle = await context.CallGameToolAsync("debug_actions_pawn.restore_toggle", "rimworld/execute_debug_action", new
+                {
+                    path = toggleJobLoggingPath,
+                    pawnName
+                }, cancellationToken);
+                context.EnsureSucceeded(restoreToggle, $"Restoring pawn job logging for '{pawnName}'");
+                context.SetScenarioData("restoreToggle", restoreToggle.StructuredContent);
+            }
+        }
+
+        var observation = await observationWindow.CaptureAsync(
+            "debug_actions_pawn.final_bridge_status",
+            "debug_actions_pawn.collect_operation_events",
+            "debug_actions_pawn.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }
@@ -2557,6 +2685,26 @@ internal static class SmokeScenarioCatalog
         }
 
         throw new InvalidOperationException("The chosen debug-action root did not expose any directly executable child actions.");
+    }
+
+    private static string ResolveDebugActionPath(IReadOnlyList<JsonNode?> children, string preferredPath)
+    {
+        foreach (var child in children)
+        {
+            var path = JsonNodeHelpers.ReadString(child, "path");
+            if (string.Equals(path, preferredPath, StringComparison.Ordinal))
+                return path;
+        }
+
+        var preferredLabel = preferredPath[(preferredPath.LastIndexOf('\\') + 1)..];
+        foreach (var child in children)
+        {
+            var label = JsonNodeHelpers.ReadString(child, "label");
+            if (string.Equals(label, preferredLabel, StringComparison.Ordinal))
+                return JsonNodeHelpers.ReadString(child, "path");
+        }
+
+        throw new InvalidOperationException($"Could not resolve debug action '{preferredPath}' from the returned child nodes.");
     }
 
     private static string ResolveSafeDebugSettingPath(IReadOnlyList<JsonNode?> children)

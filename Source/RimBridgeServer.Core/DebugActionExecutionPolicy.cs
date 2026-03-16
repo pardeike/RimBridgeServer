@@ -13,11 +13,12 @@ public enum DebugActionExecutionKind
 
 public readonly struct DebugActionExecutionAssessment
 {
-    public DebugActionExecutionAssessment(DebugActionExecutionKind kind, bool supported, string reason)
+    public DebugActionExecutionAssessment(DebugActionExecutionKind kind, bool supported, string reason, string requiredTargetKind = null)
     {
         Kind = kind;
         Supported = supported;
         Reason = reason ?? string.Empty;
+        RequiredTargetKind = requiredTargetKind ?? string.Empty;
     }
 
     public DebugActionExecutionKind Kind { get; }
@@ -25,6 +26,8 @@ public readonly struct DebugActionExecutionAssessment
     public bool Supported { get; }
 
     public string Reason { get; }
+
+    public string RequiredTargetKind { get; }
 }
 
 public static class DebugActionExecutionPolicy
@@ -54,8 +57,9 @@ public static class DebugActionExecutionPolicy
                 {
                     return new DebugActionExecutionAssessment(
                         DebugActionExecutionKind.PawnTarget,
-                        supported: false,
-                        reason: "This debug action requires a pawn target. Targeted pawn execution is not implemented yet.");
+                        supported: true,
+                        reason: "This debug action requires a pawn target input.",
+                        requiredTargetKind: "pawn");
                 }
 
                 return new DebugActionExecutionAssessment(
@@ -67,19 +71,22 @@ public static class DebugActionExecutionPolicy
                 return new DebugActionExecutionAssessment(
                     DebugActionExecutionKind.MapTarget,
                     supported: false,
-                    reason: "This debug action requires a map target. Targeted map execution is not implemented yet.");
+                    reason: "This debug action requires a map target. Targeted map execution is not implemented yet.",
+                    requiredTargetKind: "map");
 
             case "ToolMapForPawns":
                 return new DebugActionExecutionAssessment(
                     DebugActionExecutionKind.PawnTarget,
-                    supported: false,
-                    reason: "This debug action requires selecting pawns on the map. Pawn-target execution is not implemented yet.");
+                    supported: true,
+                    reason: "This debug action requires a pawn target input.",
+                    requiredTargetKind: "pawn");
 
             case "ToolWorld":
                 return new DebugActionExecutionAssessment(
                     DebugActionExecutionKind.WorldTarget,
                     supported: false,
-                    reason: "This debug action requires a world target. World-target execution is not implemented yet.");
+                    reason: "This debug action requires a world target. World-target execution is not implemented yet.",
+                    requiredTargetKind: "world");
 
             default:
                 return new DebugActionExecutionAssessment(

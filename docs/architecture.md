@@ -835,4 +835,4 @@ Tests:
 
 ## Immediate Next Step
 
-The first low-risk script slice should be in place before the next implementation step moves deeper into scripting ergonomics. Once ordered capability batching works end-to-end, the next highest-value addition is controlled step-output references so later steps can consume ids and values returned by earlier ones. That keeps the scripting model compact while unlocking practical fixture-building flows such as create area -> select returned area id -> paint area, or discover/create something once and use it in several later steps without leaving the batch.
+The next highest-value addition should be a structured pawn-event journal on top of the now-verified pawn-target debug-action seam. Generic targeted debug actions such as `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details` are useful as manual diagnostics and bootstrap tooling, but autonomous workflows still need bounded structured events instead of ad hoc text logs. The low-risk first slice is `job_changed`, `draft_changed`, and `mental_state_changed` with cursor-based pull as the correctness path and host-level push as an optional acceleration path.

@@ -79,7 +79,7 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/list_debug_action_roots`** - List the top-level debug menu tabs and their stable internal paths
 - **`rimworld/list_debug_action_children`** - List direct children under one debug menu path
 - **`rimworld/get_debug_action`** - Get one debug node with metadata such as tab, toggle state, and execution mode
-- **`rimworld/execute_debug_action`** - Execute a directly supported debug action and return captured side effects such as logs and opened windows
+- **`rimworld/execute_debug_action`** - Execute a supported debug action and return captured side effects such as logs and opened windows, including pawn-target actions when `pawnName` is provided
 - **`rimworld/set_debug_setting`** - Set a debug settings toggle to a deterministic on/off state by stable path
 - **`rimworld/get_designator_state`** - Get the current Architect/designator selection state, including god mode and the selected designator
 - **`rimworld/set_god_mode`** - Enable or disable RimWorld god mode deterministically
@@ -142,6 +142,8 @@ Your external program can send these commands to RimBridgeServer:
 `rimworld/list_debug_action_roots` exposes the same internal graph that powers RimWorld's debug dialog, including the three important tabs: `Actions/tools`, `Settings`, and `Output`. The bridge keeps the stable internal paths such as `Outputs\\Tick Rates` and `Settings\\Show Architect Menu Order`, while also returning normalized tab metadata so clients can stay close to the in-game UI model.
 
 `rimworld/execute_debug_action` is intentionally side-effect aware. Instead of pretending every debug action has a typed function return, the bridge captures what actually happened around the execution: new log entries, window opens/closes, and before/after game state snapshots. This makes the `Output` tab useful without bespoke wrappers for each individual output command.
+
+Pawn-target debug actions are now supported through the same surface. Discovery metadata exposes `execution.requiredTargetKind = "pawn"` for `ToolMapForPawns` leaves, and callers can execute those nodes by passing `pawnName` to `rimworld/execute_debug_action`. That makes actions such as `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details` reachable without foreground input or a second pawn-specific API.
 
 `rimworld/set_debug_setting` builds deterministic semantics on top of the same graph. Settings nodes already expose their current `on` state and a direct toggle action, so the bridge can move them to an explicit target value and report whether anything changed.
 
@@ -333,6 +335,14 @@ The `architect-stateful-targeting` scenario covers the remaining mutable Archite
 - applies `Expand allowed area` over a 2x2 rectangle and verifies the created area id through both `rimworld/list_areas` and `rimworld/get_cell_info`
 - creates a stockpile zone, pins the stockpile designator to that zone with `rimworld/set_zone_target`, then expands the same zone into a second rectangle without increasing the zone count
 - tears the fixture back down with `rimworld/delete_zone`, `rimworld/clear_area`, and `rimworld/delete_area`
+
+The `debug-action-pawn-target` scenario covers the first targeted debug-action slice:
+
+- ensures a playable game exists
+- discovers `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details` through the same stable debug-action tree as other actions
+- verifies the discovery payload reports `requiredTargetKind: pawn`
+- executes both actions against a real colonist by `pawnName`
+- verifies `T: Log Job Details` emits a captured log row containing the pawn's current job details
 
 The `script-wall-sequence` scenario covers the first script-runner slice:
 

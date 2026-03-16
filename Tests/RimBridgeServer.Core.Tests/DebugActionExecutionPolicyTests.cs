@@ -34,7 +34,7 @@ public class DebugActionExecutionPolicyTests
     }
 
     [Fact]
-    public void MarksPawnActionsAsUnsupportedPawnTargets()
+    public void MarksPawnActionsAsSupportedPawnTargets()
     {
         var assessment = DebugActionExecutionPolicy.Evaluate(
             hasChildren: false,
@@ -43,7 +43,23 @@ public class DebugActionExecutionPolicyTests
             hasPawnAction: true);
 
         Assert.Equal(DebugActionExecutionKind.PawnTarget, assessment.Kind);
-        Assert.False(assessment.Supported);
+        Assert.True(assessment.Supported);
+        Assert.Equal("pawn", assessment.RequiredTargetKind);
+        Assert.Contains("pawn target", assessment.Reason);
+    }
+
+    [Fact]
+    public void MarksToolMapForPawnsActionsAsSupportedPawnTargets()
+    {
+        var assessment = DebugActionExecutionPolicy.Evaluate(
+            hasChildren: false,
+            actionType: "ToolMapForPawns",
+            hasAction: false,
+            hasPawnAction: true);
+
+        Assert.Equal(DebugActionExecutionKind.PawnTarget, assessment.Kind);
+        Assert.True(assessment.Supported);
+        Assert.Equal("pawn", assessment.RequiredTargetKind);
         Assert.Contains("pawn target", assessment.Reason);
     }
 

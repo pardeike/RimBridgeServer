@@ -81,7 +81,7 @@ internal static class RimWorldDebugActions
         };
     }
 
-    public static object ExecuteDebugActionResponse(string path)
+    public static object ExecuteDebugActionResponse(string path, string pawnName = null)
     {
         if (!TryResolveNode(path, out var node, out var normalizedPath, out var error))
             return Failure(error);
@@ -104,11 +104,52 @@ internal static class RimWorldDebugActions
             };
         }
 
+        Pawn targetPawn = null;
+        if (assessment.Kind == DebugActionExecutionKind.PawnTarget)
+        {
+            if (string.IsNullOrWhiteSpace(pawnName))
+            {
+                return new
+                {
+                    success = false,
+                    message = $"Debug action '{normalizedPath}' requires a current-map pawn target. Provide pawnName.",
+                    path = normalizedPath,
+                    node = DescribeNode(node),
+                    requiredTargetKind = "pawn",
+                    state = RimWorldState.ToolStateSnapshot()
+                };
+            }
+
+            try
+            {
+                targetPawn = RimWorldState.ResolveCurrentMapPawn(pawnName);
+            }
+            catch (Exception ex)
+            {
+                return new
+                {
+                    success = false,
+                    message = $"Could not resolve pawn target for debug action '{normalizedPath}': {ex.Message}",
+                    path = normalizedPath,
+                    node = DescribeNode(node),
+                    requiredTargetKind = "pawn",
+                    state = RimWorldState.ToolStateSnapshot()
+                };
+            }
+        }
+
         var before = CaptureExecution();
 
         try
         {
-            node.action?.Invoke();
+            if (assessment.Kind == DebugActionExecutionKind.PawnTarget)
+            {
+                node.pawnAction?.Invoke(targetPawn);
+            }
+            else
+            {
+                node.action?.Invoke();
+            }
         }
         catch (Exception ex)
         {
@@ -121,6 +162,7 @@ internal static class RimWorldDebugActions
                 exceptionType = ex.GetType().FullName,
                 path = normalizedPath,
                 node = DescribeNode(node),
+                targetPawn = targetPawn == null ? null : RimWorldState.DescribePawn(targetPawn),
                 stateBefore = before.State,
                 stateAfter = after.State,
                 effects = DescribeEffects(before, after)
@@ -134,6 +176,7 @@ internal static class RimWorldDebugActions
             success = true,
             path = normalizedPath,
             node = DescribeNode(node),
+            targetPawn = targetPawn == null ? null : RimWorldState.DescribePawn(targetPawn),
             stateBefore = before.State,
             stateAfter = completed.State,
             effects = DescribeEffects(before, completed)
@@ -344,7 +387,8 @@ internal static class RimWorldDebugActions
             {
                 kind = assessment.Kind.ToString(),
                 supported = assessment.Supported,
-                reason = string.IsNullOrWhiteSpace(assessment.Reason) ? null : assessment.Reason
+                reason = string.IsNullOrWhiteSpace(assessment.Reason) ? null : assessment.Reason,
+                requiredTargetKind = string.IsNullOrWhiteSpace(assessment.RequiredTargetKind) ? null : assessment.RequiredTargetKind
             },
             source = attribute == null
                 ? null
