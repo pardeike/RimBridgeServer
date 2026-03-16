@@ -398,6 +398,7 @@ These belong in RimBridgeServer itself because they are broadly useful across mo
 - keyboard input
 - selection read and mutate
 - click by screen rect or semantic target
+- input must work even when RimWorld is not the foreground application, which rules out a foreground-only desktop automation design
 
 #### Settings and mod config
 
@@ -466,6 +467,8 @@ Required for cases where the UI itself is under test:
 - mouse move and click
 - key press simulation
 - screenshot before and after action
+
+Physical mode should still be implemented inside RimWorld's process or window event path wherever possible. Foreground-dependent OS desktop input is not a sufficient design because automated test runs may keep RimWorld in the background.
 
 This split matters because functional automation and UX automation are different jobs. We should not pay the cost of physical UI simulation when a direct command path is available.
 

@@ -166,9 +166,19 @@ The `debug-game-load` scenario drives GABS and RimBridgeServer end-to-end:
 - verifies that colonists are present on the map
 - collects the log and operation-event window for that action
 
+The `selection-roundtrip` scenario reuses the same harness primitives against a loaded game:
+
+- ensures a playable game exists, creating a debug colony when needed
+- starts a fresh observation window after the game is ready
+- lists current-map colonists and selects a real pawn
+- jumps the camera to that pawn, reads camera state, and clears the selection again
+- captures only the operation and log window for that interaction block
+
 The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.
 
 The runner looks for `gabs` on `PATH`, honors `GABS_BIN`, and also auto-detects a sibling checkout at `../GABS/gabs`. Use `--config-dir` or `GABS_CONFIG_DIR` if you need to point it at a non-default GABS configuration directory.
+
+The shared observation-window helper is intentionally generic: scenarios can start a bounded cursor window immediately before the action under test, choose their own event/log filters, and then collect the exact delta afterward without introducing global logging modes or ad hoc sleeps.
 
 For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABP).
 

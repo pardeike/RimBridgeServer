@@ -238,7 +238,7 @@ Status:
 Completed:
 
 - added a dedicated live smoke runner project at [`Tests/RimBridgeServer.LiveSmoke`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke) that speaks MCP over stdio to a local `gabs server stdio` process instead of relying on one-off manual tool sequences
-- implemented a baseline `debug-game-load` scenario in [`LiveSmokeHarness.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/LiveSmokeHarness.cs) that checks game status, starts RimWorld when needed, connects through GABS, waits for idle, snapshots bridge cursors, starts RimWorld's debug colony, waits for playable state, verifies colonists, and then captures the resulting log/event window
+- implemented a baseline `debug-game-load` scenario in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) and [`SmokeHarness.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeHarness.cs) that checks game status, starts RimWorld when needed, connects through GABS, waits for idle, snapshots bridge cursors, starts RimWorld's debug colony, waits for playable state, verifies colonists, and then captures the resulting log/event window
 - kept the console summary intentionally terse while writing the full structured run report to `artifacts/live-smoke/<timestamp>_<scenario>.json`, which gives us useful detail without flooding the interactive context
 - added the developer wrapper [`scripts/live-smoke.sh`](/Users/ap/Projects/RimBridgeServer/scripts/live-smoke.sh) so the smoke flow is now a named repo command instead of a handwritten terminal sequence
 - added the new live smoke project to [`RimBridgeServer.sln`](/Users/ap/Projects/RimBridgeServer/RimBridgeServer.sln) and documented the workflow in [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md)
@@ -259,6 +259,40 @@ Notes:
 Next:
 
 - Step A8: extract the live smoke scenario and reporting contracts into reusable testing primitives so we can add more real-instance cases without duplicating GABS, wait, and cursor-window plumbing
+
+## 2026-03-16 - Step A8 - Reusable Live Smoke Primitives and Second Scenario
+
+Status:
+
+- completed
+
+Completed:
+
+- split the live smoke runner into reusable pieces under [`Tests/RimBridgeServer.LiveSmoke`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke): [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs), [`SmokeScenarioContext.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioContext.cs), [`SmokeObservationWindow.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeObservationWindow.cs), [`McpStdioClient.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/McpStdioClient.cs), [`JsonNodeHelpers.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/JsonNodeHelpers.cs), and [`SmokeReports.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeReports.cs)
+- moved scenario selection behind a small registry so the harness can enumerate scenario names and descriptions cleanly instead of hard-coding a single switch branch in one file
+- added a reusable observation-window primitive that snapshots `latestLogSequence` and `latestOperationEventSequence`, carries per-scenario filters, and then collects only the bounded log/event delta after the action block under test
+- added a shared playable-game precondition helper so scenarios that need a loaded colony can create one safely without duplicating GABS, wait, and operation-plumbing code
+- added a second real-instance scenario, `selection-roundtrip`, which exercises `rimworld/list_colonists`, `rimworld/select_pawn`, `rimworld/jump_camera_to_pawn`, `rimworld/get_camera_state`, and `rimworld/clear_selection` on a real colony while capturing a precise operation/log window
+- added focused unit coverage in [`RimBridgeServer.LiveSmoke.Tests`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests) for the scenario catalog and JSON/result helpers so the new reusable layer has fast feedback outside live RimWorld runs
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) with the second scenario and the reusable observation-window workflow
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --list-scenarios`
+- `scripts/live-smoke.sh --scenario debug-game-load --game-id rimworld --stop-after`
+- `scripts/live-smoke.sh --scenario selection-roundtrip --game-id rimworld --stop-after`
+
+Notes:
+
+- the harness now has a stable internal testing API: start a scenario, satisfy preconditions, begin a bounded observation window, run the action block, then collect only the resulting deltas
+- this is the right place to add more live UX and integration scenarios because the GABS session, wait tools, cursor plumbing, and report writing are now shared instead of copied
+- input work should be designed around in-process or window-path injection rather than foreground-dependent desktop automation, because future mouse and keyboard tests need to work even when RimWorld is backgrounded
+
+Next:
+
+- Step A9: add the first save/load and screenshot-oriented live scenarios on top of the reusable harness so we start covering longer-running lifecycle and UX flows with the same observation model
 
 ## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
 

@@ -26,6 +26,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RimBridgeServer.Core.Tests"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RimBridgeServer.LiveSmoke", "Tests\RimBridgeServer.LiveSmoke\RimBridgeServer.LiveSmoke.csproj", "{8BC878FB-C88B-498A-973F-5E642AEC3C1E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RimBridgeServer.LiveSmoke.Tests", "Tests\RimBridgeServer.LiveSmoke.Tests\RimBridgeServer.LiveSmoke.Tests.csproj", "{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -120,6 +122,18 @@ Global
 		{8BC878FB-C88B-498A-973F-5E642AEC3C1E}.Release|x64.Build.0 = Release|Any CPU
 		{8BC878FB-C88B-498A-973F-5E642AEC3C1E}.Release|x86.ActiveCfg = Release|Any CPU
 		{8BC878FB-C88B-498A-973F-5E642AEC3C1E}.Release|x86.Build.0 = Release|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Debug|x64.Build.0 = Debug|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Debug|x86.Build.0 = Debug|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Release|x64.ActiveCfg = Release|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Release|x64.Build.0 = Release|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Release|x86.ActiveCfg = Release|Any CPU
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -131,6 +145,7 @@ Global
 		{53D142D7-167D-485E-A9F9-6365BEDBB920} = {B8EFCA5F-814F-285C-A8CB-F00F14650265}
 		{0256DB85-6EFE-49BE-B4B4-8D94DAAB5E9A} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{8BC878FB-C88B-498A-973F-5E642AEC3C1E} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{5B9FDE1B-7E8E-4F1E-B22D-0E0B3A0D98E2} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {56478D89-07B3-4C4D-9FB8-A55403305359}
