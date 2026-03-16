@@ -155,3 +155,31 @@ Notes:
 Next:
 
 - Step A5: add explicit wait conditions and synchronous fast-path helpers so long-event and frame-bound capabilities can expose lower-latency polling and blocking behavior through the shared execution kernel
+
+## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
+
+Status:
+
+- completed
+
+Completed:
+
+- updated [`RimBridgeServer.csproj`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.csproj) to use `PackageReference Include="Lib.GAB" Version="0.1.0"` instead of file-based references to vendored bridge assemblies
+- removed the direct project references to `lib/Lib.GAB.dll` and `lib/Gabp.Runtime.dll` so the host now restores the bridge runtime from NuGet and relies on the package dependency graph for `Gabp.Runtime`
+- deleted the now-stale tracked binaries [`lib/Lib.GAB.dll`](/Users/ap/Projects/RimBridgeServer/lib/Lib.GAB.dll) and [`lib/Gabp.Runtime.dll`](/Users/ap/Projects/RimBridgeServer/lib/Gabp.Runtime.dll) to avoid keeping two conflicting runtime sources in the repository
+- verified that the built mod output in [`1.6/Assemblies`](/Users/ap/Projects/RimBridgeServer/1.6/Assemblies) still contains `RimBridgeServer.dll`, `Lib.GAB.dll`, and `Gabp.Runtime.dll`
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln`
+- `find 1.6/Assemblies -maxdepth 1 -type f \( -name 'Lib.GAB.dll' -o -name 'Gabp.Runtime.dll' -o -name 'RimBridgeServer.dll' \) -print | sort`
+
+Notes:
+
+- this keeps the project aligned with the current upstream `Lib.GAB` package instead of a manually vendored copy, which reduces drift and makes future updates lower risk
+- `CopyLocalLockFileAssemblies=true` in the host project remains important because it ensures the restored package assemblies are copied into the RimWorld mod output directory
+
+Next:
+
+- Step A5: add explicit wait conditions and synchronous fast-path helpers so long-event and frame-bound capabilities can expose lower-latency polling and blocking behavior through the shared execution kernel
