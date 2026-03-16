@@ -117,6 +117,7 @@ internal static class SmokeHarness
             {
                 try
                 {
+                    report.Notes.Add("Stopping RimWorld after verification because --stop-after was requested and this harness started the game.");
                     var stop = await context.CallServerToolAsync("stop_game", "games.stop", new { gameId = options.GameId }, cancellationToken);
                     if (stop.IsError)
                         report.Notes.Add($"Cleanup warning: {stop.Text}");
