@@ -827,4 +827,4 @@ Tests:
 
 ## Immediate Next Step
 
-The next implementation step should be Step A12: build the first narrowly scoped background-safe click path on top of `rimworld/get_screen_targets`, starting with known float-menu option and window targets before expanding toward broader physical input coverage. That keeps the risk low by reusing the new descriptive geometry surface instead of jumping directly to unrestricted physical input simulation.
+The next implementation step should be Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots. That keeps the risk low by building on the new target-id and geometry surface instead of widening physical input simulation before the visual test path is solid.

@@ -153,73 +153,15 @@ internal sealed class ContextMenuCapabilityModule
 
     public object ExecuteContextMenuOption(int optionIndex = -1, string label = null)
     {
-        var snapshot = RimBridgeContextMenus.Current;
-        if (snapshot == null || snapshot.Menu == null)
-            return new { success = false, message = "No debug context menu is available." };
-        if (Find.WindowStack.FloatMenu != snapshot.Menu)
-        {
-            RimBridgeContextMenus.Clear();
-            return new { success = false, message = "No debug context menu is available." };
-        }
-
-        FloatMenuOption option = null;
-        var resolvedIndex = -1;
-
-        if (optionIndex > 0)
-        {
-            if (optionIndex > snapshot.Options.Count)
-                return new { success = false, message = $"Option index {optionIndex} is out of range for a menu with {snapshot.Options.Count} options." };
-
-            resolvedIndex = optionIndex;
-            option = snapshot.Options[optionIndex - 1];
-        }
-        else
-        {
-            if (string.IsNullOrWhiteSpace(label))
-                return new { success = false, message = "Either optionIndex or label must be provided." };
-
-            var exactMatches = snapshot.Options
-                .Select((candidate, index) => new { candidate, index })
-                .Where(item => string.Equals(item.candidate.Label, label, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            if (exactMatches.Count == 1)
-            {
-                option = exactMatches[0].candidate;
-                resolvedIndex = exactMatches[0].index + 1;
-            }
-            else if (exactMatches.Count > 1)
-            {
-                return new { success = false, message = $"Label '{label}' is ambiguous within the current menu." };
-            }
-            else
-            {
-                var partialMatches = snapshot.Options
-                    .Select((candidate, index) => new { candidate, index })
-                    .Where(item => item.candidate.Label.IndexOf(label, StringComparison.OrdinalIgnoreCase) >= 0)
-                    .ToList();
-                if (partialMatches.Count != 1)
-                {
-                    return new { success = false, message = $"Could not resolve menu label '{label}' to a single option." };
-                }
-
-                option = partialMatches[0].candidate;
-                resolvedIndex = partialMatches[0].index + 1;
-            }
-        }
-
-        if (option.Disabled)
-            return new { success = false, message = $"Menu option {resolvedIndex} is disabled.", label = option.Label };
-        if (option.action == null)
-            return new { success = false, message = $"Menu option {resolvedIndex} has no executable action.", label = option.Label };
-
-        option.Chosen(snapshot.Menu.givesColonistOrders, snapshot.Menu);
-        RimBridgeContextMenus.Clear();
+        var execution = RimWorldContextMenuActions.ExecuteOption(optionIndex, label);
+        if (!execution.Success)
+            return new { success = false, message = execution.Message, label = execution.Label };
 
         return new
         {
             success = true,
-            executedIndex = resolvedIndex,
-            label = option.Label
+            executedIndex = execution.ResolvedIndex,
+            label = execution.Label
         };
     }
 

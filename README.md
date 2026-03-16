@@ -79,6 +79,7 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
 - **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
 - **`rimworld/close_window`** - Close an open RimWorld window by type name or close the topmost window
+- **`rimworld/click_screen_target`** - Semantically click a known actionable target id returned by `rimworld/get_screen_targets`
 - **`rimworld/start_debug_game`** - Start RimWorld's built-in quick test colony from the main menu
 - **`rimworld/list_saves`** - List saved games
 - **`rimworld/spawn_thing`** - Spawn a thing on the current map at a target cell
@@ -142,7 +143,9 @@ Most mutating tools are marshalled onto RimWorld's main thread before they touch
 
 The new UI input helpers are intentionally semantic. `rimworld/press_accept`, `rimworld/press_cancel`, and `rimworld/close_window` drive RimWorld's own `WindowStack` APIs instead of foreground-dependent desktop input, which keeps them usable even when the game is running in the background during automated tests.
 
-`rimworld/get_screen_targets` and the default `includeTargets: true` behavior on `rimworld/take_screenshot` expose a structured screen-space snapshot instead of forcing clients to infer UI geometry from logs or raw pixels. The current payload includes live window rects, selection, camera state, and active float-menu option rects when a context menu is open.
+`rimworld/get_screen_targets` and the default `includeTargets: true` behavior on `rimworld/take_screenshot` expose a structured screen-space snapshot instead of forcing clients to infer UI geometry from logs or raw pixels. The current payload includes live window rects, selection, camera state, active float-menu option rects, and actionable target ids such as `dismissTargetId` and context-menu option `targetId` values.
+
+`rimworld/click_screen_target` is the first background-safe click seam on top of that metadata. It does not simulate desktop mouse input; instead it resolves known target ids in-process and dispatches the correct direct RimWorld action. The first supported targets are dismissible windows and context-menu options.
 
 For test automation, prefer the explicit wait tools over blind sleeps. `rimbridge/wait_for_game_loaded`, `rimbridge/wait_for_long_event_idle`, and `rimbridge/wait_for_operation` provide bounded waits with state snapshots so scripts can move quickly when the game is ready and fail with useful diagnostics when it is not.
 
@@ -190,6 +193,13 @@ The `context-menu-cancel-roundtrip` scenario exercises the first background-safe
 - captures `rimworld/get_screen_targets` while the menu is open and verifies the reported option geometry
 - closes that menu again with `rimworld/press_cancel`
 - verifies the float-menu and window-stack state transitions without depending on OS focus
+
+The `screen-target-click-roundtrip` scenario exercises the first background-safe click path:
+
+- ensures a playable game exists and normalizes away stray dialog windows
+- opens a real context menu and reads `rimworld/get_screen_targets`
+- clicks the float-menu dismiss target id through `rimworld/click_screen_target`
+- reopens the menu, clicks a direct option target id, and verifies the reported target/action metadata
 
 The `save-load-roundtrip` scenario covers the real save/load lifecycle:
 

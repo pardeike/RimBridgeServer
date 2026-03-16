@@ -394,6 +394,39 @@ Next:
 
 - Step A12: build the first narrowly scoped background-safe click path on top of `rimworld/get_screen_targets`, starting with known float-menu option and window targets before expanding toward broader physical input coverage
 
+## 2026-03-16 - Step A12 - Background-Safe Screen Target Clicks
+
+Status:
+
+- completed
+
+Completed:
+
+- added [`ScreenTargetIds.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/ScreenTargetIds.cs) and [`ScreenTargetIdsTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/ScreenTargetIdsTests.cs) as the shared target-id contract for screen-target payloads and click dispatch
+- extended [`RimWorldTargeting.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldTargeting.cs) so screen-target payloads now expose actionable ids: `dismissTargetId` for dismissible windows and context menus, plus `targetId` for context-menu options
+- added [`RimWorldContextMenuActions.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldContextMenuActions.cs) to centralize active-menu validation and option execution, then reused it from [`ContextMenuCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ContextMenuCapabilityModule.cs) and the new click path instead of duplicating menu-resolution logic
+- extended [`RimWorldInput.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldInput.cs), [`InputCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/InputCapabilityModule.cs), and [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) with `rimworld/click_screen_target`, which semantically dispatches known target ids without depending on OS focus
+- fixed the context-menu execution seam so clicking a context-menu option now removes the clicked float menu after invoking the option action, matching real click behavior more closely for automation flows
+- added a new real-instance live scenario, `screen-target-click-roundtrip`, in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) and updated [`SmokeScenarioCatalogTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/SmokeScenarioCatalogTests.cs) so the harness now validates both dismiss-target clicks and option-target clicks against a real RimWorld colony
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) and [`docs/architecture.md`](/Users/ap/Projects/RimBridgeServer/docs/architecture.md) to document the new tool surface and advance the roadmap
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --list-scenarios`
+- `scripts/live-smoke.sh --scenario screen-target-click-roundtrip --game-id rimworld --stop-after`
+
+Notes:
+
+- this is intentionally still semantic targeting, not unrestricted physical mouse injection; it gives AI agents a background-safe click primitive while keeping the execution surface narrow and testable
+- the target-id contract now sits in `Core`, which means future screenshot clipping, scripting, and extension packages can refer to the same identifiers without reaching into host-only code
+- the live proof caught a real behavioral gap: invoking `FloatMenuOption.Chosen(...)` alone did not fully emulate click behavior for automation because the float menu could remain open, so the shared execution helper now closes the clicked menu explicitly
+
+Next:
+
+- Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots
+
 ## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
 
 Status:

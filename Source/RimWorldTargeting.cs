@@ -39,19 +39,7 @@ internal static class RimWorldTargeting
             },
             camera = TryDescribeCamera(),
             selectedPawns = Find.Selector.SelectedPawns.Select(RimWorldState.DescribePawn).ToList(),
-            windows = uiState.Windows.Select(window => new
-            {
-                kind = "window",
-                index = window.Index,
-                id = window.Id,
-                type = window.Type,
-                title = window.Title,
-                layer = window.Layer,
-                isTopWindow = string.Equals(window.Type, topWindowType, StringComparison.Ordinal),
-                isFocusedWindow = string.Equals(window.Type, focusedWindowType, StringComparison.Ordinal),
-                getsInput = window.GetsInput,
-                rect = CreateRectPayload(window.Rect)
-            }).ToList(),
+            windows = uiState.Windows.Select(window => CreateWindowPayload(window, topWindowType, focusedWindowType)).ToList(),
             contextMenu = CreateContextMenuPayload()
         };
     }
@@ -66,6 +54,9 @@ internal static class RimWorldTargeting
             return null;
 
         var menu = snapshot.Menu;
+        var menuWindowType = menu.GetType().FullName ?? menu.GetType().Name;
+        var menuWindowTargetId = ScreenTargetIds.CreateWindowTargetId(menu.ID, menuWindowType);
+        var dismissTargetId = ScreenTargetIds.CreateWindowDismissTargetId(menu.ID, menuWindowType);
         var optionRects = FloatMenuTargetLayoutCalculator.Compute(new FloatMenuTargetLayoutRequest
         {
             WindowX = menu.windowRect.x,
@@ -85,6 +76,7 @@ internal static class RimWorldTargeting
             return new
             {
                 kind = "context_menu_option",
+                targetId = ScreenTargetIds.CreateContextMenuOptionTargetId(snapshot.Id, index + 1),
                 index = index + 1,
                 label = option.Label,
                 disabled = option.Disabled,
@@ -105,6 +97,8 @@ internal static class RimWorldTargeting
         {
             kind = "context_menu",
             menuId = snapshot.Id,
+            windowTargetId = menuWindowTargetId,
+            dismissTargetId = dismissTargetId,
             provider = snapshot.Provider,
             target = snapshot.TargetLabel,
             clickCell = new
@@ -124,6 +118,30 @@ internal static class RimWorldTargeting
             usingScrollbar = menu.UsingScrollbar,
             optionCount = options.Count,
             options
+        };
+    }
+
+    private static object CreateWindowPayload(UiWindowSnapshot window, string topWindowType, string focusedWindowType)
+    {
+        var windowTargetId = ScreenTargetIds.CreateWindowTargetId(window.Id, window.Type);
+        var dismissTargetId = CanDismissWindow(window)
+            ? ScreenTargetIds.CreateWindowDismissTargetId(window.Id, window.Type)
+            : null;
+
+        return new
+        {
+            kind = "window",
+            index = window.Index,
+            id = window.Id,
+            type = window.Type,
+            title = window.Title,
+            layer = window.Layer,
+            isTopWindow = string.Equals(window.Type, topWindowType, StringComparison.Ordinal),
+            isFocusedWindow = string.Equals(window.Type, focusedWindowType, StringComparison.Ordinal),
+            getsInput = window.GetsInput,
+            windowTargetId = windowTargetId,
+            dismissTargetId = dismissTargetId,
+            rect = CreateRectPayload(window.Rect)
         };
     }
 
@@ -151,5 +169,19 @@ internal static class RimWorldTargeting
         {
             return null;
         }
+    }
+
+    private static bool CanDismissWindow(UiWindowSnapshot window)
+    {
+        if (window == null || !window.IsOpen)
+            return false;
+
+        if (string.Equals(window.Type, typeof(ImmediateWindow).FullName, StringComparison.Ordinal))
+            return false;
+
+        return window.CloseOnAccept
+            || window.CloseOnCancel
+            || string.Equals(window.Layer, "Dialog", StringComparison.Ordinal)
+            || string.Equals(window.Layer, "Super", StringComparison.Ordinal);
     }
 }

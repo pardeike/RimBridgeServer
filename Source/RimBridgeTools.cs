@@ -110,6 +110,12 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(windowType), windowType)));
     }
 
+    [Tool("rimworld/click_screen_target", Description = "Semantically click a known actionable target id returned by rimworld/get_screen_targets without requiring OS focus")]
+    public object ClickScreenTarget([ToolParameter(Description = "Actionable target id such as a context-menu option target or window dismiss target")] string targetId)
+    {
+        return InvokeAlias(Arguments((nameof(targetId), targetId)));
+    }
+
     [Tool("rimworld/start_debug_game", Description = "Start RimWorld's built-in quick test colony from the main menu")]
     public object StartDebugGame()
     {

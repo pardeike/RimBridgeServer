@@ -17,6 +17,7 @@ internal static class SmokeScenarioCatalog
 {
     public const string DebugGameLoadScenarioName = "debug-game-load";
     public const string ContextMenuCancelRoundTripScenarioName = "context-menu-cancel-roundtrip";
+    public const string ScreenTargetClickRoundTripScenarioName = "screen-target-click-roundtrip";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
@@ -36,6 +37,12 @@ internal static class SmokeScenarioCatalog
                 Name = ContextMenuCancelRoundTripScenarioName,
                 Description = "Ensure a playable game exists, open a real context menu, and dismiss it again through background-safe semantic input.",
                 RunAsync = RunContextMenuCancelRoundTripAsync
+            },
+            [ScreenTargetClickRoundTripScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ScreenTargetClickRoundTripScenarioName,
+                Description = "Ensure a playable game exists, then click real dismiss and option target ids returned by rimworld/get_screen_targets.",
+                RunAsync = RunScreenTargetClickRoundTripAsync
             },
             [SelectionRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -134,28 +141,14 @@ internal static class SmokeScenarioCatalog
 
         var observationWindow = await context.BeginObservationWindowAsync("context_menu.snapshot_bridge_status", cancellationToken);
 
-        ToolInvocationResult? openContextMenu = null;
-        (int X, int Z) openedCell = default;
-        foreach (var candidateCell in BuildNearbyCells(pawnPosition.X, pawnPosition.Z))
-        {
-            var result = await context.CallGameToolAsync("context_menu.open_context_menu", "rimworld/open_context_menu", new
-            {
-                x = candidateCell.X,
-                z = candidateCell.Z,
-                mode = "vanilla"
-            }, cancellationToken);
-            context.EnsureSucceeded(result, $"Opening a vanilla context menu near colonist '{pawnName}'");
-
-            if (JsonNodeHelpers.ReadInt32(result.StructuredContent, "optionCount").GetValueOrDefault() > 0)
-            {
-                openContextMenu = result;
-                openedCell = candidateCell;
-                break;
-            }
-        }
-
-        if (openContextMenu == null)
-            throw new InvalidOperationException($"Could not open a context menu with executable options near colonist '{pawnName}'.");
+        var openContextMenuResult = await OpenVanillaContextMenuNearPawnAsync(
+            context,
+            "context_menu",
+            pawnName,
+            pawnPosition,
+            cancellationToken);
+        var openContextMenu = openContextMenuResult.OpenContextMenu;
+        var openedCell = openContextMenuResult.Cell;
 
         var uiStateAfterOpen = await context.CallGameToolAsync("context_menu.get_ui_state_after_open", "rimworld/get_ui_state", new { }, cancellationToken);
         context.EnsureSucceeded(uiStateAfterOpen, "Reading RimWorld UI state after opening a context menu");
@@ -209,6 +202,128 @@ internal static class SmokeScenarioCatalog
             "context_menu.final_bridge_status",
             "context_menu.collect_operation_events",
             "context_menu.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunScreenTargetClickRoundTripAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("target_click.wait_for_long_event_idle", cancellationToken);
+
+        await EnsureNoDialogWindowsAsync(context, "target_click.normalize", cancellationToken);
+
+        var colonists = await context.CallGameToolAsync("target_click.list_colonists", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists for the screen-target click roundtrip");
+
+        var pawnName = ResolveFirstColonistName(colonists.StructuredContent);
+        var pawnPosition = ResolvePawnPosition(colonists.StructuredContent, pawnName);
+        context.Report.ColonistCount = JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count");
+
+        var selectPawn = await context.CallGameToolAsync("target_click.select_pawn", "rimworld/select_pawn", new
+        {
+            pawnName,
+            append = false
+        }, cancellationToken);
+        context.EnsureSucceeded(selectPawn, $"Selecting colonist '{pawnName}' before clicking screen targets");
+
+        var observationWindow = await context.BeginObservationWindowAsync("target_click.snapshot_bridge_status", cancellationToken);
+
+        var dismissMenu = await OpenVanillaContextMenuNearPawnAsync(
+            context,
+            "target_click.dismiss",
+            pawnName,
+            pawnPosition,
+            cancellationToken);
+        var dismissTargets = await context.CallGameToolAsync("target_click.dismiss.get_screen_targets", "rimworld/get_screen_targets", new { }, cancellationToken);
+        context.EnsureSucceeded(dismissTargets, "Reading screen targets before clicking a dismiss target");
+
+        var dismissContextMenuTargets = JsonNodeHelpers.GetPath(dismissTargets.StructuredContent, "targets", "contextMenu");
+        if (dismissContextMenuTargets == null)
+            throw new InvalidOperationException("Screen target metadata did not expose the active context menu before clicking its dismiss target.");
+
+        var dismissTargetId = JsonNodeHelpers.ReadString(dismissContextMenuTargets, "dismissTargetId");
+        if (string.IsNullOrWhiteSpace(dismissTargetId))
+            throw new InvalidOperationException("Screen target metadata did not expose a dismiss target id for the active context menu.");
+
+        var clickDismiss = await context.CallGameToolAsync("target_click.dismiss.click_screen_target", "rimworld/click_screen_target", new
+        {
+            targetId = dismissTargetId
+        }, cancellationToken);
+        context.EnsureSucceeded(clickDismiss, "Clicking the context-menu dismiss target");
+
+        if (JsonNodeHelpers.ReadBoolean(clickDismiss.StructuredContent, "after", "floatMenuOpen") == true)
+            throw new InvalidOperationException("Clicking the dismiss target did not close the float menu.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(clickDismiss.StructuredContent, "targetKind"), "window_dismiss", StringComparison.Ordinal))
+            throw new InvalidOperationException("Clicking the dismiss target did not report a window_dismiss target kind.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(clickDismiss.StructuredContent, "actionKind"), "dismiss_window", StringComparison.Ordinal))
+            throw new InvalidOperationException("Clicking the dismiss target did not report a dismiss_window action kind.");
+
+        var dismissClosedWindowTypes = JsonNodeHelpers.ReadArray(clickDismiss.StructuredContent, "closedWindowTypes");
+        if (!dismissClosedWindowTypes.Any(type => string.Equals(JsonNodeHelpers.ReadString(type), "Verse.FloatMenu", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Clicking the dismiss target did not close a Verse.FloatMenu window.");
+
+        var optionMenu = await OpenVanillaContextMenuNearPawnAsync(
+            context,
+            "target_click.option",
+            pawnName,
+            pawnPosition,
+            cancellationToken,
+            requireDirectExecutableOption: true);
+        var optionTargets = await context.CallGameToolAsync("target_click.option.get_screen_targets", "rimworld/get_screen_targets", new { }, cancellationToken);
+        context.EnsureSucceeded(optionTargets, "Reading screen targets before clicking a context-menu option target");
+
+        var optionContextMenuTargets = JsonNodeHelpers.GetPath(optionTargets.StructuredContent, "targets", "contextMenu");
+        if (optionContextMenuTargets == null)
+            throw new InvalidOperationException("Screen target metadata did not expose the active context menu before clicking an option target.");
+
+        var optionTargetNodes = JsonNodeHelpers.ReadArray(optionContextMenuTargets, "options");
+        if (optionMenu.DirectOptionIndex <= 0 || optionMenu.DirectOptionIndex > optionTargetNodes.Count)
+            throw new InvalidOperationException("Could not align the resolved executable menu option with the current screen target metadata.");
+
+        var optionTarget = optionTargetNodes[optionMenu.DirectOptionIndex - 1];
+        var optionTargetId = JsonNodeHelpers.ReadString(optionTarget, "targetId");
+        var optionLabel = JsonNodeHelpers.ReadString(optionTarget, "label");
+        if (string.IsNullOrWhiteSpace(optionTargetId))
+            throw new InvalidOperationException("Screen target metadata did not expose a target id for the executable context-menu option.");
+
+        var clickOption = await context.CallGameToolAsync("target_click.option.click_screen_target", "rimworld/click_screen_target", new
+        {
+            targetId = optionTargetId
+        }, cancellationToken);
+        context.EnsureSucceeded(clickOption, $"Clicking context-menu option target '{optionLabel}'");
+
+        if (JsonNodeHelpers.ReadBoolean(clickOption.StructuredContent, "after", "floatMenuOpen") == true)
+            throw new InvalidOperationException("Clicking the context-menu option target did not close the float menu.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(clickOption.StructuredContent, "targetKind"), "context_menu_option", StringComparison.Ordinal))
+            throw new InvalidOperationException("Clicking the option target did not report a context_menu_option target kind.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(clickOption.StructuredContent, "actionKind"), "execute_context_menu_option", StringComparison.Ordinal))
+            throw new InvalidOperationException("Clicking the option target did not report an execute_context_menu_option action kind.");
+        if (JsonNodeHelpers.ReadInt32(clickOption.StructuredContent, "executedOptionIndex") != optionMenu.DirectOptionIndex)
+            throw new InvalidOperationException("Clicking the option target did not execute the expected menu option index.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(clickOption.StructuredContent, "executedLabel"), optionLabel, StringComparison.Ordinal))
+            throw new InvalidOperationException("Clicking the option target did not report the expected menu option label.");
+
+        await context.WaitForLongEventIdleAsync("target_click.wait_for_long_event_idle_after_option_click", cancellationToken);
+
+        context.SetSummaryValue("selectedPawn", pawnName);
+        context.SetSummaryValue("dismissTargetId", dismissTargetId);
+        context.SetSummaryValue("dismissCell", $"{dismissMenu.Cell.X},{dismissMenu.Cell.Z}");
+        context.SetSummaryValue("optionTargetId", optionTargetId);
+        context.SetSummaryValue("optionCell", $"{optionMenu.Cell.X},{optionMenu.Cell.Z}");
+        context.SetSummaryValue("executedOptionLabel", optionLabel);
+        context.SetScenarioData("dismissScreenTargets", JsonNodeHelpers.GetPath(dismissTargets.StructuredContent, "targets"));
+        context.SetScenarioData("dismissClick", clickDismiss.StructuredContent);
+        context.SetScenarioData("optionScreenTargets", JsonNodeHelpers.GetPath(optionTargets.StructuredContent, "targets"));
+        context.SetScenarioData("optionClick", clickOption.StructuredContent);
+
+        var observation = await observationWindow.CaptureAsync(
+            "target_click.final_bridge_status",
+            "target_click.collect_operation_events",
+            "target_click.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }
@@ -440,6 +555,43 @@ internal static class SmokeScenarioCatalog
         return saves.Any(save => string.Equals(JsonNodeHelpers.ReadString(save, "name"), saveName, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static async Task<(ToolInvocationResult OpenContextMenu, (int X, int Z) Cell, int DirectOptionIndex)> OpenVanillaContextMenuNearPawnAsync(
+        SmokeScenarioContext context,
+        string stepPrefix,
+        string pawnName,
+        (int X, int Z) pawnPosition,
+        CancellationToken cancellationToken,
+        bool requireDirectExecutableOption = false)
+    {
+        var attempt = 0;
+        foreach (var candidateCell in BuildNearbyCells(pawnPosition.X, pawnPosition.Z))
+        {
+            attempt++;
+            var result = await context.CallGameToolAsync($"{stepPrefix}.open_context_menu_{attempt}", "rimworld/open_context_menu", new
+            {
+                x = candidateCell.X,
+                z = candidateCell.Z,
+                mode = "vanilla"
+            }, cancellationToken);
+            context.EnsureSucceeded(result, $"Opening a vanilla context menu near colonist '{pawnName}'");
+
+            if (JsonNodeHelpers.ReadInt32(result.StructuredContent, "optionCount").GetValueOrDefault() <= 0)
+                continue;
+
+            var directOptionIndex = ResolveDirectExecutableOptionIndex(result.StructuredContent);
+            if (!requireDirectExecutableOption || directOptionIndex > 0)
+                return (result, candidateCell, directOptionIndex);
+        }
+
+        if (requireDirectExecutableOption)
+        {
+            throw new InvalidOperationException(
+                $"Could not open a context menu near colonist '{pawnName}' with a direct executable option target.");
+        }
+
+        throw new InvalidOperationException($"Could not open a context menu with executable options near colonist '{pawnName}'.");
+    }
+
     private static async Task<JsonNode?> EnsureNoDialogWindowsAsync(SmokeScenarioContext context, string stepPrefix, CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= 5; attempt++)
@@ -491,6 +643,29 @@ internal static class SmokeScenarioCatalog
             throw new InvalidOperationException("Could not reach a clean UI state before starting the input roundtrip scenario.");
 
         return finalState.StructuredContent;
+    }
+
+    private static int ResolveDirectExecutableOptionIndex(JsonNode? structuredContent)
+    {
+        var options = JsonNodeHelpers.ReadArray(structuredContent, "options");
+        for (var index = 0; index < options.Count; index++)
+        {
+            var option = options[index];
+            if (JsonNodeHelpers.ReadBoolean(option, "disabled") == true)
+                continue;
+            if (JsonNodeHelpers.ReadBoolean(option, "hasAction") != true)
+                continue;
+
+            var label = JsonNodeHelpers.ReadString(option, "label");
+            if (string.IsNullOrWhiteSpace(label))
+                continue;
+            if (label.EndsWith("...", StringComparison.Ordinal))
+                continue;
+
+            return index + 1;
+        }
+
+        return -1;
     }
 
     private static string BuildScreenshotFileName(DateTimeOffset startedAtUtc)

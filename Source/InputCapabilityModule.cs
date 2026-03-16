@@ -21,4 +21,9 @@ internal sealed class InputCapabilityModule
     {
         return RimWorldInput.CloseWindowResponse(windowType);
     }
+
+    public object ClickScreenTarget(string targetId)
+    {
+        return RimWorldInput.ClickScreenTargetResponse(targetId);
+    }
 }

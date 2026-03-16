@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
+using RimBridgeServer.Core;
 using Verse;
 
 namespace RimBridgeServer;
@@ -89,7 +90,7 @@ internal sealed class UiStateSnapshot
     public List<UiWindowSnapshot> Windows { get; set; } = [];
 }
 
-internal sealed class UiCommandResult
+internal class UiCommandResult
 {
     public bool Success { get; set; }
 
@@ -108,6 +109,19 @@ internal sealed class UiCommandResult
     public List<string> OpenedWindowTypes { get; set; } = [];
 
     public List<string> ClosedWindowTypes { get; set; } = [];
+}
+
+internal sealed class ScreenTargetCommandResult : UiCommandResult
+{
+    public string TargetId { get; set; } = string.Empty;
+
+    public string TargetKind { get; set; } = string.Empty;
+
+    public string ActionKind { get; set; } = string.Empty;
+
+    public int ExecutedOptionIndex { get; set; }
+
+    public string ExecutedLabel { get; set; }
 }
 
 internal static class RimWorldInput
@@ -130,6 +144,11 @@ internal static class RimWorldInput
     public static object CloseWindowResponse(string windowType = null)
     {
         return ToToolResponse(CloseWindow(windowType));
+    }
+
+    public static object ClickScreenTargetResponse(string targetId)
+    {
+        return ToToolResponse(ClickScreenTarget(targetId));
     }
 
     public static UiStateSnapshot GetUiState()
@@ -214,6 +233,42 @@ internal static class RimWorldInput
         return BuildCommandResult("close_window", before, after, $"Closed RimWorld window '{targetType}'.");
     }
 
+    public static ScreenTargetCommandResult ClickScreenTarget(string targetId)
+    {
+        var before = GetUiState();
+        if (!ScreenTargetIds.TryParse(targetId, out var target))
+        {
+            return BuildFailedScreenTargetResult(
+                before,
+                targetId,
+                string.Empty,
+                string.Empty,
+                $"Target id '{targetId}' is not a supported screen target identifier.");
+        }
+
+        switch (target.Kind)
+        {
+            case ScreenTargetKind.ContextMenuOption:
+                return ClickContextMenuOptionTarget(before, targetId, target);
+            case ScreenTargetKind.WindowDismiss:
+                return ClickWindowDismissTarget(before, targetId, target);
+            case ScreenTargetKind.Window:
+                return BuildFailedScreenTargetResult(
+                    before,
+                    targetId,
+                    "window",
+                    string.Empty,
+                    "Window body targets are descriptive only. Use a dismissTargetId or another actionable target id.");
+            default:
+                return BuildFailedScreenTargetResult(
+                    before,
+                    targetId,
+                    target.Kind.ToString(),
+                    string.Empty,
+                    $"Target id '{targetId}' is not actionable.");
+        }
+    }
+
     private static UiCommandResult DispatchWindowCommand(string command, Action<WindowStack> dispatch)
     {
         var before = GetUiState();
@@ -233,6 +288,70 @@ internal static class RimWorldInput
         dispatch(windowStack);
         var after = GetUiState();
         return BuildCommandResult(command, before, after, $"Dispatched semantic '{command}' input to RimWorld's window stack.");
+    }
+
+    private static ScreenTargetCommandResult ClickContextMenuOptionTarget(UiStateSnapshot before, string targetId, ScreenTargetReference target)
+    {
+        var execution = RimWorldContextMenuActions.ExecuteOption(optionIndex: target.OptionIndex, expectedMenuId: target.MenuId);
+        if (!execution.Success)
+        {
+            return BuildFailedScreenTargetResult(
+                before,
+                targetId,
+                "context_menu_option",
+                "execute_context_menu_option",
+                execution.Message);
+        }
+
+        var after = GetUiState();
+        var result = BuildScreenTargetCommandResult(
+            before,
+            after,
+            targetId,
+            "context_menu_option",
+            "execute_context_menu_option",
+            execution.Message);
+        result.ExecutedOptionIndex = execution.ResolvedIndex;
+        result.ExecutedLabel = execution.Label;
+        return result;
+    }
+
+    private static ScreenTargetCommandResult ClickWindowDismissTarget(UiStateSnapshot before, string targetId, ScreenTargetReference target)
+    {
+        var windowStack = Find.WindowStack;
+        if (windowStack == null)
+        {
+            return BuildFailedScreenTargetResult(
+                before,
+                targetId,
+                "window_dismiss",
+                "dismiss_window",
+                "RimWorld window stack is not available.");
+        }
+
+        var window = ResolveWindow(windowStack, target.WindowId, target.WindowType);
+        if (window == null)
+        {
+            return BuildFailedScreenTargetResult(
+                before,
+                targetId,
+                "window_dismiss",
+                "dismiss_window",
+                $"Could not find an open window matching target id '{targetId}'.");
+        }
+
+        windowStack.TryRemove(window, doCloseSound: false);
+        if (ReferenceEquals(RimBridgeContextMenus.Current?.Menu, window))
+            RimBridgeContextMenus.Clear();
+
+        var after = GetUiState();
+        return BuildScreenTargetCommandResult(
+            before,
+            after,
+            targetId,
+            "window_dismiss",
+            "dismiss_window",
+            $"Dismissed RimWorld window '{target.WindowType}' ({target.WindowId}).");
     }
 
     private static UiCommandResult BuildCommandResult(string command, UiStateSnapshot before, UiStateSnapshot after, string message)
@@ -269,6 +388,54 @@ internal static class RimWorldInput
             After = after,
             OpenedWindowTypes = openedWindowTypes,
             ClosedWindowTypes = closedWindowTypes
+        };
+    }
+
+    private static ScreenTargetCommandResult BuildScreenTargetCommandResult(
+        UiStateSnapshot before,
+        UiStateSnapshot after,
+        string targetId,
+        string targetKind,
+        string actionKind,
+        string message)
+    {
+        var baseResult = BuildCommandResult("click_screen_target", before, after, message);
+        return new ScreenTargetCommandResult
+        {
+            Success = baseResult.Success,
+            Command = baseResult.Command,
+            Changed = baseResult.Changed,
+            WindowCountDelta = baseResult.WindowCountDelta,
+            Message = baseResult.Message,
+            Before = baseResult.Before,
+            After = baseResult.After,
+            OpenedWindowTypes = baseResult.OpenedWindowTypes,
+            ClosedWindowTypes = baseResult.ClosedWindowTypes,
+            TargetId = targetId ?? string.Empty,
+            TargetKind = targetKind ?? string.Empty,
+            ActionKind = actionKind ?? string.Empty
+        };
+    }
+
+    private static ScreenTargetCommandResult BuildFailedScreenTargetResult(
+        UiStateSnapshot before,
+        string targetId,
+        string targetKind,
+        string actionKind,
+        string message)
+    {
+        return new ScreenTargetCommandResult
+        {
+            Success = false,
+            Command = "click_screen_target",
+            Changed = false,
+            WindowCountDelta = 0,
+            Message = message,
+            Before = before,
+            After = before,
+            TargetId = targetId ?? string.Empty,
+            TargetKind = targetKind ?? string.Empty,
+            ActionKind = actionKind ?? string.Empty
         };
     }
 
@@ -327,6 +494,19 @@ internal static class RimWorldInput
                     || string.Equals(type.FullName, trimmed, StringComparison.OrdinalIgnoreCase);
             })
             .LastOrDefault();
+    }
+
+    private static Window ResolveWindow(WindowStack windowStack, int windowId, string windowType)
+    {
+        return windowStack.Windows?
+            .OfType<Window>()
+            .LastOrDefault(window =>
+            {
+                var type = window.GetType();
+                var fullName = type.FullName ?? type.Name;
+                return window.ID == windowId
+                    && string.Equals(fullName, windowType, StringComparison.Ordinal);
+            });
     }
 
     private static object ToToolResponse(UiStateSnapshot state)
@@ -396,6 +576,27 @@ internal static class RimWorldInput
             changed = result.Changed,
             windowCountDelta = result.WindowCountDelta,
             message = result.Message,
+            before = ToToolResponse(result.Before),
+            after = ToToolResponse(result.After),
+            openedWindowTypes = result.OpenedWindowTypes.ToList(),
+            closedWindowTypes = result.ClosedWindowTypes.ToList()
+        };
+    }
+
+    private static object ToToolResponse(ScreenTargetCommandResult result)
+    {
+        return new
+        {
+            success = result.Success,
+            command = result.Command,
+            changed = result.Changed,
+            windowCountDelta = result.WindowCountDelta,
+            message = result.Message,
+            targetId = result.TargetId,
+            targetKind = result.TargetKind,
+            actionKind = result.ActionKind,
+            executedOptionIndex = result.ExecutedOptionIndex > 0 ? result.ExecutedOptionIndex : (int?)null,
+            executedLabel = result.ExecutedLabel,
             before = ToToolResponse(result.Before),
             after = ToToolResponse(result.After),
             openedWindowTypes = result.OpenedWindowTypes.ToList(),
