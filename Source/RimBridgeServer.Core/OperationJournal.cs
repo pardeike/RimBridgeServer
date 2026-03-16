@@ -7,6 +7,8 @@ namespace RimBridgeServer.Core;
 
 public sealed class OperationEventRecord
 {
+    public long Sequence { get; set; }
+
     public string EventId { get; set; } = string.Empty;
 
     public string EventType { get; set; } = string.Empty;
@@ -36,6 +38,7 @@ public sealed class OperationJournal
     private readonly List<OperationEventRecord> _events = [];
     private readonly int _maxOperations;
     private readonly int _maxEvents;
+    private long _nextEventSequence = 1;
 
     public OperationJournal(int maxOperations = 200, int maxEvents = 500)
     {
@@ -49,6 +52,17 @@ public sealed class OperationJournal
     }
 
     public event Action<OperationEventRecord> EventPublished;
+
+    public long LatestEventSequence
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _nextEventSequence - 1;
+            }
+        }
+    }
 
     public OperationEnvelope RecordStarted(string operationId, string capabilityId, IDictionary<string, object> metadata = null, DateTimeOffset? startedAtUtc = null)
     {
@@ -112,7 +126,7 @@ public sealed class OperationJournal
         }
     }
 
-    public IReadOnlyList<OperationEventRecord> GetRecentEvents(int limit = 50, string eventType = null)
+    public IReadOnlyList<OperationEventRecord> GetRecentEvents(int limit = 50, string eventType = null, long afterSequence = 0)
     {
         if (limit <= 0)
             return [];
@@ -122,6 +136,8 @@ public sealed class OperationJournal
             IEnumerable<OperationEventRecord> query = _events;
             if (string.IsNullOrWhiteSpace(eventType) == false)
                 query = query.Where(entry => string.Equals(entry.EventType, eventType, StringComparison.Ordinal));
+            if (afterSequence > 0)
+                query = query.Where(entry => entry.Sequence > afterSequence);
 
             return query
                 .Take(limit)
@@ -180,6 +196,7 @@ public sealed class OperationJournal
 
         lock (_gate)
         {
+            eventRecord.Sequence = _nextEventSequence++;
             _events.Insert(0, eventRecord);
             if (_events.Count > _maxEvents)
                 _events.RemoveRange(_maxEvents, _events.Count - _maxEvents);
@@ -254,6 +271,7 @@ public sealed class OperationJournal
     {
         return new OperationEventRecord
         {
+            Sequence = eventRecord.Sequence,
             EventId = eventRecord.EventId,
             EventType = eventRecord.EventType,
             OperationId = eventRecord.OperationId,

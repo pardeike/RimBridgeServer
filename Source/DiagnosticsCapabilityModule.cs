@@ -8,11 +8,13 @@ namespace RimBridgeServer;
 internal sealed class DiagnosticsCapabilityModule
 {
     private readonly OperationJournal _journal;
+    private readonly LogJournal _logJournal;
     private readonly ConditionWaiter _waiter = new();
 
-    public DiagnosticsCapabilityModule(OperationJournal journal)
+    public DiagnosticsCapabilityModule(OperationJournal journal, LogJournal logJournal)
     {
         _journal = journal ?? throw new ArgumentNullException(nameof(journal));
+        _logJournal = logJournal ?? throw new ArgumentNullException(nameof(logJournal));
     }
 
     public object Ping()
@@ -52,7 +54,7 @@ internal sealed class DiagnosticsCapabilityModule
 
     public object GetBridgeStatus()
     {
-        return RimWorldWaits.GetBridgeStatus(_journal);
+        return RimWorldWaits.GetBridgeStatus(_journal, _logJournal);
     }
 
     public object ListOperations(int limit = 20)
@@ -63,11 +65,27 @@ internal sealed class DiagnosticsCapabilityModule
         };
     }
 
-    public object ListOperationEvents(int limit = 50)
+    public object ListOperationEvents(int limit = 50, string eventType = null, long afterSequence = 0, bool includeDiagnostics = false)
+    {
+        var events = _journal.GetRecentEvents(Math.Max(limit * 4, limit), eventType, afterSequence);
+        if (includeDiagnostics == false)
+        {
+            events = events
+                .Where(entry => entry.CapabilityId.StartsWith("rimbridge.core/diagnostics/", StringComparison.Ordinal) == false)
+                .ToList();
+        }
+
+        return new
+        {
+            events = events.Take(limit).ToList()
+        };
+    }
+
+    public object ListLogs(int limit = 50, string minimumLevel = "info", long afterSequence = 0)
     {
         return new
         {
-            events = _journal.GetRecentEvents(limit)
+            logs = _logJournal.GetEntries(limit, minimumLevel, afterSequence)
         };
     }
 

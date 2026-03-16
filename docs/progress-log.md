@@ -192,6 +192,43 @@ Next:
 
 - Step A6: add structured event and log publication on top of the journal so hosts that support unsolicited notifications can receive warnings, errors, and operation progress without polling
 
+## 2026-03-16 - Step A6 - Event and Log Publication with Cursor-Based Test Windows
+
+Status:
+
+- completed
+
+Completed:
+
+- added a bounded [`LogJournal`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/LogJournal.cs) in the shared core project for captured RimWorld and bridge logs, including level filtering, sequence cursors, and repeated-message collapsing into a single row with `RepeatCount`
+- extended [`OperationJournal`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/OperationJournal.cs) with event sequence numbers so test automation can fetch deltas after a precise cursor instead of diffing by time or relying on sleeps
+- added host-side Unity log capture in [`RimBridgeLogs.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeLogs.cs) so live log messages are recorded without polling `Player.log`
+- added [`RimBridgeEventRelay.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeEventRelay.cs) on top of `Lib.GAB` event channels, publishing filtered `rimbridge.operation` and `rimbridge.log` events while intentionally suppressing noisy diagnostics and low-severity log chatter
+- updated [`RimBridgeCapabilities.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeCapabilities.cs), [`Mod.cs`](/Users/ap/Projects/RimBridgeServer/Source/Mod.cs), [`DiagnosticsCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/DiagnosticsCapabilityModule.cs), [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs), and [`RimWorldWaits.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldWaits.cs) so the diagnostics surface now exposes `rimbridge/list_logs`, returns `latestLogSequence` and `latestOperationEventSequence`, and supports `afterSequence` windows for both logs and operation events
+- kept the delta readers opinionated for test use by excluding diagnostic bridge operations from `rimbridge/list_operation_events` unless explicitly requested with `includeDiagnostics=true`
+- added focused unit coverage in [`LogJournalTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/LogJournalTests.cs) and expanded [`OperationJournalTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/OperationJournalTests.cs) to cover repeated-log collapsing, level and sequence filtering, and event cursor filtering
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) with the new log/event tooling, event channels, and the cursor-based before/after test pattern
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln`
+- live GABS smoke against a fresh RimWorld instance:
+- `rimbridge/get_bridge_status`
+- `rimbridge/list_logs`
+- `rimworld/start_debug_game`
+- `rimbridge/list_operation_events` with `afterSequence`
+
+Notes:
+
+- unsolicited push is still host-dependent at the MCP layer, so the journals and cursor-based delta reads remain the correctness path while event channels provide faster feedback when the host surfaces them
+- log push is deliberately conservative: only warning/error/fatal entries are emitted, and repeated identical rows are collapsed before publication thresholds are crossed
+- the cursor-based design gives tests an explicit “start watching now” point without introducing server-side capture sessions or global mutable logging modes yet
+
+Next:
+
+- Step A7: add explicit test-harness helpers and scripts that drive these wait/log/event windows against real RimWorld scenarios through GABS so live smoke cases become reproducible commands in the repo
+
 ## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
 
 Status:

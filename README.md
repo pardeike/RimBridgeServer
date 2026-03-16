@@ -67,6 +67,7 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimbridge/get_operation`** - Get the latest journal snapshot for a specific operation id
 - **`rimbridge/list_operations`** - List recent bridge operations from the in-memory operation journal
 - **`rimbridge/list_operation_events`** - List recent bridge operation lifecycle events
+- **`rimbridge/list_logs`** - List recent captured RimWorld and bridge log entries
 - **`rimbridge/wait_for_operation`** - Wait until a recorded operation reaches a terminal status
 - **`rimbridge/wait_for_game_loaded`** - Wait until RimWorld has finished loading a playable game
 - **`rimbridge/wait_for_long_event_idle`** - Wait until RimWorld reports no long event in progress
@@ -135,6 +136,14 @@ The basic steps are:
 Most mutating tools are marshalled onto RimWorld's main thread before they touch UI or map state. This is important for selection, camera, save/load, screenshot capture, and context-menu operations.
 
 For test automation, prefer the explicit wait tools over blind sleeps. `rimbridge/wait_for_game_loaded`, `rimbridge/wait_for_long_event_idle`, and `rimbridge/wait_for_operation` provide bounded waits with state snapshots so scripts can move quickly when the game is ready and fail with useful diagnostics when it is not.
+
+`rimbridge/get_bridge_status` also returns `latestLogSequence` and `latestOperationEventSequence`. Tests can snapshot those cursors before a command, execute the command, then call `rimbridge/list_logs` or `rimbridge/list_operation_events` with `afterSequence` to fetch only the new logs and events from that window.
+
+If your host supports unsolicited GABP events, RimBridgeServer also publishes filtered event channels:
+- **`rimbridge.operation`** - Terminal non-diagnostic operation events
+- **`rimbridge.log`** - Deduplicated warning/error/fatal log entries
+
+The push path is intentionally narrow to avoid context spam. Full detail remains available through the pull tools and journals.
 
 For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABP).
 

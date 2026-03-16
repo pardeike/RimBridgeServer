@@ -17,10 +17,12 @@ public class RimBridgeServerMod : Mod
             RimBridgeMainThread.Initialize();
             RimBridgePatches.Apply();
             RimBridgeCapabilities.Initialize();
+            RimBridgeLogs.Initialize(RimBridgeCapabilities.LogJournal);
 
             var tools = new RimBridgeTools();
             var version = typeof(RimBridgeServerMod).Assembly.GetName().Version?.ToString() ?? "0.1.0.0";
             _server = Lib.GAB.Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", version, tools, fallbackPort: 5174);
+            RimBridgeEventRelay.Initialize(_server.Events, RimBridgeCapabilities.Journal, RimBridgeCapabilities.LogJournal);
 
             _server.StartAsync().ContinueWith(task =>
             {

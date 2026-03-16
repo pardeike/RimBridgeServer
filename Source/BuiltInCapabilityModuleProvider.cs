@@ -171,6 +171,7 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             "rimbridge/get_operation" => CapabilityExecutionKind.Immediate,
             "rimbridge/list_operations" => CapabilityExecutionKind.Immediate,
             "rimbridge/list_operation_events" => CapabilityExecutionKind.Immediate,
+            "rimbridge/list_logs" => CapabilityExecutionKind.Immediate,
             "rimbridge/wait_for_operation" => CapabilityExecutionKind.Immediate,
             "rimbridge/wait_for_game_loaded" => CapabilityExecutionKind.Immediate,
             "rimbridge/wait_for_long_event_idle" => CapabilityExecutionKind.Immediate,

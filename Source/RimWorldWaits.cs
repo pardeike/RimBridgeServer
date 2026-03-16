@@ -8,7 +8,7 @@ internal static class RimWorldWaits
     private static readonly ConditionWaiter Waiter = new();
     private static readonly MainThreadDispatcher Dispatcher = new();
 
-    public static object GetBridgeStatus(OperationJournal journal)
+    public static object GetBridgeStatus(OperationJournal journal, LogJournal logJournal)
     {
         var state = SnapshotState();
         return new
@@ -16,7 +16,10 @@ internal static class RimWorldWaits
             success = true,
             state,
             recentOperationCount = journal.GetRecentOperations(200).Count,
-            recentEventCount = journal.GetRecentEvents(200).Count
+            recentEventCount = journal.GetRecentEvents(200).Count,
+            recentLogCount = logJournal.GetEntries(200).Count,
+            latestOperationEventSequence = journal.LatestEventSequence,
+            latestLogSequence = logJournal.LatestSequence
         };
     }
 

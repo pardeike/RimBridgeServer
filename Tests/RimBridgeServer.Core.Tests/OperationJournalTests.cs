@@ -36,4 +36,20 @@ public class OperationJournalTests
         Assert.Null(tracked.Result);
         Assert.Equal(OperationStatus.Completed, tracked.Status);
     }
+
+    [Fact]
+    public void FiltersEventsBySequence()
+    {
+        var journal = new OperationJournal();
+
+        journal.RecordStarted("op_1", "rimbridge.core/diagnostics/ping");
+        var firstSequence = journal.LatestEventSequence;
+        journal.RecordCompleted(OperationEnvelope.Completed("op_1", "rimbridge.core/diagnostics/ping", DateTimeOffset.UtcNow, new { message = "pong" }));
+
+        var recent = journal.GetRecentEvents(limit: 10, afterSequence: firstSequence);
+
+        Assert.Single(recent);
+        Assert.True(recent[0].Sequence > firstSequence);
+        Assert.Equal("operation.completed", recent[0].EventType);
+    }
 }
