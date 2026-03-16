@@ -15,6 +15,8 @@ internal sealed class ViewCapabilityModule
         public string ExpectedPath { get; set; } = string.Empty;
 
         public object ScreenTargets { get; set; }
+
+        public bool RestoreSuppressMessage { get; set; }
     }
 
     public object GetCameraState()
@@ -122,49 +124,69 @@ internal sealed class ViewCapabilityModule
         };
     }
 
-    public object TakeScreenshot(string fileName = null, bool includeTargets = true)
+    public object TakeScreenshot(string fileName = null, bool includeTargets = true, bool suppressMessage = true)
     {
         var safeName = RimWorldState.SanitizeName(fileName, "rimbridge");
         var capture = RimBridgeMainThread.Invoke(() =>
         {
             var screenTargets = includeTargets ? RimWorldTargeting.CreateScreenTargetsPayload() : null;
+            var restoreSuppressMessage = ScreenshotTaker.suppressMessage;
+            if (suppressMessage)
+                ScreenshotTaker.suppressMessage = true;
+
             ScreenshotTaker.TakeNonSteamShot(safeName);
             return new PendingScreenshotCapture
             {
                 ExpectedPath = Path.Combine(GenFilePaths.ScreenshotFolderPath, safeName + ".png"),
-                ScreenTargets = screenTargets
+                ScreenTargets = screenTargets,
+                RestoreSuppressMessage = restoreSuppressMessage
             };
         }, timeoutMs: 5000);
 
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (DateTime.UtcNow < deadline)
+        try
         {
-            if (File.Exists(capture.ExpectedPath))
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline)
             {
-                var info = new FileInfo(capture.ExpectedPath);
-                if (info.Length > 0)
+                if (File.Exists(capture.ExpectedPath))
                 {
-                    return new
+                    var info = new FileInfo(capture.ExpectedPath);
+                    if (info.Length > 0)
                     {
-                        success = true,
-                        path = capture.ExpectedPath,
-                        fileName = safeName,
-                        screenshotFolder = GenFilePaths.ScreenshotFolderPath,
-                        sizeBytes = info.Length,
-                        capturedAtUtc = DateTime.UtcNow,
-                        screenTargets = capture.ScreenTargets
-                    };
+                        return new
+                        {
+                            success = true,
+                            path = capture.ExpectedPath,
+                            fileName = safeName,
+                            screenshotFolder = GenFilePaths.ScreenshotFolderPath,
+                            sizeBytes = info.Length,
+                            capturedAtUtc = DateTime.UtcNow,
+                            suppressMessage,
+                            screenTargets = capture.ScreenTargets
+                        };
+                    }
                 }
+
+                Thread.Sleep(100);
             }
 
-            Thread.Sleep(100);
+            return new
+            {
+                success = false,
+                message = "Timed out waiting for RimWorld to finish writing the screenshot file.",
+                expectedPath = capture.ExpectedPath,
+                suppressMessage
+            };
         }
-
-        return new
+        finally
         {
-            success = false,
-            message = "Timed out waiting for RimWorld to finish writing the screenshot file.",
-            expectedPath = capture.ExpectedPath
-        };
+            if (suppressMessage)
+            {
+                RimBridgeMainThread.Invoke(() =>
+                {
+                    ScreenshotTaker.suppressMessage = capture.RestoreSuppressMessage;
+                }, timeoutMs: 5000);
+            }
+        }
     }
 }

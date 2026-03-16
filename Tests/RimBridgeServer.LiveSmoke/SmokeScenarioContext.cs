@@ -76,9 +76,11 @@ internal sealed class SmokeScenarioContext
         var wait = await CallGameToolAsync(stepName, "rimbridge/wait_for_game_loaded", new
         {
             timeoutMs = _options.WaitTimeoutMs,
-            pollIntervalMs = 100
+            pollIntervalMs = 100,
+            waitForScreenFade = true,
+            pauseIfNeeded = true
         }, cancellationToken);
-        EnsureSucceeded(wait, "Waiting for RimWorld to load a playable game");
+        EnsureSucceeded(wait, "Waiting for RimWorld to load an automation-ready game");
     }
 
     public async Task WaitForOperationAsync(string stepName, string operationId, CancellationToken cancellationToken)
@@ -96,9 +98,16 @@ internal sealed class SmokeScenarioContext
     {
         var initialStatus = await CallGameToolAsync("ensure_playable.bridge_status", "rimbridge/get_bridge_status", new { }, cancellationToken);
         EnsureSucceeded(initialStatus, "Checking bridge status before playable-game precondition");
+        if (IsAutomationReady(initialStatus.StructuredContent))
+        {
+            Note("Reused an already loaded automation-ready game.");
+            return;
+        }
+
         if (IsPlayable(initialStatus.StructuredContent))
         {
-            Note("Reused an already loaded playable game.");
+            await WaitForGameLoadedAsync("ensure_playable.wait_for_game_loaded_existing", cancellationToken);
+            Note("Reused a loaded game after waiting for screen fade to finish and pausing it for automation.");
             return;
         }
 
@@ -106,9 +115,16 @@ internal sealed class SmokeScenarioContext
 
         var idleStatus = await CallGameToolAsync("ensure_playable.bridge_status_after_idle", "rimbridge/get_bridge_status", new { }, cancellationToken);
         EnsureSucceeded(idleStatus, "Checking bridge status after waiting for idle");
+        if (IsAutomationReady(idleStatus.StructuredContent))
+        {
+            Note("The game was already automation-ready while satisfying the precondition.");
+            return;
+        }
+
         if (IsPlayable(idleStatus.StructuredContent))
         {
-            Note("The game reached a playable state while satisfying the precondition.");
+            await WaitForGameLoadedAsync("ensure_playable.wait_for_game_loaded_after_idle", cancellationToken);
+            Note("The game reached a playable state while satisfying the precondition, then was paused after screen fade completed.");
             return;
         }
 
@@ -277,6 +293,7 @@ internal sealed class SmokeScenarioContext
         builder.AppendLine("What you should see and expect:");
         foreach (var line in expectationLines.Where(line => string.IsNullOrWhiteSpace(line) == false))
             builder.AppendLine("- " + line);
+        builder.AppendLine("- RimWorld's upper-left screenshot-taken toast should not be visible because the harness suppresses it during automated captures.");
         builder.AppendLine();
         builder.AppendLine("Technical context:");
         builder.AppendLine("- Source image: " + sourceImagePath);
@@ -300,9 +317,17 @@ internal sealed class SmokeScenarioContext
 
     private static bool IsPlayable(JsonNode? structuredContent)
     {
-        return JsonNodeHelpers.ReadBoolean(structuredContent, "state", "hasCurrentGame") == true
-            && string.Equals(JsonNodeHelpers.ReadString(structuredContent, "state", "programState"), "Playing", StringComparison.OrdinalIgnoreCase)
-            && JsonNodeHelpers.ReadBoolean(structuredContent, "state", "longEventPending") == false;
+        return JsonNodeHelpers.ReadBoolean(structuredContent, "state", "playable") == true
+            || (
+                JsonNodeHelpers.ReadBoolean(structuredContent, "state", "hasCurrentGame") == true
+                && string.Equals(JsonNodeHelpers.ReadString(structuredContent, "state", "programState"), "Playing", StringComparison.OrdinalIgnoreCase)
+                && JsonNodeHelpers.ReadBoolean(structuredContent, "state", "longEventPending") == false
+            );
+    }
+
+    private static bool IsAutomationReady(JsonNode? structuredContent)
+    {
+        return JsonNodeHelpers.ReadBoolean(structuredContent, "state", "automationReady") == true;
     }
 
     private static bool IsEntryState(JsonNode? structuredContent)

@@ -427,6 +427,37 @@ Next:
 
 - Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots
 
+## 2026-03-16 - Step A12.2 - Automation-Ready Load Waits
+
+Status:
+
+- completed
+
+Completed:
+
+- added a shared [`AutomationReadiness`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/AutomationReadiness.cs) evaluator in `Core` plus focused coverage in [`AutomationReadinessTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/AutomationReadinessTests.cs) so the bridge can distinguish between merely playable state and truly automation-ready state
+- extended [`RimWorldState.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldState.cs) so bridge state snapshots now include `paused`, `screenFading`, `fadeOverlayAlpha`, `screenFadeClear`, `playable`, and `automationReady`
+- updated [`RimWorldWaits.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldWaits.cs), [`DiagnosticsCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/DiagnosticsCapabilityModule.cs), and [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) so `rimbridge/wait_for_game_loaded` can wait for the post-load screen fade to complete and optionally pause the game before returning success
+- updated [`ViewCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ViewCapabilityModule.cs) and [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) so automated `rimworld/take_screenshot` calls suppress RimWorld's screenshot toast by default only during the tool-driven capture
+- updated the live harness in [`SmokeScenarioContext.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioContext.cs) and [`SmokeHarness.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeHarness.cs) so all playable-game preconditions now wait for automation-ready state and pause the game before continuing
+- documented the tighter ready-state semantics in [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md)
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --scenario save-load-roundtrip --game-id rimworld --human-verify --stop-after`
+- `scripts/live-smoke.sh --scenario screenshot-capture --game-id rimworld --human-verify --stop-after`
+
+Notes:
+
+- the prior wait condition could return while RimWorld was still visually fading in, which made screenshots technically correct but dimmer than a human would consider "ready"
+- pausing is deliberately opt-in at the tool level but enabled by default in the repo's live harness so automated scenarios stabilize quickly without forcing mutation on every external caller
+
+Next:
+
+- Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots
+
 ## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
 
 Status:

@@ -143,11 +143,13 @@ Most mutating tools are marshalled onto RimWorld's main thread before they touch
 
 The new UI input helpers are intentionally semantic. `rimworld/press_accept`, `rimworld/press_cancel`, and `rimworld/close_window` drive RimWorld's own `WindowStack` APIs instead of foreground-dependent desktop input, which keeps them usable even when the game is running in the background during automated tests.
 
-`rimworld/get_screen_targets` and the default `includeTargets: true` behavior on `rimworld/take_screenshot` expose a structured screen-space snapshot instead of forcing clients to infer UI geometry from logs or raw pixels. The current payload includes live window rects, selection, camera state, active float-menu option rects, and actionable target ids such as `dismissTargetId` and context-menu option `targetId` values.
+`rimworld/get_screen_targets` and the default `includeTargets: true` behavior on `rimworld/take_screenshot` expose a structured screen-space snapshot instead of forcing clients to infer UI geometry from logs or raw pixels. The current payload includes live window rects, selection, camera state, active float-menu option rects, and actionable target ids such as `dismissTargetId` and context-menu option `targetId` values. Automated screenshot calls also default to `suppressMessage: true`, which hides RimWorld's upper-left screenshot toast only for the duration of that tool-driven capture.
 
 `rimworld/click_screen_target` is the first background-safe click seam on top of that metadata. It does not simulate desktop mouse input; instead it resolves known target ids in-process and dispatches the correct direct RimWorld action. The first supported targets are dismissible windows and context-menu options.
 
 For test automation, prefer the explicit wait tools over blind sleeps. `rimbridge/wait_for_game_loaded`, `rimbridge/wait_for_long_event_idle`, and `rimbridge/wait_for_operation` provide bounded waits with state snapshots so scripts can move quickly when the game is ready and fail with useful diagnostics when it is not.
+
+`rimbridge/wait_for_game_loaded` now distinguishes between "playable" and "automation-ready". By default it waits for RimWorld's screen fade to clear, and callers can also request `pauseIfNeeded: true` so the game is reliably paused before screenshots or other deterministic assertions are taken.
 
 `rimbridge/get_bridge_status` also returns `latestLogSequence` and `latestOperationEventSequence`. Tests can snapshot those cursors before a command, execute the command, then call `rimbridge/list_logs` or `rimbridge/list_operation_events` with `afterSequence` to fetch only the new logs and events from that window.
 
@@ -174,7 +176,8 @@ The `debug-game-load` scenario drives GABS and RimBridgeServer end-to-end:
 - waits for long events to go idle
 - snapshots `latestLogSequence` and `latestOperationEventSequence`
 - starts RimWorld's debug quick-test colony
-- waits for the resulting operation and playable game state
+- waits for the resulting operation and automation-ready game state, including the post-load screen fade
+- pauses the game if it is still running once that ready state is reached
 - verifies that colonists are present on the map
 - collects the log and operation-event window for that action
 

@@ -23,28 +23,37 @@ internal static class RimWorldWaits
         };
     }
 
-    public static object WaitForGameLoaded(int timeoutMs = 30000, int pollIntervalMs = 100)
+    public static object WaitForGameLoaded(int timeoutMs = 30000, int pollIntervalMs = 100, bool waitForScreenFade = true, bool pauseIfNeeded = false)
     {
         var outcome = Waiter.WaitUntil(() => Dispatcher.Invoke(() =>
         {
-            var state = RimWorldState.ToolStateSnapshot();
-            var satisfied = Current.Game != null
-                && LongEventHandler.AnyEventNowOrWaiting == false
-                && Current.ProgramState == ProgramState.Playing;
+            var status = RimWorldState.ReadStatus();
+            var readiness = status.Readiness;
+            var satisfied = readiness.Playable && (waitForScreenFade == false || readiness.ScreenFadeClear);
+            var state = RimWorldState.ToolStateSnapshot(status);
+
+            if (satisfied && pauseIfNeeded && status.HasCurrentGame && status.Paused == false && Find.TickManager != null)
+            {
+                Find.TickManager.TogglePaused();
+                status = RimWorldState.ReadStatus();
+                state = RimWorldState.ToolStateSnapshot(status);
+            }
+
+            var message = DescribeLoadedWaitState(status, readiness, waitForScreenFade, pauseIfNeeded);
 
             return new WaitProbeResult
             {
                 IsSatisfied = satisfied,
-                Message = satisfied
-                    ? "RimWorld has a loaded playable game."
-                    : "Waiting for RimWorld to finish loading a playable game.",
+                Message = message,
                 Snapshot = state
             };
         }, timeoutMs: 2000), new WaitOptions
         {
             TimeoutMs = timeoutMs,
             PollIntervalMs = pollIntervalMs,
-            TimeoutMessage = "Timed out waiting for RimWorld to load a playable game."
+            TimeoutMessage = waitForScreenFade
+                ? "Timed out waiting for RimWorld to become automation-ready after loading."
+                : "Timed out waiting for RimWorld to load a playable game."
         });
 
         return CreateWaitResponse(outcome);
@@ -78,6 +87,30 @@ internal static class RimWorldWaits
     private static object SnapshotState()
     {
         return Dispatcher.Invoke(RimWorldState.ToolStateSnapshot, timeoutMs: 2000);
+    }
+
+    private static string DescribeLoadedWaitState(
+        RimWorldState.RuntimeStatus status,
+        AutomationReadinessEvaluation readiness,
+        bool waitForScreenFade,
+        bool pauseIfNeeded)
+    {
+        if (readiness.Playable == false)
+            return "Waiting for RimWorld to finish loading a playable game.";
+
+        if (waitForScreenFade && readiness.ScreenFadeClear == false)
+            return $"Waiting for RimWorld screen fade to finish (alpha {status.FadeOverlayAlpha:0.###}).";
+
+        if (pauseIfNeeded)
+        {
+            return status.Paused
+                ? "RimWorld has a loaded automation-ready game and is paused for automation."
+                : "RimWorld has a loaded automation-ready game. The game was not yet paused for automation.";
+        }
+
+        return waitForScreenFade
+            ? "RimWorld has a loaded automation-ready game."
+            : "RimWorld has a loaded playable game.";
     }
 
     private static object CreateWaitResponse(WaitOutcome outcome)

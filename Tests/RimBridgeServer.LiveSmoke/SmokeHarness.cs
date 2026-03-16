@@ -249,6 +249,6 @@ internal static class SmokeHarness
 
     private static string SummarizeState(System.Text.Json.Nodes.JsonNode state)
     {
-        return $"programState={JsonNodeHelpers.ReadString(state, "programState")}, hasCurrentGame={JsonNodeHelpers.ReadBoolean(state, "hasCurrentGame")}, longEventPending={JsonNodeHelpers.ReadBoolean(state, "longEventPending")}";
+        return $"programState={JsonNodeHelpers.ReadString(state, "programState")}, hasCurrentGame={JsonNodeHelpers.ReadBoolean(state, "hasCurrentGame")}, longEventPending={JsonNodeHelpers.ReadBoolean(state, "longEventPending")}, paused={JsonNodeHelpers.ReadBoolean(state, "paused")}, screenFading={JsonNodeHelpers.ReadBoolean(state, "screenFading")}, automationReady={JsonNodeHelpers.ReadBoolean(state, "automationReady")}";
     }
 }

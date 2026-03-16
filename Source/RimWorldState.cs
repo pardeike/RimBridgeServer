@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using RimWorld;
+using RimBridgeServer.Core;
 using UnityEngine;
 using Verse;
 
@@ -11,14 +12,82 @@ namespace RimBridgeServer;
 
 internal static class RimWorldState
 {
+    internal readonly struct RuntimeStatus
+    {
+        public RuntimeStatus(
+            string programState,
+            bool inEntryScene,
+            bool hasCurrentGame,
+            bool longEventPending,
+            bool paused,
+            bool screenFading,
+            float fadeOverlayAlpha)
+        {
+            ProgramState = programState;
+            InEntryScene = inEntryScene;
+            HasCurrentGame = hasCurrentGame;
+            LongEventPending = longEventPending;
+            Paused = paused;
+            ScreenFading = screenFading;
+            FadeOverlayAlpha = fadeOverlayAlpha;
+        }
+
+        public string ProgramState { get; }
+
+        public bool InEntryScene { get; }
+
+        public bool HasCurrentGame { get; }
+
+        public bool LongEventPending { get; }
+
+        public bool Paused { get; }
+
+        public bool ScreenFading { get; }
+
+        public float FadeOverlayAlpha { get; }
+
+        public AutomationReadinessEvaluation Readiness =>
+            AutomationReadiness.Evaluate(HasCurrentGame, ProgramState, LongEventPending, ScreenFading, FadeOverlayAlpha);
+    }
+
     public static object ToolStateSnapshot()
     {
+        return ToolStateSnapshot(ReadStatus());
+    }
+
+    public static RuntimeStatus ReadStatus()
+    {
+        var hasCurrentGame = Current.Game != null;
+        var paused = hasCurrentGame && Find.TickManager?.Paused == true;
+        var screenFading = ScreenFader.IsFading();
+        var fadeOverlayAlpha = Mathf.Clamp01(ScreenFader.CurrentInstantColor().a);
+
+        return new RuntimeStatus(
+            Current.ProgramState.ToString(),
+            GenScene.InEntryScene,
+            hasCurrentGame,
+            LongEventHandler.AnyEventNowOrWaiting,
+            paused,
+            screenFading,
+            fadeOverlayAlpha);
+    }
+
+    public static object ToolStateSnapshot(RuntimeStatus status)
+    {
+        var readiness = status.Readiness;
+
         return new
         {
-            programState = Current.ProgramState.ToString(),
-            inEntryScene = GenScene.InEntryScene,
-            hasCurrentGame = Current.Game != null,
-            longEventPending = LongEventHandler.AnyEventNowOrWaiting
+            programState = status.ProgramState,
+            inEntryScene = status.InEntryScene,
+            hasCurrentGame = status.HasCurrentGame,
+            longEventPending = status.LongEventPending,
+            paused = status.Paused,
+            screenFading = status.ScreenFading,
+            fadeOverlayAlpha = Math.Round(status.FadeOverlayAlpha, 4),
+            screenFadeClear = readiness.ScreenFadeClear,
+            playable = readiness.Playable,
+            automationReady = readiness.AutomationReady
         };
     }
 

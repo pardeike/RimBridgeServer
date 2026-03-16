@@ -64,12 +64,14 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(operationId), operationId), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs)));
     }
 
-    [Tool("rimbridge/wait_for_game_loaded", Description = "Wait until RimWorld has finished loading a playable game")]
+    [Tool("rimbridge/wait_for_game_loaded", Description = "Wait until RimWorld has finished loading a playable game and, optionally, until screen fade is complete")]
     public object WaitForGameLoaded(
         [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 30000,
-        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 100)
+        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 100,
+        [ToolParameter(Description = "Wait until RimWorld's screen fade has fully cleared")] bool waitForScreenFade = true,
+        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false)
     {
-        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs)));
+        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(waitForScreenFade), waitForScreenFade), (nameof(pauseIfNeeded), pauseIfNeeded)));
     }
 
     [Tool("rimbridge/wait_for_long_event_idle", Description = "Wait until RimWorld reports no long events in progress")]
@@ -211,9 +213,10 @@ public class RimBridgeTools
     [Tool("rimworld/take_screenshot", Description = "Take an in-game screenshot and return the saved file path plus optional target metadata")]
     public object TakeScreenshot(
         [ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null,
-        [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true)
+        [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true,
+        [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true)
     {
-        return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets)));
+        return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage)));
     }
 
     [Tool("rimworld/get_achtung_state", Description = "Get Achtung-specific debug state when the mod is loaded")]
