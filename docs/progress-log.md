@@ -463,6 +463,39 @@ Next:
 
 - Step A16: widen the Architect/designator surface into dropdown-heavy categories, zone and area designators, and richer drag semantics before returning to the batch/script layer
 
+## 2026-03-16 - Step A16 - Dropdown, Zone, Area, and Drag Architect Coverage
+
+Status:
+
+- completed
+
+Completed:
+
+- extended [`RimWorldArchitect.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldArchitect.cs) so designator descriptors now report drag and targeting metadata such as `applicationKind`, `supportsRectangleApplication`, `dragDrawMeasurements`, `drawStyleCategoryDefName`, `zoneTypeName`, and current selected zone/allowed-area context where RimWorld exposes it
+- added inspection tools for zone and area results in [`ArchitectCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ArchitectCapabilityModule.cs) and [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs): `rimworld/list_zones`, `rimworld/list_areas`, and richer `rimworld/get_cell_info` payloads with `zone` plus `areas`
+- kept the execution model unchanged by continuing to drive all Architect mutations through the existing `rimworld/apply_architect_designator` path rather than introducing a second drag-specific code path
+- extended the live smoke catalog in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) and [`SmokeScenarioCatalogTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/SmokeScenarioCatalogTests.cs) with `architect-floor-dropdown` and `architect-zone-area-drag`
+- made `architect-floor-dropdown` prove a real dropdown child designator can be selected semantically, keeps the parent-child selection relationship intact, and directly paints a 2x2 floor patch through god-mode placement
+- made `architect-zone-area-drag` prove rectangle drag semantics for a stockpile zone and a home area, with verification through both the new list tools and cell-level inspection
+- extended [`JsonNodeHelpers.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/JsonNodeHelpers.cs) and [`scripts/human-verify.sh`](/Users/ap/Projects/RimBridgeServer/scripts/human-verify.sh) so the curated manual-review flow now covers the new Architect cases too
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --scenario architect-floor-dropdown --game-id rimworld --human-verify --stop-after`
+- `scripts/live-smoke.sh --scenario architect-zone-area-drag --game-id rimworld --human-verify --stop-after`
+
+Notes:
+
+- the widened Architect payload now distinguishes builds, zones, areas, and generic designations through `applicationKind`, which gives the AI a better routing signal before it executes a tool
+- the zone and area verification surface is intentionally read-only; it exists so automation can assert results without adding stateful zone-edit APIs before they are needed
+- live validation showed the current generalized rectangle path is already sufficient for stockpile zones and home areas, so no separate drag executor was necessary in this increment
+
+Next:
+
+- Step A17: make stateful Architect context deterministic for the remaining high-value cases, especially allowed-area selection/creation, explicit existing-zone targeting for expand/shrink flows, and richer cleanup or removal semantics before returning to the batch/script layer
+
 ## 2026-03-16 - Step A14 - Debug Menu Graph, Output Effects, and Settings Toggles
 
 Status:

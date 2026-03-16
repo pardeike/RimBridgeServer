@@ -123,6 +123,11 @@ internal static class JsonNodeHelpers
             : [];
     }
 
+    public static JsonNode? ReadObject(JsonNode? node, params string[] path)
+    {
+        return GetPath(node, path) is JsonObject obj ? CloneNode(obj) : null;
+    }
+
     public static string ReadTextContent(JsonNode? resultNode)
     {
         if (GetPath(resultNode, "content") is not JsonArray contentArray)

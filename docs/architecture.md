@@ -829,4 +829,4 @@ Tests:
 
 ## Immediate Next Step
 
-The next implementation step should expand the Architect/designator seam beyond the first wall-placement slice: dropdown-heavy categories, zone and area designators, richer drag semantics, and eventually a script layer that composes those higher-value actions. The bridge now has the right internal seams for both debug actions and build/designation workflows; the next power gain comes from widening the set of meaningful map mutations before the batch/script runner turns those capabilities into reusable fixture builders.
+The next implementation step should make the remaining stateful Architect flows deterministic: allowed-area selection and creation, explicit existing-zone targeting for expand or shrink semantics, and clearer cleanup helpers for removal tools. The bridge now already covers direct structures, dropdown floor tools, stockpile zones, and home-area drag semantics through one shared execution seam; the next power gain comes from controlling the remaining mutable designator context so a later batch or script runner can compose those map edits without hidden UI state.

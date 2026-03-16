@@ -56,6 +56,10 @@ internal static class RimWorldArchitect
 
         public bool SupportsCellApplication { get; set; }
 
+        public bool SupportsRectangleApplication { get; set; }
+
+        public string ApplicationKind { get; set; } = string.Empty;
+
         public Designator EffectiveRootDesignator => ContainerDesignator ?? Designator;
     }
 
@@ -279,6 +283,52 @@ internal static class RimWorldArchitect
         };
     }
 
+    public static object ListZonesResponse(bool includeHidden = false, bool includeEmpty = false)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+
+        var zones = map.zoneManager?.AllZones
+            ?.Where(zone => zone != null)
+            .Where(zone => includeHidden || !zone.Hidden)
+            .Where(zone => includeEmpty || zone.CellCount > 0)
+            .OrderBy(zone => zone.BaseLabel, StringComparer.Ordinal)
+            .ThenBy(zone => zone.GetUniqueLoadID(), StringComparer.Ordinal)
+            .ToList() ?? [];
+
+        return new
+        {
+            success = true,
+            count = zones.Count,
+            zones = zones.Select(DescribeZone).ToList(),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    public static object ListAreasResponse(bool includeEmpty = false, bool includeAssignableOnly = false)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+
+        var areas = map.areaManager?.AllAreas
+            ?.Where(area => area != null)
+            .Where(area => includeEmpty || area.TrueCount > 0)
+            .Where(area => !includeAssignableOnly || area.AssignableAsAllowed())
+            .OrderBy(area => area.ListPriority)
+            .ThenBy(area => area.Label, StringComparer.Ordinal)
+            .ThenBy(area => area.GetUniqueLoadID(), StringComparer.Ordinal)
+            .ToList() ?? [];
+
+        return new
+        {
+            success = true,
+            count = areas.Count,
+            selectedAllowedArea = DescribeArea(Designator_AreaAllowed.SelectedArea),
+            areas = areas.Select(DescribeArea).ToList(),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
     private static object Failure(string message)
     {
         return new
@@ -453,11 +503,13 @@ internal static class RimWorldArchitect
                 Id = rootId,
                 CategoryId = ArchitectDesignatorIds.CreateCategoryId(category.defName),
                 Kind = ResolveDesignatorKind(root),
+                ApplicationKind = ResolveDesignatorApplicationKind(root),
                 Index = rootIndex,
                 ChildCount = childCount,
                 Visible = visibleDesignators.Contains(root),
                 Actionable = root is not Designator_Dropdown,
-                SupportsCellApplication = root is not Designator_Dropdown
+                SupportsCellApplication = root is not Designator_Dropdown,
+                SupportsRectangleApplication = ResolveSupportsRectangleApplication(root)
             });
 
             if (root is not Designator_Dropdown dropdownWithChildren || childCount == 0)
@@ -481,11 +533,13 @@ internal static class RimWorldArchitect
                     CategoryId = ArchitectDesignatorIds.CreateCategoryId(category.defName),
                     ParentId = rootId,
                     Kind = ResolveDesignatorKind(child),
+                    ApplicationKind = ResolveDesignatorApplicationKind(child),
                     Index = rootIndex,
                     ChildIndex = childIndex,
                     Visible = visibleDesignators.Contains(child),
                     Actionable = true,
-                    SupportsCellApplication = true
+                    SupportsCellApplication = true,
+                    SupportsRectangleApplication = ResolveSupportsRectangleApplication(child)
                 });
             }
         }
@@ -537,6 +591,31 @@ internal static class RimWorldArchitect
             Designator_Build => "build",
             _ => "designator"
         };
+    }
+
+    private static string ResolveDesignatorApplicationKind(Designator designator)
+    {
+        if (designator is Designator_Build)
+            return "build";
+
+        var typeName = designator.GetType().Name;
+        if (typeName.StartsWith("Designator_Zone", StringComparison.Ordinal))
+            return "zone";
+        if (typeName.StartsWith("Designator_Area", StringComparison.Ordinal))
+            return "area";
+
+        return "designation";
+    }
+
+    private static bool ResolveSupportsRectangleApplication(Designator designator)
+    {
+        if (designator is Designator_Dropdown)
+            return false;
+
+        if (designator.DragDrawMeasurements)
+            return true;
+
+        return ResolveDesignatorApplicationKind(designator) is "build" or "zone" or "area";
     }
 
     private static ArchitectSelectionState CaptureSelectionState()
@@ -634,8 +713,12 @@ internal static class RimWorldArchitect
             categoryDefName = descriptor.Category.defName,
             categoryLabel = descriptor.Category.LabelCap.ToString(),
             kind = descriptor.Kind,
+            applicationKind = descriptor.ApplicationKind,
             actionable = descriptor.Actionable,
             supportsCellApplication = descriptor.SupportsCellApplication,
+            supportsRectangleApplication = descriptor.SupportsRectangleApplication,
+            dragDrawMeasurements = descriptor.Designator.DragDrawMeasurements,
+            drawStyleCategoryDefName = descriptor.Designator.DrawStyleCategory?.defName,
             visible = descriptor.Visible,
             selected = IsSelectedDescriptor(descriptor, selectionState),
             selectedContainer = IsSelectedContainerDescriptor(descriptor, selectionState),
@@ -651,6 +734,15 @@ internal static class RimWorldArchitect
             buildableDefName = build?.PlacingDef?.defName,
             buildableLabel = build?.PlacingDef?.LabelCap.ToString(),
             stuffDefName = build?.StuffDef?.defName,
+            zoneTypeName = descriptor.Designator is Designator_ZoneAdd zoneAdd && zoneAdd.zoneTypeToPlace != null
+                ? zoneAdd.zoneTypeToPlace.FullName ?? zoneAdd.zoneTypeToPlace.Name
+                : null,
+            selectedZone = descriptor.Designator is Designator_ZoneAdd activeZoneAdd
+                ? DescribeZone(activeZoneAdd.SelectedZone)
+                : null,
+            selectedAllowedArea = descriptor.ApplicationKind == "area"
+                ? DescribeArea(Designator_AreaAllowed.SelectedArea)
+                : null,
             dropdownActiveChildId = activeChildId
         };
     }
@@ -726,6 +818,12 @@ internal static class RimWorldArchitect
             .Distinct()
             .OrderBy(defName => defName, StringComparer.Ordinal)
             .ToList();
+        var zone = map.zoneManager?.ZoneAt(cell);
+        var areas = map.areaManager?.AllAreas
+            ?.Where(area => area != null && area[cell])
+            .OrderBy(area => area.ListPriority)
+            .ThenBy(area => area.Label, StringComparer.Ordinal)
+            .ToList() ?? [];
 
         return new
         {
@@ -740,8 +838,52 @@ internal static class RimWorldArchitect
             blueprintBuildDefs,
             frameBuildDefs,
             solidThingDefs,
+            zone = DescribeZone(zone),
+            areaCount = areas.Count,
+            areas = areas.Select(DescribeArea).ToList(),
             things = things.Select(DescribeThingAtCell).ToList(),
             designations = designations.Select(DescribeDesignationAtCell).ToList()
+        };
+    }
+
+    private static object DescribeZone(Zone zone)
+    {
+        if (zone == null)
+            return null;
+
+        return new
+        {
+            id = zone.GetUniqueLoadID(),
+            label = zone.RenamableLabel,
+            baseLabel = zone.BaseLabel,
+            inspectLabel = zone.InspectLabel,
+            className = zone.GetType().FullName ?? zone.GetType().Name,
+            cellCount = zone.CellCount,
+            hidden = zone.Hidden,
+            position = new
+            {
+                x = zone.Position.x,
+                z = zone.Position.z
+            }
+        };
+    }
+
+    private static object DescribeArea(Area area)
+    {
+        if (area == null)
+            return null;
+
+        return new
+        {
+            id = area.GetUniqueLoadID(),
+            label = area.Label,
+            baseLabel = area.BaseLabel,
+            renamableLabel = area.RenamableLabel,
+            className = area.GetType().FullName ?? area.GetType().Name,
+            cellCount = area.TrueCount,
+            listPriority = area.ListPriority,
+            mutable = area.Mutable,
+            assignableAsAllowed = area.AssignableAsAllowed()
         };
     }
 

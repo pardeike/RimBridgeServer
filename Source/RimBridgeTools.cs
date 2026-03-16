@@ -172,7 +172,23 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(designatorId), designatorId), (nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(dryRun), dryRun), (nameof(keepSelected), keepSelected)));
     }
 
-    [Tool("rimworld/get_cell_info", Description = "Inspect one map cell, including things, blueprints, frames, and designations")]
+    [Tool("rimworld/list_zones", Description = "List current-map zones such as stockpiles and growing zones")]
+    public object ListZones(
+        [ToolParameter(Description = "Include hidden zones")] bool includeHidden = false,
+        [ToolParameter(Description = "Include zones with zero cells")] bool includeEmpty = false)
+    {
+        return InvokeAlias(Arguments((nameof(includeHidden), includeHidden), (nameof(includeEmpty), includeEmpty)));
+    }
+
+    [Tool("rimworld/list_areas", Description = "List current-map areas such as home, roof, snow-clear, and allowed areas")]
+    public object ListAreas(
+        [ToolParameter(Description = "Include areas with zero cells")] bool includeEmpty = false,
+        [ToolParameter(Description = "Include only areas that can be assigned as allowed areas")] bool includeAssignableOnly = false)
+    {
+        return InvokeAlias(Arguments((nameof(includeEmpty), includeEmpty), (nameof(includeAssignableOnly), includeAssignableOnly)));
+    }
+
+    [Tool("rimworld/get_cell_info", Description = "Inspect one map cell, including things, blueprints, frames, designations, zones, and areas")]
     public object GetCellInfo(
         [ToolParameter(Description = "Target cell x coordinate")] int x,
         [ToolParameter(Description = "Target cell z coordinate")] int z)

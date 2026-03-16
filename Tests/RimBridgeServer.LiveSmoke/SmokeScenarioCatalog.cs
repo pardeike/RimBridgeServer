@@ -19,7 +19,9 @@ internal static class SmokeScenarioCatalog
     public const string DebugGameLoadScenarioName = "debug-game-load";
     public const string ContextMenuCancelRoundTripScenarioName = "context-menu-cancel-roundtrip";
     public const string DebugActionDiscoveryScenarioName = "debug-action-discovery";
+    public const string ArchitectFloorDropdownScenarioName = "architect-floor-dropdown";
     public const string ArchitectWallPlacementScenarioName = "architect-wall-placement";
+    public const string ArchitectZoneAreaDragScenarioName = "architect-zone-area-drag";
     public const string ScreenTargetClickRoundTripScenarioName = "screen-target-click-roundtrip";
     public const string ScreenTargetClipScenarioName = "screen-target-clip";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
@@ -48,11 +50,23 @@ internal static class SmokeScenarioCatalog
                 Description = "Ensure a playable game exists, discover debug-action roots and children, then execute one low-side-effect direct leaf action by stable path.",
                 RunAsync = RunDebugActionDiscoveryAsync
             },
+            [ArchitectFloorDropdownScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ArchitectFloorDropdownScenarioName,
+                Description = "Ensure a playable game exists, then verify a dropdown child floor designator can be selected and applied over a rectangle.",
+                RunAsync = RunArchitectFloorDropdownAsync
+            },
             [ArchitectWallPlacementScenarioName] = new SmokeScenarioDefinition
             {
                 Name = ArchitectWallPlacementScenarioName,
                 Description = "Ensure a playable game exists, then verify wall placement becomes blueprint-based versus direct-build depending on god mode.",
                 RunAsync = RunArchitectWallPlacementAsync
+            },
+            [ArchitectZoneAreaDragScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ArchitectZoneAreaDragScenarioName,
+                Description = "Ensure a playable game exists, then verify stockpile zones and home areas can be created through rectangle drag semantics.",
+                RunAsync = RunArchitectZoneAreaDragAsync
             },
             [ScreenTargetClickRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -1065,6 +1079,378 @@ internal static class SmokeScenarioCatalog
         context.ApplyObservationWindow(observation);
     }
 
+    private static async Task RunArchitectFloorDropdownAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("architect_floor.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("architect_floor.snapshot_bridge_status", cancellationToken);
+        var initialDesignatorState = await context.CallGameToolAsync("architect_floor.get_designator_state", "rimworld/get_designator_state", new { }, cancellationToken);
+        context.EnsureSucceeded(initialDesignatorState, "Reading initial architect state for the floor dropdown scenario");
+        var originalGodMode = JsonNodeHelpers.ReadBoolean(initialDesignatorState.StructuredContent, "godMode") == true;
+
+        Exception? scenarioError = null;
+        try
+        {
+            var categories = await context.CallGameToolAsync("architect_floor.list_categories", "rimworld/list_architect_categories", new
+            {
+                includeHidden = false,
+                includeEmpty = false
+            }, cancellationToken);
+            context.EnsureSucceeded(categories, "Listing architect categories for the floor dropdown scenario");
+
+            var categoryArray = JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories");
+            var floorsCategoryId = ResolveArchitectCategoryId(categoryArray, "Floors");
+
+            var designators = await context.CallGameToolAsync("architect_floor.list_floor_designators", "rimworld/list_architect_designators", new
+            {
+                categoryId = floorsCategoryId,
+                includeHidden = false
+            }, cancellationToken);
+            context.EnsureSucceeded(designators, "Listing floor designators");
+
+            var designatorArray = JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators");
+            var dropdownFloorDesignatorId = ResolveArchitectBuildDesignatorId(designatorArray, "MetalTile", requireDropdownChild: true);
+            var dropdownParentId = ResolveArchitectParentId(designatorArray, dropdownFloorDesignatorId);
+
+            var selectFloor = await context.CallGameToolAsync("architect_floor.select_floor_designator", "rimworld/select_architect_designator", new
+            {
+                designatorId = dropdownFloorDesignatorId
+            }, cancellationToken);
+            context.EnsureSucceeded(selectFloor, "Selecting the dropdown child floor designator");
+
+            var selectedFloorState = await context.CallGameToolAsync("architect_floor.get_selected_state", "rimworld/get_designator_state", new { }, cancellationToken);
+            context.EnsureSucceeded(selectedFloorState, "Reading architect selection state after selecting the floor designator");
+
+            var selectedDesignatorId = JsonNodeHelpers.ReadString(selectedFloorState.StructuredContent, "designatorState", "selectedDesignatorId");
+            var selectedContainerId = JsonNodeHelpers.ReadString(selectedFloorState.StructuredContent, "designatorState", "selectedContainerDesignatorId");
+            if (!string.Equals(selectedDesignatorId, dropdownFloorDesignatorId, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Expected selected floor designator '{dropdownFloorDesignatorId}', but got '{selectedDesignatorId ?? "<null>"}'.");
+            if (!string.Equals(selectedContainerId, dropdownParentId, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Expected selected floor dropdown container '{dropdownParentId}', but got '{selectedContainerId ?? "<null>"}'.");
+
+            var colonists = await context.CallGameToolAsync("architect_floor.list_colonists", "rimworld/list_colonists", new
+            {
+                currentMapOnly = true
+            }, cancellationToken);
+            context.EnsureSucceeded(colonists, "Listing current-map colonists for floor placement");
+
+            await EnsureGodModeAsync(context, "architect_floor.enable_god_mode", true, cancellationToken);
+
+            var blockedCells = new HashSet<string>(StringComparer.Ordinal);
+            var floorRect = await FindAcceptedArchitectPlacementCellAsync(
+                context,
+                "architect_floor.find_rect",
+                dropdownFloorDesignatorId,
+                colonists.StructuredContent,
+                blockedCells,
+                cancellationToken,
+                width: 2,
+                height: 2,
+                minRadius: 20,
+                maxRadius: 34);
+
+            var floorPlacement = await context.CallGameToolAsync("architect_floor.apply_direct_floor", "rimworld/apply_architect_designator", new
+            {
+                designatorId = dropdownFloorDesignatorId,
+                x = floorRect.X,
+                z = floorRect.Z,
+                width = 2,
+                height = 2,
+                keepSelected = false
+            }, cancellationToken);
+            context.EnsureSucceeded(floorPlacement, "Applying the dropdown child floor designator");
+
+            var floorCellInfos = await ReadRectangleCellInfosAsync(
+                context,
+                "architect_floor.get_floor_cell_info",
+                floorRect.X,
+                floorRect.Z,
+                2,
+                2,
+                cancellationToken);
+
+            foreach (var floorCellInfo in floorCellInfos)
+            {
+                var terrainDefName = JsonNodeHelpers.ReadString(floorCellInfo.StructuredContent, "cell", "terrainDefName");
+                if (!string.Equals(terrainDefName, "MetalTile", StringComparison.Ordinal))
+                    throw new InvalidOperationException($"Expected MetalTile terrain after direct floor placement, but got '{terrainDefName ?? "<null>"}'.");
+
+                AssertCellDoesNotContainBuildBlueprint(floorCellInfo.StructuredContent, "MetalTile");
+            }
+
+            if (context.HumanVerificationEnabled)
+            {
+                var jumpFloorCell = await context.CallGameToolAsync("architect_floor.jump_camera_to_floor", "rimworld/jump_camera_to_cell", new
+                {
+                    x = floorRect.X,
+                    z = floorRect.Z
+                }, cancellationToken);
+                context.EnsureSucceeded(jumpFloorCell, $"Jumping camera to dropdown floor cell ({floorRect.X}, {floorRect.Z})");
+
+                await context.CaptureHumanVerificationScreenshotAsync(
+                    "human_verify.architect_dropdown_floor",
+                    "architect_dropdown_floor",
+                    "A dropdown-selected steel floor should be placed directly over a 2x2 rectangle when god mode is enabled.",
+                    [
+                        "A small 2x2 patch of steel tiles should be visible near the center of the view.",
+                        "This floor came from a dropdown child designator, not from a top-level Architect button.",
+                        "There should not be blueprint overlays on those four floor cells."
+                    ],
+                    cancellationToken);
+            }
+
+            context.SetSummaryValue("floorsCategoryId", floorsCategoryId);
+            context.SetSummaryValue("dropdownParentId", dropdownParentId);
+            context.SetSummaryValue("dropdownFloorDesignatorId", dropdownFloorDesignatorId);
+            context.SetSummaryValue("floorRect", $"{floorRect.X},{floorRect.Z} 2x2");
+            context.SetScenarioData("floorCategories", new JsonArray(categoryArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("floorDesignators", new JsonArray(designatorArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("floorPlacement", floorPlacement.StructuredContent);
+            context.SetScenarioData("floorCellInfos", new JsonArray(floorCellInfos.Select(response => JsonNodeHelpers.CloneNode(response.StructuredContent)).ToArray()));
+        }
+        catch (Exception ex)
+        {
+            scenarioError = ex;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                await EnsureGodModeAsync(context, "architect_floor.restore_god_mode", originalGodMode, cancellationToken);
+            }
+            catch (Exception restoreError)
+            {
+                if (scenarioError is null)
+                    throw;
+
+                context.Note($"Failed to restore god mode after the floor dropdown scenario: {restoreError.Message}");
+            }
+        }
+
+        var observation = await observationWindow.CaptureAsync(
+            "architect_floor.final_bridge_status",
+            "architect_floor.collect_operation_events",
+            "architect_floor.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunArchitectZoneAreaDragAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("architect_zone.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("architect_zone.snapshot_bridge_status", cancellationToken);
+
+        var categories = await context.CallGameToolAsync("architect_zone.list_categories", "rimworld/list_architect_categories", new
+        {
+            includeHidden = false,
+            includeEmpty = false
+        }, cancellationToken);
+        context.EnsureSucceeded(categories, "Listing architect categories for the zone/area scenario");
+
+        var categoryArray = JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories");
+        var zoneCategoryId = ResolveArchitectCategoryId(categoryArray, "Zone");
+
+        var designators = await context.CallGameToolAsync("architect_zone.list_zone_designators", "rimworld/list_architect_designators", new
+        {
+            categoryId = zoneCategoryId,
+            includeHidden = false
+        }, cancellationToken);
+        context.EnsureSucceeded(designators, "Listing zone designators");
+
+        var designatorArray = JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators");
+        var stockpileDesignatorId = ResolveArchitectDesignatorIdByClassName(designatorArray, "RimWorld.Designator_ZoneAddStockpile_Resources");
+        var homeAreaDesignatorId = ResolveArchitectDesignatorIdByClassName(designatorArray, "RimWorld.Designator_AreaHomeExpand");
+
+        var colonists = await context.CallGameToolAsync("architect_zone.list_colonists", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists for zone placement");
+
+        var zonesBefore = await context.CallGameToolAsync("architect_zone.list_zones_before", "rimworld/list_zones", new
+        {
+            includeHidden = false,
+            includeEmpty = false
+        }, cancellationToken);
+        context.EnsureSucceeded(zonesBefore, "Listing zones before stockpile placement");
+        var zoneCountBefore = JsonNodeHelpers.ReadInt32(zonesBefore.StructuredContent, "count").GetValueOrDefault();
+        var zoneArrayBefore = JsonNodeHelpers.ReadArray(zonesBefore.StructuredContent, "zones");
+
+        var areasBefore = await context.CallGameToolAsync("architect_zone.list_areas_before", "rimworld/list_areas", new
+        {
+            includeEmpty = true,
+            includeAssignableOnly = false
+        }, cancellationToken);
+        context.EnsureSucceeded(areasBefore, "Listing areas before home-area placement");
+        var areaArrayBefore = JsonNodeHelpers.ReadArray(areasBefore.StructuredContent, "areas");
+        var homeAreaBefore = ResolveAreaByClassName(areaArrayBefore, "RimWorld.Area_Home");
+        var homeAreaCellCountBefore = JsonNodeHelpers.ReadInt32(homeAreaBefore, "cellCount").GetValueOrDefault();
+
+        var blockedCells = new HashSet<string>(StringComparer.Ordinal);
+        var stockpileRect = await FindAcceptedArchitectPlacementCellAsync(
+            context,
+            "architect_zone.find_stockpile_rect",
+            stockpileDesignatorId,
+            colonists.StructuredContent,
+            blockedCells,
+            cancellationToken,
+            width: 3,
+            height: 2,
+            minRadius: 20,
+            maxRadius: 34,
+            preflightAsync: RectangleHasNoZoneAsync);
+
+        var stockpilePlacement = await context.CallGameToolAsync("architect_zone.apply_stockpile_zone", "rimworld/apply_architect_designator", new
+        {
+            designatorId = stockpileDesignatorId,
+            x = stockpileRect.X,
+            z = stockpileRect.Z,
+            width = 3,
+            height = 2,
+            keepSelected = false
+        }, cancellationToken);
+        context.EnsureSucceeded(stockpilePlacement, "Applying the stockpile zone designator");
+
+        var stockpileCellInfo = await context.CallGameToolAsync("architect_zone.get_stockpile_cell_info", "rimworld/get_cell_info", new
+        {
+            x = stockpileRect.X,
+            z = stockpileRect.Z
+        }, cancellationToken);
+        context.EnsureSucceeded(stockpileCellInfo, $"Reading cell info for stockpile zone cell ({stockpileRect.X}, {stockpileRect.Z})");
+
+        var stockpileZone = JsonNodeHelpers.ReadObject(stockpileCellInfo.StructuredContent, "cell", "zone");
+        var stockpileZoneId = JsonNodeHelpers.ReadString(stockpileZone, "id");
+        if (string.IsNullOrWhiteSpace(stockpileZoneId))
+            throw new InvalidOperationException("Expected the stockpile zone cell to report a zone id after placement.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(stockpileZone, "className"), "RimWorld.Zone_Stockpile", StringComparison.Ordinal))
+            throw new InvalidOperationException("Expected the stockpile zone cell to report a RimWorld.Zone_Stockpile.");
+
+        var zonesAfter = await context.CallGameToolAsync("architect_zone.list_zones_after", "rimworld/list_zones", new
+        {
+            includeHidden = false,
+            includeEmpty = false
+        }, cancellationToken);
+        context.EnsureSucceeded(zonesAfter, "Listing zones after stockpile placement");
+        var zoneCountAfter = JsonNodeHelpers.ReadInt32(zonesAfter.StructuredContent, "count").GetValueOrDefault();
+        if (zoneCountAfter <= zoneCountBefore)
+            throw new InvalidOperationException("Expected stockpile zone placement to increase the visible zone count.");
+
+        var zoneArrayAfter = JsonNodeHelpers.ReadArray(zonesAfter.StructuredContent, "zones");
+        var stockpileZoneDescriptor = ResolveZoneById(zoneArrayAfter, stockpileZoneId);
+        if (JsonNodeHelpers.ReadInt32(stockpileZoneDescriptor, "cellCount").GetValueOrDefault() < 6)
+            throw new InvalidOperationException("Expected the created stockpile zone to cover the full 3x2 rectangle.");
+        if (zoneArrayBefore.Any(zone => string.Equals(JsonNodeHelpers.ReadString(zone, "id"), stockpileZoneId, StringComparison.Ordinal)))
+            throw new InvalidOperationException("Expected the stockpile zone to be newly created rather than reusing a pre-existing zone.");
+
+        var homeAreaRect = await FindAcceptedArchitectPlacementCellAsync(
+            context,
+            "architect_zone.find_home_area_rect",
+            homeAreaDesignatorId,
+            colonists.StructuredContent,
+            blockedCells,
+            cancellationToken,
+            width: 2,
+            height: 2,
+            minRadius: 24,
+            maxRadius: 40,
+            preflightAsync: RectangleHasNoHomeAreaAsync);
+
+        var homeAreaPlacement = await context.CallGameToolAsync("architect_zone.apply_home_area", "rimworld/apply_architect_designator", new
+        {
+            designatorId = homeAreaDesignatorId,
+            x = homeAreaRect.X,
+            z = homeAreaRect.Z,
+            width = 2,
+            height = 2,
+            keepSelected = false
+        }, cancellationToken);
+        context.EnsureSucceeded(homeAreaPlacement, "Applying the home-area designator");
+
+        var homeAreaCellInfo = await context.CallGameToolAsync("architect_zone.get_home_area_cell_info", "rimworld/get_cell_info", new
+        {
+            x = homeAreaRect.X,
+            z = homeAreaRect.Z
+        }, cancellationToken);
+        context.EnsureSucceeded(homeAreaCellInfo, $"Reading cell info for home-area cell ({homeAreaRect.X}, {homeAreaRect.Z})");
+        AssertCellContainsArea(homeAreaCellInfo.StructuredContent, "RimWorld.Area_Home");
+
+        var areasAfter = await context.CallGameToolAsync("architect_zone.list_areas_after", "rimworld/list_areas", new
+        {
+            includeEmpty = true,
+            includeAssignableOnly = false
+        }, cancellationToken);
+        context.EnsureSucceeded(areasAfter, "Listing areas after home-area placement");
+        var areaArrayAfter = JsonNodeHelpers.ReadArray(areasAfter.StructuredContent, "areas");
+        var homeAreaAfter = ResolveAreaByClassName(areaArrayAfter, "RimWorld.Area_Home");
+        var homeAreaCellCountAfter = JsonNodeHelpers.ReadInt32(homeAreaAfter, "cellCount").GetValueOrDefault();
+        if (homeAreaCellCountAfter < homeAreaCellCountBefore + 4)
+            throw new InvalidOperationException("Expected the home area to grow by at least the full 2x2 drag rectangle.");
+
+        if (context.HumanVerificationEnabled)
+        {
+            var jumpStockpileCell = await context.CallGameToolAsync("architect_zone.jump_camera_to_stockpile", "rimworld/jump_camera_to_cell", new
+            {
+                x = stockpileRect.X,
+                z = stockpileRect.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(jumpStockpileCell, $"Jumping camera to stockpile zone cell ({stockpileRect.X}, {stockpileRect.Z})");
+
+            await context.CaptureHumanVerificationScreenshotAsync(
+                "human_verify.architect_stockpile_zone",
+                "architect_stockpile_zone",
+                "A 3x2 stockpile zone should be visible near the center of the map after rectangle drag placement.",
+                [
+                    "A tinted stockpile zone overlay should cover a small rectangular patch of cells near the center of the view.",
+                    "This confirms rectangle drag placement created a new stockpile zone rather than a single-cell designation."
+                ],
+                cancellationToken);
+
+            var jumpHomeAreaCell = await context.CallGameToolAsync("architect_zone.jump_camera_to_home_area", "rimworld/jump_camera_to_cell", new
+            {
+                x = homeAreaRect.X,
+                z = homeAreaRect.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(jumpHomeAreaCell, $"Jumping camera to home-area cell ({homeAreaRect.X}, {homeAreaRect.Z})");
+
+            await context.CaptureHumanVerificationScreenshotAsync(
+                "human_verify.architect_home_area",
+                "architect_home_area",
+                "A 2x2 home area should be visible after rectangle drag placement.",
+                [
+                    "A small home-area overlay should be visible near the center of the view.",
+                    "This confirms area designators are reachable through the same Architect automation seam as build and zone tools."
+                ],
+                cancellationToken);
+        }
+
+        context.SetSummaryValue("zoneCategoryId", zoneCategoryId);
+        context.SetSummaryValue("stockpileDesignatorId", stockpileDesignatorId);
+        context.SetSummaryValue("homeAreaDesignatorId", homeAreaDesignatorId);
+        context.SetSummaryValue("stockpileRect", $"{stockpileRect.X},{stockpileRect.Z} 3x2");
+        context.SetSummaryValue("homeAreaRect", $"{homeAreaRect.X},{homeAreaRect.Z} 2x2");
+        context.SetScenarioData("zoneCategories", new JsonArray(categoryArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+        context.SetScenarioData("zoneDesignators", new JsonArray(designatorArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+        context.SetScenarioData("zonesBefore", zonesBefore.StructuredContent);
+        context.SetScenarioData("zonesAfter", zonesAfter.StructuredContent);
+        context.SetScenarioData("areasBefore", areasBefore.StructuredContent);
+        context.SetScenarioData("areasAfter", areasAfter.StructuredContent);
+        context.SetScenarioData("stockpilePlacement", stockpilePlacement.StructuredContent);
+        context.SetScenarioData("stockpileCellInfo", stockpileCellInfo.StructuredContent);
+        context.SetScenarioData("homeAreaPlacement", homeAreaPlacement.StructuredContent);
+        context.SetScenarioData("homeAreaCellInfo", homeAreaCellInfo.StructuredContent);
+
+        var observation = await observationWindow.CaptureAsync(
+            "architect_zone.final_bridge_status",
+            "architect_zone.collect_operation_events",
+            "architect_zone.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
     private static string ResolveFirstColonistName(JsonNode? structuredContent)
     {
         var colonists = JsonNodeHelpers.ReadArray(structuredContent, "colonists");
@@ -1127,10 +1513,10 @@ internal static class SmokeScenarioCatalog
         yield return (x, z + 2);
     }
 
-    private static IEnumerable<(int X, int Z)> BuildArchitectProbeCells((int X, int Z) origin)
+    private static IEnumerable<(int X, int Z)> BuildArchitectProbeCells((int X, int Z) origin, int minRadius = 6, int maxRadius = 18)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        for (var radius = 6; radius <= 18; radius += 2)
+        for (var radius = minRadius; radius <= maxRadius; radius += 2)
         {
             for (var x = origin.X - radius; x <= origin.X + radius; x++)
             {
@@ -1168,16 +1554,44 @@ internal static class SmokeScenarioCatalog
         throw new InvalidOperationException($"Could not find Architect category '{preferredDefName}'.");
     }
 
-    private static string ResolveArchitectBuildDesignatorId(IReadOnlyList<JsonNode?> designators, string buildableDefName)
+    private static string ResolveArchitectBuildDesignatorId(IReadOnlyList<JsonNode?> designators, string buildableDefName, bool requireDropdownChild = false)
     {
         foreach (var designator in designators)
         {
             var defName = JsonNodeHelpers.ReadString(designator, "buildableDefName");
+            var parentId = JsonNodeHelpers.ReadString(designator, "parentId");
             if (string.Equals(defName, buildableDefName, StringComparison.Ordinal))
+            {
+                if (requireDropdownChild && string.IsNullOrWhiteSpace(parentId))
+                    continue;
+
                 return JsonNodeHelpers.ReadString(designator, "id");
+            }
         }
 
         throw new InvalidOperationException($"Could not find Architect build designator '{buildableDefName}'.");
+    }
+
+    private static string ResolveArchitectParentId(IReadOnlyList<JsonNode?> designators, string designatorId)
+    {
+        foreach (var designator in designators)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(designator, "id"), designatorId, StringComparison.Ordinal))
+                return JsonNodeHelpers.ReadString(designator, "parentId");
+        }
+
+        throw new InvalidOperationException($"Could not find Architect parent id for designator '{designatorId}'.");
+    }
+
+    private static string ResolveArchitectDesignatorIdByClassName(IReadOnlyList<JsonNode?> designators, string className)
+    {
+        foreach (var designator in designators)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(designator, "className"), className, StringComparison.Ordinal))
+                return JsonNodeHelpers.ReadString(designator, "id");
+        }
+
+        throw new InvalidOperationException($"Could not find Architect designator with class name '{className}'.");
     }
 
     private static async Task EnsureGodModeAsync(SmokeScenarioContext context, string stepName, bool enabled, CancellationToken cancellationToken)
@@ -1198,14 +1612,22 @@ internal static class SmokeScenarioCatalog
         string designatorId,
         JsonNode? colonistsStructuredContent,
         HashSet<string> blockedCells,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int width = 1,
+        int height = 1,
+        int minRadius = 6,
+        int maxRadius = 18,
+        Func<SmokeScenarioContext, int, int, int, int, CancellationToken, Task<bool>>? preflightAsync = null)
     {
         var origin = ResolveColonistSearchOrigin(colonistsStructuredContent);
         var attempt = 0;
 
-        foreach (var candidateCell in BuildArchitectProbeCells(origin))
+        foreach (var candidateCell in BuildArchitectProbeCells(origin, minRadius, maxRadius))
         {
             if (!blockedCells.Add(CellKey(candidateCell.X, candidateCell.Z)))
+                continue;
+
+            if (preflightAsync != null && !await preflightAsync(context, candidateCell.X, candidateCell.Z, width, height, cancellationToken))
                 continue;
 
             attempt++;
@@ -1214,19 +1636,93 @@ internal static class SmokeScenarioCatalog
                 designatorId,
                 x = candidateCell.X,
                 z = candidateCell.Z,
+                width,
+                height,
                 dryRun = true,
                 keepSelected = false
             }, cancellationToken);
             if (JsonNodeHelpers.ReadBoolean(dryRun.StructuredContent, "operation", "Success") != true)
                 throw new InvalidOperationException($"Architect placement probe failed for cell ({candidateCell.X}, {candidateCell.Z}). {dryRun.Message}".Trim());
 
-            if (JsonNodeHelpers.ReadInt32(dryRun.StructuredContent, "acceptedCellCount").GetValueOrDefault() <= 0)
+            if (JsonNodeHelpers.ReadInt32(dryRun.StructuredContent, "acceptedCellCount").GetValueOrDefault() < width * height)
                 continue;
 
             return candidateCell;
         }
 
         throw new InvalidOperationException("Could not find an accepted architect placement cell for the wall designator.");
+    }
+
+    private static async Task<IReadOnlyList<ToolInvocationResult>> ReadRectangleCellInfosAsync(
+        SmokeScenarioContext context,
+        string stepPrefix,
+        int x,
+        int z,
+        int width,
+        int height,
+        CancellationToken cancellationToken)
+    {
+        var responses = new List<ToolInvocationResult>(width * height);
+        foreach (var cell in EnumerateRectangleCells(x, z, width, height))
+        {
+            var response = await context.CallGameToolAsync($"{stepPrefix}_{cell.X}_{cell.Z}", "rimworld/get_cell_info", new
+            {
+                x = cell.X,
+                z = cell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(response, $"Reading cell info for rectangle cell ({cell.X}, {cell.Z})");
+            responses.Add(response);
+        }
+
+        return responses;
+    }
+
+    private static async Task<bool> RectangleHasNoZoneAsync(
+        SmokeScenarioContext context,
+        int x,
+        int z,
+        int width,
+        int height,
+        CancellationToken cancellationToken)
+    {
+        foreach (var cell in EnumerateRectangleCells(x, z, width, height))
+        {
+            var response = await context.CallGameToolAsync($"architect_zone.preflight_zone_{cell.X}_{cell.Z}", "rimworld/get_cell_info", new
+            {
+                x = cell.X,
+                z = cell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(response, $"Reading preflight zone info for cell ({cell.X}, {cell.Z})");
+
+            if (JsonNodeHelpers.ReadObject(response.StructuredContent, "cell", "zone") != null)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static async Task<bool> RectangleHasNoHomeAreaAsync(
+        SmokeScenarioContext context,
+        int x,
+        int z,
+        int width,
+        int height,
+        CancellationToken cancellationToken)
+    {
+        foreach (var cell in EnumerateRectangleCells(x, z, width, height))
+        {
+            var response = await context.CallGameToolAsync($"architect_zone.preflight_home_{cell.X}_{cell.Z}", "rimworld/get_cell_info", new
+            {
+                x = cell.X,
+                z = cell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(response, $"Reading preflight home-area info for cell ({cell.X}, {cell.Z})");
+
+            if (CellContainsArea(response.StructuredContent, "RimWorld.Area_Home"))
+                return false;
+        }
+
+        return true;
     }
 
     private static void AssertCellContainsBuildBlueprint(JsonNode? cellInfo, string buildDefName)
@@ -1257,9 +1753,52 @@ internal static class SmokeScenarioCatalog
             throw new InvalidOperationException($"Solid thing def '{thingDefName}' was present when the scenario expected only a blueprint.");
     }
 
+    private static void AssertCellContainsArea(JsonNode? cellInfo, string className)
+    {
+        if (!CellContainsArea(cellInfo, className))
+            throw new InvalidOperationException($"Expected area '{className}' was not present in the cell info response.");
+    }
+
+    private static bool CellContainsArea(JsonNode? cellInfo, string className)
+    {
+        var areas = JsonNodeHelpers.ReadArray(cellInfo, "cell", "areas");
+        return areas.Any(area => string.Equals(JsonNodeHelpers.ReadString(area, "className"), className, StringComparison.Ordinal));
+    }
+
+    private static JsonNode? ResolveZoneById(IReadOnlyList<JsonNode?> zones, string zoneId)
+    {
+        foreach (var zone in zones)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(zone, "id"), zoneId, StringComparison.Ordinal))
+                return zone;
+        }
+
+        throw new InvalidOperationException($"Could not find zone '{zoneId}' in the zone list response.");
+    }
+
+    private static JsonNode? ResolveAreaByClassName(IReadOnlyList<JsonNode?> areas, string className)
+    {
+        foreach (var area in areas)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(area, "className"), className, StringComparison.Ordinal))
+                return area;
+        }
+
+        throw new InvalidOperationException($"Could not find area '{className}' in the area list response.");
+    }
+
     private static string CellKey(int x, int z)
     {
         return x.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," + z.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static IEnumerable<(int X, int Z)> EnumerateRectangleCells(int x, int z, int width, int height)
+    {
+        for (var offsetZ = 0; offsetZ < height; offsetZ++)
+        {
+            for (var offsetX = 0; offsetX < width; offsetX++)
+                yield return (x + offsetX, z + offsetZ);
+        }
     }
 
     private static string ResolveDebugActionRootPath(IReadOnlyList<JsonNode?> roots, string preferredPath)

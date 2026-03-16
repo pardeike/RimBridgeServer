@@ -32,6 +32,16 @@ internal sealed class ArchitectCapabilityModule
         return RimWorldArchitect.ApplyArchitectDesignatorResponse(designatorId, x, z, width, height, dryRun, keepSelected);
     }
 
+    public object ListZones(bool includeHidden = false, bool includeEmpty = false)
+    {
+        return RimWorldArchitect.ListZonesResponse(includeHidden, includeEmpty);
+    }
+
+    public object ListAreas(bool includeEmpty = false, bool includeAssignableOnly = false)
+    {
+        return RimWorldArchitect.ListAreasResponse(includeEmpty, includeAssignableOnly);
+    }
+
     public object GetCellInfo(int x, int z)
     {
         return RimWorldArchitect.GetCellInfoResponse(x, z);

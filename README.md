@@ -11,7 +11,7 @@ This mod creates a connection point (called a "server") inside RimWorld. Other p
 - Check if the game is running
 - Pause or unpause the game
 - Get information about the current game
-- Inspect colonists, selection, camera, saves, screenshots, screen-space UI targets, and Architect designators
+- Inspect colonists, selection, camera, saves, screenshots, screen-space UI targets, Architect designators, zones, and areas
 - Open and execute context-menu actions for debugging mods
 
 This is especially helpful for:
@@ -86,7 +86,9 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/list_architect_designators`** - List Architect designators for one category, flattening dropdown widgets into actionable child ids
 - **`rimworld/select_architect_designator`** - Select an Architect designator by stable id without relying on foreground input
 - **`rimworld/apply_architect_designator`** - Apply an Architect designator to one cell or rectangle, with optional dry-run validation
-- **`rimworld/get_cell_info`** - Inspect one map cell, including blueprints, frames, solid things, and designations
+- **`rimworld/list_zones`** - List current-map zones such as stockpiles and growing zones
+- **`rimworld/list_areas`** - List current-map areas such as home, roof, snow-clear, and allowed areas
+- **`rimworld/get_cell_info`** - Inspect one map cell, including blueprints, frames, solid things, designations, zones, and areas
 - **`rimworld/get_ui_state`** - Inspect the current RimWorld window stack and UI/input state
 - **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
 - **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
@@ -140,7 +142,9 @@ Your external program can send these commands to RimBridgeServer:
 
 `rimworld/list_architect_categories` and `rimworld/list_architect_designators` expose the same build/designation surface a player sees in the Architect menu, but with stable ids that are usable from automation. The bridge keeps the category structure, flattens dropdown widgets into actionable child ids, and reports build-specific metadata such as `buildableDefName` and `stuffDefName`.
 
-`rimworld/set_god_mode` and `rimworld/apply_architect_designator` make the important dev workflow deterministic. With god mode disabled, build designators create blueprints; with god mode enabled, the same designator can place the finished structure directly. `rimworld/get_cell_info` exists specifically so tests can verify those outcomes without OCR or pixel heuristics.
+The designator payload now also reports drag and targeting metadata from RimWorld itself, including `applicationKind`, `supportsRectangleApplication`, `dragDrawMeasurements`, `drawStyleCategoryDefName`, and `zoneTypeName` where applicable. That makes dropdown-heavy floor tools, zone tools, and area tools discoverable without guessing from UI text.
+
+`rimworld/set_god_mode` and `rimworld/apply_architect_designator` make the important dev workflow deterministic. With god mode disabled, build designators create blueprints; with god mode enabled, the same designator can place the finished structure directly. `rimworld/list_zones`, `rimworld/list_areas`, and `rimworld/get_cell_info` exist specifically so tests can verify zone, area, and structure outcomes without OCR or pixel heuristics.
 
 ### Example workflow for Achtung Issue #95
 
@@ -265,6 +269,22 @@ The `architect-wall-placement` scenario covers the first Architect/designator se
 - enables god mode and verifies that placing the same wall creates the solid `Wall` building directly
 - restores the original god-mode state after the scenario finishes
 
+The `architect-floor-dropdown` scenario covers dropdown-heavy Architect discovery and rectangle placement:
+
+- ensures a playable game exists
+- discovers the `Floors` category and resolves a real dropdown child designator by stable id
+- proves the selected child designator and its dropdown container are both tracked correctly
+- enables god mode and applies the dropdown child floor designator over a 2x2 rectangle
+- verifies all four cells changed to the expected floor terrain through `rimworld/get_cell_info`
+
+The `architect-zone-area-drag` scenario covers rectangle drag semantics for non-build tools:
+
+- ensures a playable game exists
+- discovers the `Zone` category and resolves stockpile-zone plus home-area designators by class-backed stable ids
+- creates a new 3x2 stockpile zone and verifies it through both `rimworld/list_zones` and `rimworld/get_cell_info`
+- expands the home area over a 2x2 rectangle and verifies the change through both `rimworld/list_areas` and `rimworld/get_cell_info`
+- exports human-checkable screenshots for both overlays when `--human-verify` is enabled
+
 The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.
 
 The runner looks for `gabs` on `PATH`, honors `GABS_BIN`, and also auto-detects a sibling checkout at `../GABS/gabs`. Use `--config-dir` or `GABS_CONFIG_DIR` if you need to point it at a non-default GABS configuration directory.
@@ -288,7 +308,9 @@ The current human-verification set covers:
 - `screen-target-click-roundtrip` before dismiss, before option click, and after the option click
 - `screen-target-clip` with a cropped image focused on one real actionable target
 - `screenshot-capture` by exporting the captured screenshot itself with a matching explanation file
+- `architect-floor-dropdown` with one screenshot showing a directly placed dropdown-selected floor patch
 - `architect-wall-placement` with one screenshot showing the blueprint wall state and one showing the direct-build wall state
+- `architect-zone-area-drag` with one screenshot showing a stockpile zone overlay and one showing a home-area overlay
 
 The context-menu scenarios intentionally avoid creating empty float menus during target probing. Earlier harness revisions could emit RimWorld's red `Created FloatMenu with no options. Closing.` error while searching for a valid menu target; that probing path now checks for zero options before constructing the menu.
 

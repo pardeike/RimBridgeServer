@@ -7,6 +7,9 @@ SCENARIOS=(
   "screen-target-click-roundtrip"
   "screen-target-clip"
   "screenshot-capture"
+  "architect-floor-dropdown"
+  "architect-wall-placement"
+  "architect-zone-area-drag"
 )
 
 for scenario in "${SCENARIOS[@]}"; do
