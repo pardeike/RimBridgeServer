@@ -7,9 +7,10 @@ RimBridgeServer lets you control RimWorld from outside the game. This is useful 
 This mod creates a connection point (called a "server") inside RimWorld. Other programs can connect to this server to:
 
 - Check if the game is running
-- Pause or unpause the game  
+- Pause or unpause the game
 - Get information about the current game
-- Control the game remotely
+- Inspect colonists, selection, camera, saves, and screenshots
+- Open and execute context-menu actions for debugging mods
 
 This is especially helpful for:
 - **Mod developers** who want to test their mods automatically
@@ -22,6 +23,7 @@ This is especially helpful for:
 - **Safe**: Only accepts connections from your own computer
 - **Simple**: Uses a standard protocol that many tools understand
 - **Compatible**: Works with RimWorld 1.6
+- **Debuggable**: Exposes context-menu and screenshot tools that are useful for mod repro cases
 
 ## How to get started
 
@@ -62,10 +64,49 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/get_game_info`** - Get information about the current game
 - **`rimworld/pause_game`** - Pause or unpause the game
 - **`rimworld/start_debug_game`** - Start RimWorld's built-in quick test colony from the main menu
+- **`rimworld/list_saves`** - List saved games
+- **`rimworld/spawn_thing`** - Spawn a thing on the current map at a target cell
+- **`rimworld/save_game`** - Save the current game to a named save
+- **`rimworld/load_game`** - Load a named save
+
+### Pawn inspection and control
+- **`rimworld/list_colonists`** - List player-controlled colonists with state such as selected/drafted/downed/job/position
+- **`rimworld/clear_selection`** - Clear the current selection
+- **`rimworld/select_pawn`** - Select one colonist by name
+- **`rimworld/deselect_pawn`** - Deselect one selected colonist by name
+- **`rimworld/set_draft`** - Draft or undraft a colonist by name
+
+### Camera and screenshots
+- **`rimworld/get_camera_state`** - Report camera position, zoom, and current view rect
+- **`rimworld/jump_camera_to_pawn`** - Jump the camera to a pawn and select it
+- **`rimworld/jump_camera_to_cell`** - Jump the camera to a specific map cell
+- **`rimworld/move_camera`** - Move the camera by a cell offset
+- **`rimworld/zoom_camera`** - Adjust camera zoom relative to the current root size
+- **`rimworld/set_camera_zoom`** - Set camera root size directly
+- **`rimworld/frame_pawns`** - Frame several pawns together in view
+- **`rimworld/take_screenshot`** - Save an in-game screenshot and return the file path
+
+### Context-menu debugging
+- **`rimworld/get_achtung_state`** - Report Achtung debug settings relevant to menu repro cases
+- **`rimworld/set_achtung_show_drafted_orders_when_undrafted`** - Toggle the compatibility mode that re-enables the old merged-menu behavior
+- **`rimworld/open_context_menu`** - Open a debug context menu at a pawn or cell
+- **`rimworld/get_context_menu_options`** - Return the currently opened debug menu options
+- **`rimworld/execute_context_menu_option`** - Execute one menu option by index or label
+- **`rimworld/close_context_menu`** - Close the currently opened debug context menu
 
 `rimworld/start_debug_game` mirrors RimWorld's own dev quick-test flow. It only works from the main menu and returns a detailed state snapshot when the request is rejected.
 
-More commands may be added in future versions.
+`rimworld/open_context_menu` supports `mode: auto`, `mode: achtung`, and `mode: vanilla`. When Achtung is loaded, `auto` prefers Achtung's merged multi-pawn menu via reflection so external tools can reproduce issues against the same action builder the player sees in-game.
+
+### Example workflow for Achtung Issue #95
+
+1. Start or load a prepared colony.
+2. Use `rimworld/list_colonists` to find the colonists involved in the repro.
+3. Use `rimworld/select_pawn` and `rimworld/frame_pawns` to put the scene on screen.
+4. If you need a controlled before/after comparison, use `rimworld/set_achtung_show_drafted_orders_when_undrafted` to switch between the legacy and fixed menu behavior without changing the save.
+5. Use `rimworld/open_context_menu` with `mode: achtung` on the target pawn.
+6. Inspect the returned options or call `rimworld/take_screenshot` for visual proof.
+7. Use `rimworld/save_game` to preserve the repro state for later development cycles.
 
 ## For developers
 
@@ -79,6 +120,8 @@ The basic steps are:
 3. Ask for a list of available commands
 4. Send commands and receive responses
 5. Optionally, listen for events from the game
+
+Most mutating tools are marshalled onto RimWorld's main thread before they touch UI or map state. This is important for selection, camera, save/load, screenshot capture, and context-menu operations.
 
 For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABP).
 
