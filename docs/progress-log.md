@@ -229,6 +229,37 @@ Next:
 
 - Step A7: add explicit test-harness helpers and scripts that drive these wait/log/event windows against real RimWorld scenarios through GABS so live smoke cases become reproducible commands in the repo
 
+## 2026-03-16 - Step A7 - Reproducible Live Smoke Harness
+
+Status:
+
+- completed
+
+Completed:
+
+- added a dedicated live smoke runner project at [`Tests/RimBridgeServer.LiveSmoke`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke) that speaks MCP over stdio to a local `gabs server stdio` process instead of relying on one-off manual tool sequences
+- implemented a baseline `debug-game-load` scenario in [`LiveSmokeHarness.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/LiveSmokeHarness.cs) that checks game status, starts RimWorld when needed, connects through GABS, waits for idle, snapshots bridge cursors, starts RimWorld's debug colony, waits for playable state, verifies colonists, and then captures the resulting log/event window
+- kept the console summary intentionally terse while writing the full structured run report to `artifacts/live-smoke/<timestamp>_<scenario>.json`, which gives us useful detail without flooding the interactive context
+- added the developer wrapper [`scripts/live-smoke.sh`](/Users/ap/Projects/RimBridgeServer/scripts/live-smoke.sh) so the smoke flow is now a named repo command instead of a handwritten terminal sequence
+- added the new live smoke project to [`RimBridgeServer.sln`](/Users/ap/Projects/RimBridgeServer/RimBridgeServer.sln) and documented the workflow in [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md)
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --list-scenarios`
+- `scripts/live-smoke.sh --scenario debug-game-load --game-id rimworld --stop-after`
+
+Notes:
+
+- the harness now provides a reusable correctness pattern for real-instance verification: explicit waits plus cursor snapshots before the action, then bounded log/event collection after the action
+- the current summary intentionally highlights only notable warnings and errors by default, while the JSON artifact retains the full captured data for deeper debugging
+- `--stop-after` only stops the RimWorld instance when the harness started it in this run, which keeps the workflow safe around developer-managed sessions
+
+Next:
+
+- Step A8: extract the live smoke scenario and reporting contracts into reusable testing primitives so we can add more real-instance cases without duplicating GABS, wait, and cursor-window plumbing
+
 ## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
 
 Status:

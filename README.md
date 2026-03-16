@@ -145,6 +145,31 @@ If your host supports unsolicited GABP events, RimBridgeServer also publishes fi
 
 The push path is intentionally narrow to avoid context spam. Full detail remains available through the pull tools and journals.
 
+### Live smoke harness
+
+The repository now includes a reproducible live smoke runner in [`Tests/RimBridgeServer.LiveSmoke`](Tests/RimBridgeServer.LiveSmoke) and a thin wrapper script at [`scripts/live-smoke.sh`](scripts/live-smoke.sh).
+
+Example:
+
+```bash
+scripts/live-smoke.sh --scenario debug-game-load --game-id rimworld --stop-after
+```
+
+The `debug-game-load` scenario drives GABS and RimBridgeServer end-to-end:
+
+- checks the game status and starts RimWorld if needed
+- connects through GABS
+- waits for long events to go idle
+- snapshots `latestLogSequence` and `latestOperationEventSequence`
+- starts RimWorld's debug quick-test colony
+- waits for the resulting operation and playable game state
+- verifies that colonists are present on the map
+- collects the log and operation-event window for that action
+
+The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.
+
+The runner looks for `gabs` on `PATH`, honors `GABS_BIN`, and also auto-detects a sibling checkout at `../GABS/gabs`. Use `--config-dir` or `GABS_CONFIG_DIR` if you need to point it at a non-default GABS configuration directory.
+
 For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABP).
 
 ### Building the mod
@@ -166,6 +191,8 @@ Steps:
 About/          - Mod information for RimWorld
 1.6/Assemblies/ - Built mod files
 Source/         - Source code
+Tests/          - Unit tests and live smoke runner
+scripts/        - Developer-facing workflow helpers
 lib/            - External libraries
 .vscode/        - Visual Studio Code settings
 ```
