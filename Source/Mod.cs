@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using Lib.GAB.Server;
 using Verse;
 
@@ -17,7 +18,8 @@ public class RimBridgeServerMod : Mod
             RimBridgePatches.Apply();
 
             var tools = new RimBridgeTools();
-            _server = Lib.GAB.Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", "0.2.0", tools, fallbackPort: 5174);
+            var version = typeof(RimBridgeServerMod).Assembly.GetName().Version?.ToString() ?? "0.1.0.0";
+            _server = Lib.GAB.Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", version, tools, fallbackPort: 5174);
 
             _server.StartAsync().ContinueWith(task =>
             {

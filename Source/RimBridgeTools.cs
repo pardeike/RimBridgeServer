@@ -572,6 +572,14 @@ public class RimBridgeTools
 
             var clickPos = RimWorldState.CellCenter(clickCell);
             var normalizedMode = (mode ?? "auto").Trim().ToLowerInvariant();
+            if (normalizedMode != "auto" && normalizedMode != "achtung" && normalizedMode != "vanilla")
+            {
+                return new
+                {
+                    success = false,
+                    message = $"Unsupported context menu mode '{mode}'. Use auto, achtung, or vanilla."
+                };
+            }
 
             FloatMenu menu;
             List<FloatMenuOption> options;
@@ -636,6 +644,11 @@ public class RimBridgeTools
             var snapshot = RimBridgeContextMenus.Current;
             if (snapshot == null || snapshot.Menu == null)
                 return new { success = false, message = "No debug context menu has been opened yet." };
+            if (Find.WindowStack.FloatMenu != snapshot.Menu)
+            {
+                RimBridgeContextMenus.Clear();
+                return new { success = false, message = "No debug context menu has been opened yet." };
+            }
 
             return new
             {
@@ -660,6 +673,11 @@ public class RimBridgeTools
             var snapshot = RimBridgeContextMenus.Current;
             if (snapshot == null || snapshot.Menu == null)
                 return new { success = false, message = "No debug context menu is available." };
+            if (Find.WindowStack.FloatMenu != snapshot.Menu)
+            {
+                RimBridgeContextMenus.Clear();
+                return new { success = false, message = "No debug context menu is available." };
+            }
 
             FloatMenuOption option = null;
             int resolvedIndex = -1;

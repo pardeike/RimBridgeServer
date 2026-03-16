@@ -1,0 +1,72 @@
+name: Release RimBridgeServer Mod
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to publish, for example v0.1.0.0
+        required: false
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-package:
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Verify release tag matches mod version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          MOD_VERSION="$(dotnet msbuild Source/RimBridgeServer.csproj -nologo -getProperty:Version)"
+          if [ "$RELEASE_TAG" != "v$MOD_VERSION" ]; then
+            echo "Release tag $RELEASE_TAG does not match mod version v$MOD_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Build mod
+        run: dotnet build RimBridgeServer.sln -c Release
+
+      - name: Package mod zip
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          STAGE_DIR="dist/RimBridgeServer-${RELEASE_TAG}"
+          ARCHIVE_NAME="RimBridgeServer-${RELEASE_TAG}.zip"
+
+          rm -rf "$STAGE_DIR"
+          mkdir -p "$STAGE_DIR"
+
+          cp -R About "$STAGE_DIR/"
+          cp -R 1.6 "$STAGE_DIR/"
+          cp README.md LICENSE LoadFolders.xml "$STAGE_DIR/"
+
+          (
+            cd dist
+            zip -qr "$ARCHIVE_NAME" "$(basename "$STAGE_DIR")"
+          )
+
+      - name: Upload mod zip to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          gh release upload \
+            "$RELEASE_TAG" \
+            "dist/RimBridgeServer-${RELEASE_TAG}.zip" \
+            --clobber
