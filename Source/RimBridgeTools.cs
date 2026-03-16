@@ -18,6 +18,24 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
+    [Tool("rimbridge/get_operation", Description = "Get the latest journal snapshot for a specific operation id")]
+    public object GetOperation([ToolParameter(Description = "Operation id returned in tool metadata")] string operationId)
+    {
+        return InvokeAlias(Arguments((nameof(operationId), operationId)));
+    }
+
+    [Tool("rimbridge/list_operations", Description = "List recent bridge operations from the in-memory operation journal")]
+    public object ListOperations([ToolParameter(Description = "Maximum number of operations to return")] int limit = 20)
+    {
+        return InvokeAlias(Arguments((nameof(limit), limit)));
+    }
+
+    [Tool("rimbridge/list_operation_events", Description = "List recent bridge operation lifecycle events from the in-memory event journal")]
+    public object ListOperationEvents([ToolParameter(Description = "Maximum number of events to return")] int limit = 50)
+    {
+        return InvokeAlias(Arguments((nameof(limit), limit)));
+    }
+
     [Tool("rimworld/pause_game", Description = "Pause or unpause the game")]
     public object PauseGame([ToolParameter(Description = "True to pause, false to unpause")] bool pause = true)
     {

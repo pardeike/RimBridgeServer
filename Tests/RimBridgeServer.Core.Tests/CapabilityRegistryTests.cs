@@ -44,6 +44,25 @@ public class CapabilityRegistryTests
         Assert.Contains("rimbridge/ping", ex.Message);
     }
 
+    [Fact]
+    public void RecordsOperationLifecycleInJournal()
+    {
+        var journal = new OperationJournal();
+        var registry = new CapabilityRegistry(journal);
+        registry.RegisterProvider(new FakeProvider());
+
+        var envelope = registry.Invoke("rimbridge/ping");
+        var tracked = journal.GetOperation(envelope.OperationId);
+        var events = journal.GetRecentEvents();
+
+        Assert.NotNull(tracked);
+        Assert.Equal(OperationStatus.Completed, tracked.Status);
+        Assert.Empty((Dictionary<string, object>)tracked.Metadata["arguments"]);
+        Assert.Equal("rimbridge/ping", tracked.Metadata["requestedId"]);
+        Assert.Equal("operation.completed", events[0].EventType);
+        Assert.Equal("operation.started", events[1].EventType);
+    }
+
     private sealed class FakeProvider : IRimBridgeCapabilityProvider
     {
         public string ProviderId => "fake.provider";

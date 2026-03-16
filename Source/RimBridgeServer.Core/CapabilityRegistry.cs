@@ -11,6 +11,12 @@ public sealed class CapabilityRegistry
 {
     private readonly Dictionary<string, RimBridgeCapabilityRegistration> _registrationsById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _idsByAlias = new(StringComparer.OrdinalIgnoreCase);
+    private readonly OperationJournal _journal;
+
+    public CapabilityRegistry(OperationJournal journal = null)
+    {
+        _journal = journal;
+    }
 
     public void RegisterProvider(IRimBridgeCapabilityProvider provider)
     {
@@ -39,28 +45,65 @@ public sealed class CapabilityRegistry
     public OperationEnvelope Invoke(string idOrAlias, IDictionary<string, object> arguments = null, CancellationToken cancellationToken = default)
     {
         var registration = ResolveRegistration(idOrAlias);
+        var descriptor = registration.Descriptor;
+        var operationId = "op_" + Guid.NewGuid().ToString("N");
+        var requestedAtUtc = DateTimeOffset.UtcNow;
+        var invocationArguments = arguments != null
+            ? new Dictionary<string, object>(arguments, StringComparer.Ordinal)
+            : [];
+
+        _journal?.RecordStarted(operationId, descriptor.Id, new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["requestedId"] = idOrAlias,
+            ["providerId"] = descriptor.ProviderId,
+            ["category"] = descriptor.Category,
+            ["arguments"] = invocationArguments
+        }, requestedAtUtc);
+
         if (!registration.HasHandler)
         {
-            var startedAtUtc = DateTimeOffset.UtcNow;
-            return OperationEnvelope.Failed("op_" + Guid.NewGuid().ToString("N"), registration.Descriptor.Id, startedAtUtc, new OperationError
+            var failed = OperationEnvelope.Failed(operationId, descriptor.Id, requestedAtUtc, new OperationError
             {
                 Code = "capability.unavailable",
-                Message = $"Capability '{registration.Descriptor.Id}' has no registered handler.",
+                Message = $"Capability '{descriptor.Id}' has no registered handler.",
                 ExceptionType = typeof(InvalidOperationException).FullName ?? nameof(InvalidOperationException)
             });
+            _journal?.RecordCompleted(failed);
+            return failed;
         }
 
         var invocation = new CapabilityInvocation
         {
-            CapabilityId = registration.Descriptor.Id,
+            CapabilityId = descriptor.Id,
+            OperationId = operationId,
             RequestedMode = CapabilityExecutionMode.Wait,
-            RequestedAtUtc = DateTimeOffset.UtcNow,
-            Arguments = arguments != null
-                ? new Dictionary<string, object>(arguments, StringComparer.Ordinal)
-                : []
+            RequestedAtUtc = requestedAtUtc,
+            Arguments = invocationArguments
         };
 
-        return registration.Handler(invocation, cancellationToken).GetAwaiter().GetResult();
+        try
+        {
+            var envelope = registration.Handler(invocation, cancellationToken).GetAwaiter().GetResult()
+                ?? OperationEnvelope.Completed(operationId, descriptor.Id, requestedAtUtc, result: null);
+
+            NormalizeEnvelope(envelope, operationId, descriptor.Id, requestedAtUtc);
+            _journal?.RecordCompleted(envelope);
+            return envelope;
+        }
+        catch (Exception ex)
+        {
+            var root = ex.InnerException ?? ex;
+            var failed = OperationEnvelope.Failed(operationId, descriptor.Id, requestedAtUtc, new OperationError
+            {
+                Code = "capability.failed",
+                Message = root.Message,
+                ExceptionType = root.GetType().FullName ?? root.GetType().Name,
+                Details = ex.ToString()
+            });
+
+            _journal?.RecordCompleted(failed);
+            return failed;
+        }
     }
 
     private void Register(RimBridgeCapabilityRegistration registration)
@@ -101,5 +144,20 @@ public sealed class CapabilityRegistry
             throw new InvalidOperationException($"Capability '{idOrAlias}' is not registered.");
 
         return _registrationsById[descriptorId];
+    }
+
+    private static void NormalizeEnvelope(OperationEnvelope envelope, string operationId, string capabilityId, DateTimeOffset startedAtUtc)
+    {
+        envelope.OperationId = operationId;
+        envelope.CapabilityId = capabilityId;
+
+        if (envelope.StartedAtUtc == default)
+            envelope.StartedAtUtc = startedAtUtc;
+
+        if (envelope.Status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled or OperationStatus.TimedOut)
+        {
+            envelope.CompletedAtUtc ??= DateTimeOffset.UtcNow;
+            envelope.DurationMs ??= (long)(envelope.CompletedAtUtc.Value - envelope.StartedAtUtc).TotalMilliseconds;
+        }
     }
 }

@@ -70,7 +70,7 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             Source = _source,
             ExecutionKind = ResolveExecutionKind(attribute.Name),
             SupportedModes = CapabilityExecutionMode.Wait,
-            EmitsEvents = false,
+            EmitsEvents = true,
             ResultType = implementationMethod.ReturnType.FullName ?? implementationMethod.ReturnType.Name,
             Aliases = [attribute.Name],
             Parameters = aliasMethod.GetParameters().Select(CreateParameterDescriptor).ToList()
@@ -83,7 +83,9 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
 
         var envelope = _runner.Run(() => method.Invoke(_module, BindArguments(method, invocation.Arguments)), new OperationExecutionOptions
         {
+            OperationId = invocation.OperationId,
             CapabilityId = descriptor.Id,
+            StartedAtUtc = invocation.RequestedAtUtc,
             MarshalToMainThread = RequiresMainThread(descriptor.ExecutionKind),
             TimeoutMs = 10000,
             FailureCode = "capability.failed"
@@ -165,6 +167,9 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
         return toolName switch
         {
             "rimbridge/ping" => CapabilityExecutionKind.Immediate,
+            "rimbridge/get_operation" => CapabilityExecutionKind.Immediate,
+            "rimbridge/list_operations" => CapabilityExecutionKind.Immediate,
+            "rimbridge/list_operation_events" => CapabilityExecutionKind.Immediate,
             "rimworld/start_debug_game" => CapabilityExecutionKind.LongEventBound,
             "rimworld/load_game" => CapabilityExecutionKind.LongEventBound,
             "rimworld/take_screenshot" => CapabilityExecutionKind.BackgroundObserved,

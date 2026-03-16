@@ -14,7 +14,11 @@ public interface IGameThreadDispatcher
 
 public sealed class OperationExecutionOptions
 {
+    public string OperationId { get; set; } = string.Empty;
+
     public string CapabilityId { get; set; } = string.Empty;
+
+    public DateTimeOffset? StartedAtUtc { get; set; }
 
     public bool MarshalToMainThread { get; set; } = true;
 
@@ -39,8 +43,10 @@ public sealed class OperationRunner
         if (options == null)
             throw new ArgumentNullException(nameof(options));
 
-        var operationId = "op_" + Guid.NewGuid().ToString("N");
-        var startedAtUtc = DateTimeOffset.UtcNow;
+        var operationId = string.IsNullOrWhiteSpace(options.OperationId)
+            ? "op_" + Guid.NewGuid().ToString("N")
+            : options.OperationId;
+        var startedAtUtc = options.StartedAtUtc ?? DateTimeOffset.UtcNow;
 
         try
         {

@@ -7,16 +7,19 @@ internal static class RimBridgeCapabilities
 {
     public static CapabilityRegistry Registry { get; private set; }
 
+    public static OperationJournal Journal { get; private set; }
+
     public static void Initialize()
     {
         if (Registry != null)
             return;
 
-        var registry = new CapabilityRegistry();
+        var journal = new OperationJournal();
+        var registry = new CapabilityRegistry(journal);
         registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
             providerId: "rimbridge.core/diagnostics",
             category: "diagnostics",
-            module: new DiagnosticsCapabilityModule(),
+            module: new DiagnosticsCapabilityModule(journal),
             aliasMetadataType: typeof(RimBridgeTools),
             source: CapabilitySourceKind.Core));
         registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
@@ -44,6 +47,7 @@ internal static class RimBridgeCapabilities
             aliasMetadataType: typeof(RimBridgeTools),
             source: CapabilitySourceKind.Optional));
 
+        Journal = journal;
         Registry = registry;
         LegacyToolExecution.Initialize(registry);
     }

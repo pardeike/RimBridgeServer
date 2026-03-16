@@ -125,3 +125,33 @@ Notes:
 Next:
 
 - Step A4: add structured operation journaling and event publication so async and long-running capabilities can be observed without per-tool waiting logic
+
+## 2026-03-16 - Step A4 - Operation Journal and Lifecycle Events
+
+Status:
+
+- completed
+
+Completed:
+
+- added [`OperationJournal`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/OperationJournal.cs) and [`OperationEventRecord`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/OperationJournal.cs) in the shared core project to keep recent operation snapshots, publish lifecycle events, and retain a bounded in-memory history for diagnostics
+- updated [`CapabilityRegistry`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityRegistry.cs) so the registry now owns operation ids, records started and completed states centrally, normalizes handler envelopes, and captures provider failures into the journal instead of leaving lifecycle tracking to individual tools
+- updated [`OperationRunner`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/OperationExecution.cs) and [`BuiltInCapabilityModuleProvider`](/Users/ap/Projects/RimBridgeServer/Source/BuiltInCapabilityModuleProvider.cs) so built-in handlers reuse registry-issued operation ids and timestamps rather than generating disconnected envelopes
+- exposed the new diagnostics surface through [`DiagnosticsCapabilityModule`](/Users/ap/Projects/RimBridgeServer/Source/DiagnosticsCapabilityModule.cs), [`RimBridgeCapabilities`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeCapabilities.cs), and [`RimBridgeTools`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) with `rimbridge/get_operation`, `rimbridge/list_operations`, and `rimbridge/list_operation_events`
+- marked built-in descriptors as event-emitting and kept the new diagnostics reads on the fast immediate execution path so journal inspection does not wait on the RimWorld main thread
+- added focused tests in [`OperationRunnerTests`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/OperationRunnerTests.cs), [`CapabilityRegistryTests`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityRegistryTests.cs), and [`OperationJournalTests`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/OperationJournalTests.cs) covering stable operation identity, registry-to-journal recording, event publication, and result-free journal snapshots
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln`
+
+Notes:
+
+- this step does not introduce long-running queued execution yet, but it establishes the operation identity and lifecycle history needed for that next layer
+- the diagnostics readouts intentionally avoid using the reserved top-level legacy response key `operation`, because [`LegacyToolExecution`](/Users/ap/Projects/RimBridgeServer/Source/LegacyToolExecution.cs) already injects the current invocation envelope there for backwards compatibility
+- operation journaling is bounded in memory and currently scoped to bridge process lifetime, which keeps risk low while still giving the AI immediate visibility into recent failures and timings
+
+Next:
+
+- Step A5: add explicit wait conditions and synchronous fast-path helpers so long-event and frame-bound capabilities can expose lower-latency polling and blocking behavior through the shared execution kernel

@@ -60,6 +60,26 @@ public class OperationRunnerTests
         Assert.Equal("boom", envelope.Error.Message);
     }
 
+    [Fact]
+    public void ReusesSuppliedOperationIdentity()
+    {
+        var dispatcher = new FakeDispatcher();
+        var runner = new OperationRunner(dispatcher);
+        var startedAtUtc = DateTimeOffset.UtcNow.AddSeconds(-1);
+
+        var envelope = runner.Run(() => "pong", new OperationExecutionOptions
+        {
+            OperationId = "op_external",
+            CapabilityId = "rimbridge/ping",
+            StartedAtUtc = startedAtUtc,
+            MarshalToMainThread = false
+        });
+
+        Assert.Equal("op_external", envelope.OperationId);
+        Assert.Equal(startedAtUtc, envelope.StartedAtUtc);
+        Assert.True(envelope.DurationMs >= 0);
+    }
+
     private sealed class FakeDispatcher : IGameThreadDispatcher
     {
         public bool InvokeCalled { get; private set; }
