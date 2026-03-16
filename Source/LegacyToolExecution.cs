@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using Lib.GAB.Tools;
@@ -11,23 +10,23 @@ namespace RimBridgeServer;
 
 internal static class LegacyToolExecution
 {
-    private static readonly OperationRunner Runner = new(new MainThreadDispatcher());
     private static readonly Dictionary<string, string> ToolIdsByMemberName = typeof(RimBridgeTools)
         .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
         .Select(method => new { Method = method, Attribute = method.GetCustomAttribute<ToolAttribute>() })
         .Where(entry => entry.Attribute != null)
         .ToDictionary(entry => entry.Method.Name, entry => entry.Attribute.Name, StringComparer.Ordinal);
+    private static CapabilityRegistry _registry;
 
-    public static object Run(Func<object> func, bool marshalToMainThread, string memberName)
+    public static void Initialize(CapabilityRegistry registry)
     {
-        var capabilityId = ResolveCapabilityId(memberName);
-        var envelope = Runner.Run(func, new OperationExecutionOptions
-        {
-            CapabilityId = capabilityId,
-            MarshalToMainThread = marshalToMainThread,
-            TimeoutMs = 10000,
-            FailureCode = "tool.failed"
-        });
+        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+    }
+
+    public static object InvokeAlias(string memberName, IDictionary<string, object> arguments)
+    {
+        var alias = ResolveCapabilityAlias(memberName);
+        var envelope = (_registry ?? throw new InvalidOperationException("Capability registry has not been initialized."))
+            .Invoke(alias, arguments);
         var payload = envelope.Success
             ? envelope.Result
             : new
@@ -39,7 +38,7 @@ internal static class LegacyToolExecution
         return ComposeLegacyResponse(payload, envelope);
     }
 
-    private static string ResolveCapabilityId(string memberName)
+    private static string ResolveCapabilityAlias(string memberName)
     {
         return ToolIdsByMemberName.TryGetValue(memberName, out var toolId)
             ? toolId
@@ -67,7 +66,14 @@ internal static class LegacyToolExecution
             return new Dictionary<string, object>(dictionary, StringComparer.Ordinal);
 
         var type = payload.GetType();
-        if (IsSimpleType(type))
+        if (type.IsPrimitive
+            || type.IsEnum
+            || type == typeof(string)
+            || type == typeof(decimal)
+            || type == typeof(DateTime)
+            || type == typeof(DateTimeOffset)
+            || type == typeof(Guid)
+            || type == typeof(TimeSpan))
         {
             return new Dictionary<string, object>(StringComparer.Ordinal)
             {
@@ -79,19 +85,5 @@ internal static class LegacyToolExecution
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
             .Where(property => property.CanRead)
             .ToDictionary(property => property.Name, property => property.GetValue(payload), StringComparer.Ordinal);
-    }
-
-    private static bool IsSimpleType(Type type)
-    {
-        return type.IsPrimitive
-            || type.IsEnum
-            || type == typeof(string)
-            || type == typeof(decimal)
-            || type == typeof(DateTime)
-            || type == typeof(DateTimeOffset)
-            || type == typeof(Guid)
-            || type == typeof(TimeSpan)
-            || type == typeof(DateTimeKind)
-            || type == typeof(CultureInfo);
     }
 }

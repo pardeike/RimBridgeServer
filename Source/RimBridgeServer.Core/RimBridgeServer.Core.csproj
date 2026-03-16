@@ -16,6 +16,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\RimBridgeServer.Contracts\RimBridgeServer.Contracts.csproj" />
+		<ProjectReference Include="..\RimBridgeServer.Extensions.Abstractions\RimBridgeServer.Extensions.Abstractions.csproj" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net472'">

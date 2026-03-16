@@ -16,6 +16,7 @@ public class RimBridgeServerMod : Mod
         {
             RimBridgeMainThread.Initialize();
             RimBridgePatches.Apply();
+            RimBridgeCapabilities.Initialize();
 
             var tools = new RimBridgeTools();
             var version = typeof(RimBridgeServerMod).Assembly.GetName().Version?.ToString() ?? "0.1.0.0";
