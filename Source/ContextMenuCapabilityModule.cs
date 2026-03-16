@@ -74,7 +74,7 @@ internal sealed class ContextMenuCapabilityModule
             };
         }
 
-        FloatMenu menu;
+        FloatMenu menu = null;
         List<FloatMenuOption> options;
         string provider;
 
@@ -88,9 +88,7 @@ internal sealed class ContextMenuCapabilityModule
         }
         else
         {
-            var vanillaOptions = FloatMenuMakerMap.GetOptions(selectedPawns, clickPos, out _);
-            menu = new FloatMenu(vanillaOptions) { givesColonistOrders = true };
-            options = vanillaOptions.ToList();
+            options = FloatMenuMakerMap.GetOptions(selectedPawns, clickPos, out _).ToList();
             provider = "vanilla";
         }
 
@@ -110,6 +108,9 @@ internal sealed class ContextMenuCapabilityModule
                 message = "No context menu options were generated for the current selection and target."
             };
         }
+
+        if (menu == null)
+            menu = new FloatMenu(options) { givesColonistOrders = true };
 
         Find.WindowStack.Add(menu);
         PositionDebugMenu(menu);

@@ -104,6 +104,20 @@ internal static class SmokeScenarioCatalog
         if (context.Report.ColonistCount.GetValueOrDefault() <= 0)
             throw new InvalidOperationException("The debug game loaded but did not expose any colonists on the current map.");
 
+        if (context.HumanVerificationEnabled)
+        {
+            await context.CaptureHumanVerificationScreenshotAsync(
+                "human_verify.debug_game_loaded",
+                "debug_game_loaded",
+                "Loaded debug colony after the harness waited for the game to become playable.",
+                [
+                    "A playable RimWorld colony should be visible on the map.",
+                    "At least one colonist should be present on screen or selectable in the colony.",
+                    "This image is taken after the harness verified that a debug quick-test colony finished loading."
+                ],
+                cancellationToken);
+        }
+
         context.SetScenarioData("colonists", JsonNodeHelpers.GetPath(colonists.StructuredContent, "colonists"));
 
         var observation = await observationWindow.CaptureAsync(
@@ -177,6 +191,20 @@ internal static class SmokeScenarioCatalog
             throw new InvalidOperationException("Context-menu target metadata did not include a valid rect for the first option.");
         }
 
+        if (context.HumanVerificationEnabled)
+        {
+            await context.CaptureHumanVerificationScreenshotAsync(
+                "human_verify.context_menu_open",
+                "context_menu_open",
+                "Active float menu before the harness closes it with semantic cancel input.",
+                [
+                    $"The colonist '{pawnName}' should be selected.",
+                    "A float menu should be visible near the upper-left area of the game view.",
+                    "This image is the state the harness validates before sending rimworld/press_cancel."
+                ],
+                cancellationToken);
+        }
+
         var pressCancel = await context.CallGameToolAsync("context_menu.press_cancel", "rimworld/press_cancel", new { }, cancellationToken);
         context.EnsureSucceeded(pressCancel, "Sending semantic cancel input to close the context menu");
 
@@ -185,6 +213,20 @@ internal static class SmokeScenarioCatalog
         var closedWindowTypes = JsonNodeHelpers.ReadArray(pressCancel.StructuredContent, "closedWindowTypes");
         if (floatMenuOpenAfterCancel || closedWindowTypes.Any(type => string.Equals(JsonNodeHelpers.ReadString(type), "Verse.FloatMenu", StringComparison.Ordinal)) == false)
             throw new InvalidOperationException("Semantic cancel input did not close the context-menu float menu.");
+
+        if (context.HumanVerificationEnabled)
+        {
+            await context.CaptureHumanVerificationScreenshotAsync(
+                "human_verify.context_menu_after_cancel",
+                "context_menu_after_cancel",
+                "Scene immediately after semantic cancel input closed the float menu.",
+                [
+                    "The float menu should be gone.",
+                    $"The colonist '{pawnName}' should still be selected.",
+                    "This confirms the menu was dismissed without depending on desktop focus."
+                ],
+                cancellationToken);
+        }
 
         context.SetSummaryValue("selectedPawn", pawnName);
         context.SetSummaryValue("targetCell", $"{openedCell.X},{openedCell.Z}");
@@ -249,6 +291,20 @@ internal static class SmokeScenarioCatalog
         if (string.IsNullOrWhiteSpace(dismissTargetId))
             throw new InvalidOperationException("Screen target metadata did not expose a dismiss target id for the active context menu.");
 
+        if (context.HumanVerificationEnabled)
+        {
+            await context.CaptureHumanVerificationScreenshotAsync(
+                "human_verify.screen_target_dismiss_open",
+                "screen_target_dismiss_open",
+                "Float menu just before the harness clicks its dismiss target id.",
+                [
+                    "A float menu should be visible.",
+                    "The next automated step clicks the menu's dismissTargetId instead of sending a generic cancel input.",
+                    "This shows the exact UI state referenced by the actionable target metadata."
+                ],
+                cancellationToken);
+        }
+
         var clickDismiss = await context.CallGameToolAsync("target_click.dismiss.click_screen_target", "rimworld/click_screen_target", new
         {
             targetId = dismissTargetId
@@ -290,6 +346,20 @@ internal static class SmokeScenarioCatalog
         if (string.IsNullOrWhiteSpace(optionTargetId))
             throw new InvalidOperationException("Screen target metadata did not expose a target id for the executable context-menu option.");
 
+        if (context.HumanVerificationEnabled)
+        {
+            await context.CaptureHumanVerificationScreenshotAsync(
+                "human_verify.screen_target_option_open",
+                "screen_target_option_open",
+                "Reopened float menu just before the harness clicks a specific context-menu option target id.",
+                [
+                    "A float menu should be visible again.",
+                    $"The harness is about to click the option labeled '{optionLabel}' through rimworld/click_screen_target.",
+                    "This demonstrates target-id-based action dispatch rather than generic UI input."
+                ],
+                cancellationToken);
+        }
+
         var clickOption = await context.CallGameToolAsync("target_click.option.click_screen_target", "rimworld/click_screen_target", new
         {
             targetId = optionTargetId
@@ -308,6 +378,20 @@ internal static class SmokeScenarioCatalog
             throw new InvalidOperationException("Clicking the option target did not report the expected menu option label.");
 
         await context.WaitForLongEventIdleAsync("target_click.wait_for_long_event_idle_after_option_click", cancellationToken);
+
+        if (context.HumanVerificationEnabled)
+        {
+            await context.CaptureHumanVerificationScreenshotAsync(
+                "human_verify.screen_target_after_option_click",
+                "screen_target_after_option_click",
+                "Scene after the harness clicked the specific context-menu option target id.",
+                [
+                    "The float menu should now be closed.",
+                    $"The clicked option was '{optionLabel}'.",
+                    "This image is captured after the target-id click path completed and the game returned to idle."
+                ],
+                cancellationToken);
+        }
 
         context.SetSummaryValue("selectedPawn", pawnName);
         context.SetSummaryValue("dismissTargetId", dismissTargetId);
@@ -430,6 +514,20 @@ internal static class SmokeScenarioCatalog
         if (context.Report.ColonistCount.GetValueOrDefault() <= 0)
             throw new InvalidOperationException($"Reloading save '{SaveLoadRoundTripSaveName}' did not restore any current-map colonists.");
 
+        if (context.HumanVerificationEnabled)
+        {
+            await context.CaptureHumanVerificationScreenshotAsync(
+                "human_verify.save_load_after_reload",
+                "save_load_after_reload",
+                "Loaded colony after the harness completed a save and load roundtrip.",
+                [
+                    "A playable colony should be visible after the save was loaded back in.",
+                    "This screenshot is taken only after the harness waited for idle and verified that colonists exist on the current map.",
+                    "If you see the map here, the load finished before any optional cleanup happened."
+                ],
+                cancellationToken);
+        }
+
         context.SetSummaryValue("saveName", SaveLoadRoundTripSaveName);
         context.SetSummaryValue("savePath", savePath);
         context.SetSummaryValue("saveSizeBytes", sizeBytes?.ToString() ?? "0");
@@ -492,6 +590,20 @@ internal static class SmokeScenarioCatalog
         var selectedPawns = JsonNodeHelpers.ReadArray(screenshotTargets, "selectedPawns");
         if (selectedPawns.Count == 0)
             throw new InvalidOperationException($"Screenshot '{screenshotFileName}' did not preserve the current selection in its target metadata.");
+
+        if (context.HumanVerificationEnabled)
+        {
+            await context.ExportHumanVerificationArtifactAsync(
+                "captured_screenshot",
+                screenshotPath,
+                "The actual image file produced by rimworld/take_screenshot during the live smoke run.",
+                [
+                    $"The colonist '{pawnName}' should be framed near the center of the image.",
+                    "This file was created by the screenshot tool itself and then copied to the Desktop for inspection.",
+                    "It should match the reported screenshot artifact from the live test."
+                ],
+                cancellationToken);
+        }
 
         context.SetSummaryValue("selectedPawn", pawnName);
         context.SetSummaryValue("screenshotFileName", screenshotFileName);

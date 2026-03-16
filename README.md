@@ -226,6 +226,23 @@ The shared observation-window helper is intentionally generic: scenarios can sta
 
 Use `scripts/live-smoke.sh --list-scenarios` to see the current scenario matrix and descriptions.
 
+For human-checkable runs, pass `--human-verify`. The harness will copy a curated set of `.png` screenshots plus same-name `.txt` notes to the Desktop by default so you can inspect the exact state each scenario verified. Use `--human-verify-dir <path>` if you want those artifacts somewhere else.
+
+The helper script `scripts/human-verify.sh` runs the most visually useful scenarios in sequence with `--human-verify --stop-after`:
+
+```bash
+scripts/human-verify.sh
+```
+
+The current human-verification set covers:
+
+- `save-load-roundtrip` after the colony has reloaded
+- `context-menu-cancel-roundtrip` with the menu open and after semantic cancel input
+- `screen-target-click-roundtrip` before dismiss, before option click, and after the option click
+- `screenshot-capture` by exporting the captured screenshot itself with a matching explanation file
+
+The context-menu scenarios intentionally avoid creating empty float menus during target probing. Earlier harness revisions could emit RimWorld's red `Created FloatMenu with no options. Closing.` error while searching for a valid menu target; that probing path now checks for zero options before constructing the menu.
+
 For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABP).
 
 ### Building the mod

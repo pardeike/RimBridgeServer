@@ -72,9 +72,22 @@ internal sealed class SmokeRunReport
 
     public Dictionary<string, string> SummaryValues { get; set; } = new(StringComparer.Ordinal);
 
+    public List<HumanVerificationArtifact> HumanVerificationArtifacts { get; set; } = [];
+
     public Dictionary<string, JsonNode?> ScenarioData { get; set; } = new(StringComparer.Ordinal);
 
     public List<JsonNode?> OperationEvents { get; set; } = [];
 
     public List<JsonNode?> LogEntries { get; set; } = [];
+}
+
+internal sealed class HumanVerificationArtifact
+{
+    public string Label { get; set; } = string.Empty;
+
+    public string ImagePath { get; set; } = string.Empty;
+
+    public string DescriptionPath { get; set; } = string.Empty;
+
+    public string Description { get; set; } = string.Empty;
 }

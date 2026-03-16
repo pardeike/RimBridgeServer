@@ -60,6 +60,8 @@ internal static class SmokeHarness
     public static async Task<SmokeRunReport> RunAsync(CliOptions options, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(options.ReportDirectory);
+        if (options.HumanVerify)
+            Directory.CreateDirectory(options.HumanVerifyDirectory);
         var scenario = SmokeScenarioCatalog.GetOrThrow(options.Scenario);
 
         var report = new SmokeRunReport
@@ -155,6 +157,13 @@ internal static class SmokeHarness
 
         if (report.ColonistCount.HasValue)
             writer.WriteLine($"Colonists on current map: {report.ColonistCount.Value}");
+
+        if (report.HumanVerificationArtifacts.Count > 0)
+        {
+            writer.WriteLine("Human verification artifacts:");
+            foreach (var artifact in report.HumanVerificationArtifacts)
+                writer.WriteLine($"  {artifact.Label}: {artifact.ImagePath}");
+        }
 
         foreach (var pair in report.SummaryValues.OrderBy(pair => pair.Key, StringComparer.Ordinal))
             writer.WriteLine($"{pair.Key}: {pair.Value}");

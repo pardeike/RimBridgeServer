@@ -454,3 +454,36 @@ Notes:
 Next:
 
 - Step A5: add explicit wait conditions and synchronous fast-path helpers so long-event and frame-bound capabilities can expose lower-latency polling and blocking behavior through the shared execution kernel
+
+## 2026-03-16 - Step A12.1 - Human Verification Artifacts and Probe Safety
+
+Status:
+
+- completed
+
+Completed:
+
+- extended [`CliOptions.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/CliOptions.cs) with `--human-verify` and `--human-verify-dir` so live runs can export curated evidence for manual review without changing scenario logic
+- extended [`SmokeScenarioContext.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioContext.cs), [`SmokeReports.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeReports.cs), and [`SmokeHarness.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeHarness.cs) so scenarios can copy screenshots to the Desktop, write same-name `.txt` expectation notes, and include those artifact paths in the JSON report and console summary
+- updated [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) so the most visually useful live scenarios now export explicit checkpoints for save/load, context-menu cancel, screen-target clicks, and the screenshot pipeline itself
+- added [`scripts/human-verify.sh`](/Users/ap/Projects/RimBridgeServer/scripts/human-verify.sh) as the convenience wrapper for the current human-review scenario set
+- fixed a real probe bug in [`ContextMenuCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ContextMenuCapabilityModule.cs) by avoiding `new FloatMenu(...)` when vanilla probing yields zero options; this removed RimWorld's red `Created FloatMenu with no options. Closing.` error from the live context-menu scenarios
+- added focused flag coverage in [`CliOptionsTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/CliOptionsTests.cs)
+- documented the new human-verification workflow in [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md)
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --scenario context-menu-cancel-roundtrip --game-id rimworld --human-verify --stop-after`
+- `scripts/live-smoke.sh --scenario screen-target-click-roundtrip --game-id rimworld --human-verify --stop-after`
+
+Notes:
+
+- the red error the user saw was legitimate signal from our own probing path, not a false positive in the report layer, so fixing it at the menu-construction seam was the right place
+- the clean reruns no longer emit the empty-float-menu error; the remaining visible UI noise in the cancel scenario is a warning-only `Event.Use() should not be called for events of type repaint` log from the RimWorld UI layer
+- exporting screenshots plus expectation text to the Desktop gives a fast sanity-check path for live automation without making the standard JSON reports heavier or harder for models to consume
+
+Next:
+
+- Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots

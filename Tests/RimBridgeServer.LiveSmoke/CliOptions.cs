@@ -14,6 +14,10 @@ internal sealed class CliOptions
 
     public required string ReportDirectory { get; init; }
 
+    public bool HumanVerify { get; init; }
+
+    public required string HumanVerifyDirectory { get; init; }
+
     public bool StopAfter { get; init; }
 
     public bool Verbose { get; init; }
@@ -35,6 +39,8 @@ internal sealed class CliOptions
         string? gabsBinaryPath = null;
         string? gabsConfigDir = Environment.GetEnvironmentVariable("GABS_CONFIG_DIR");
         var reportDirectory = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "artifacts", "live-smoke"));
+        var humanVerify = false;
+        var humanVerifyDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         var stopAfter = false;
         var verbose = false;
         var showHelp = false;
@@ -57,6 +63,12 @@ internal sealed class CliOptions
                     break;
                 case "--stop-after":
                     stopAfter = true;
+                    break;
+                case "--human-verify":
+                    humanVerify = true;
+                    break;
+                case "--human-verify-dir":
+                    humanVerifyDirectory = Path.GetFullPath(ReadValue(args, ref index, arg));
                     break;
                 case "--verbose":
                     verbose = true;
@@ -103,6 +115,8 @@ internal sealed class CliOptions
                 GabsBinaryPath = ResolveGabsBinaryPath(gabsBinaryPath),
                 GabsConfigDir = gabsConfigDir,
                 ReportDirectory = reportDirectory,
+                HumanVerify = humanVerify,
+                HumanVerifyDirectory = humanVerifyDirectory,
                 StopAfter = stopAfter,
                 Verbose = verbose,
                 ShowHelp = showHelp,
@@ -123,6 +137,8 @@ internal sealed class CliOptions
             GabsBinaryPath = ResolveGabsBinaryPath(gabsBinaryPath),
             GabsConfigDir = gabsConfigDir,
             ReportDirectory = reportDirectory,
+            HumanVerify = humanVerify,
+            HumanVerifyDirectory = humanVerifyDirectory,
             StopAfter = stopAfter,
             Verbose = verbose,
             ShowHelp = false,
@@ -146,6 +162,8 @@ internal sealed class CliOptions
         writer.WriteLine("  --gabs-bin <path>                 Path to the GABS executable");
         writer.WriteLine("  --config-dir <path>               Optional GABS config directory override");
         writer.WriteLine("  --report-dir <path>               Directory for JSON run reports (default: artifacts/live-smoke)");
+        writer.WriteLine("  --human-verify                    Copy curated verification screenshots and text notes to the Desktop");
+        writer.WriteLine("  --human-verify-dir <path>         Override the output directory for human verification screenshots");
         writer.WriteLine("  --wait-timeout-ms <ms>            RimBridge wait tool timeout (default: 60000)");
         writer.WriteLine("  --game-tool-timeout-seconds <s>   Outer GABS timeout for game tools (default: 90)");
         writer.WriteLine("  --total-timeout-ms <ms>           End-to-end harness timeout (default: 300000)");

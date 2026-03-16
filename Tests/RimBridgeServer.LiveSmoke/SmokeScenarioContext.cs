@@ -1,4 +1,6 @@
+using System.Linq;
 using System.Text.Json.Nodes;
+using System.Text;
 
 namespace RimBridgeServer.LiveSmoke;
 
@@ -18,6 +20,8 @@ internal sealed class SmokeScenarioContext
     public SmokeRunReport Report => _report;
 
     public bool StartedGameByHarness { get; set; }
+
+    public bool HumanVerificationEnabled => _options.HumanVerify;
 
     public async Task<ToolInvocationResult> CallServerToolAsync(string stepName, string toolName, object arguments, CancellationToken cancellationToken)
     {
@@ -187,9 +191,111 @@ internal sealed class SmokeScenarioContext
         _report.ScenarioData[key] = JsonNodeHelpers.CloneNode(value);
     }
 
+    public async Task CaptureHumanVerificationScreenshotAsync(
+        string stepName,
+        string label,
+        string description,
+        IEnumerable<string> expectationLines,
+        CancellationToken cancellationToken)
+    {
+        if (!HumanVerificationEnabled)
+            return;
+
+        var fileStem = BuildHumanVerificationFileStem(label);
+        var screenshot = await CallGameToolAsync(stepName, "rimworld/take_screenshot", new
+        {
+            fileName = fileStem,
+            includeTargets = true
+        }, cancellationToken);
+        EnsureSucceeded(screenshot, $"Capturing human verification screenshot '{label}'");
+
+        var sourceImagePath = JsonNodeHelpers.ReadString(screenshot.StructuredContent, "path");
+        await ExportHumanVerificationArtifactAsync(label, sourceImagePath, description, expectationLines, cancellationToken);
+    }
+
+    public async Task ExportHumanVerificationArtifactAsync(
+        string label,
+        string sourceImagePath,
+        string description,
+        IEnumerable<string> expectationLines,
+        CancellationToken cancellationToken)
+    {
+        if (!HumanVerificationEnabled)
+            return;
+
+        if (string.IsNullOrWhiteSpace(sourceImagePath) || !File.Exists(sourceImagePath))
+            throw new InvalidOperationException($"Human verification artifact '{label}' did not produce a valid image file.");
+
+        var fileStem = BuildHumanVerificationFileStem(label);
+        var extension = Path.GetExtension(sourceImagePath);
+        if (string.IsNullOrWhiteSpace(extension))
+            extension = ".png";
+
+        var destinationImagePath = Path.Combine(_options.HumanVerifyDirectory, fileStem + extension);
+        File.Copy(sourceImagePath, destinationImagePath, overwrite: true);
+
+        var destinationDescriptionPath = Path.Combine(_options.HumanVerifyDirectory, fileStem + ".txt");
+        var descriptionText = BuildHumanVerificationDescription(label, description, expectationLines, sourceImagePath);
+        await File.WriteAllTextAsync(destinationDescriptionPath, descriptionText, cancellationToken);
+
+        _report.HumanVerificationArtifacts.Add(new HumanVerificationArtifact
+        {
+            Label = label,
+            ImagePath = destinationImagePath,
+            DescriptionPath = destinationDescriptionPath,
+            Description = description
+        });
+
+        Note($"Wrote human verification artifact '{label}' to '{destinationImagePath}'.");
+    }
+
     public IReadOnlyList<string> GetGabsStderrTail()
     {
         return _client.GetStderrTail();
+    }
+
+    private string BuildHumanVerificationFileStem(string label)
+    {
+        var safeLabel = SanitizeFileStem(label);
+        return $"rimbridge_verify_{_report.StartedAtUtc:yyyyMMdd_HHmmss}_{_report.Scenario}_{safeLabel}";
+    }
+
+    private string BuildHumanVerificationDescription(
+        string label,
+        string description,
+        IEnumerable<string> expectationLines,
+        string sourceImagePath)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"Scenario: {_report.Scenario}");
+        builder.AppendLine($"Artifact: {label}");
+        builder.AppendLine($"Captured: {DateTimeOffset.UtcNow:O}");
+        builder.AppendLine();
+        builder.AppendLine("What this image is for:");
+        builder.AppendLine(description);
+        builder.AppendLine();
+        builder.AppendLine("What you should see and expect:");
+        foreach (var line in expectationLines.Where(line => string.IsNullOrWhiteSpace(line) == false))
+            builder.AppendLine("- " + line);
+        builder.AppendLine();
+        builder.AppendLine("Technical context:");
+        builder.AppendLine("- Source image: " + sourceImagePath);
+        builder.AppendLine("- JSON report: " + (string.IsNullOrWhiteSpace(_report.ReportPath) ? "saved to the live-smoke report directory after the run completes" : _report.ReportPath));
+        return builder.ToString();
+    }
+
+    private static string SanitizeFileStem(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "artifact";
+
+        var builder = new StringBuilder(value.Length);
+        foreach (var ch in value.Trim())
+        {
+            builder.Append(char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : '_');
+        }
+
+        return builder.ToString().Trim('_');
     }
 
     private static bool IsPlayable(JsonNode? structuredContent)

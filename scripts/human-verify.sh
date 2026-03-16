@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCENARIOS=(
+  "save-load-roundtrip"
+  "context-menu-cancel-roundtrip"
+  "screen-target-click-roundtrip"
+  "screenshot-capture"
+)
+
+for scenario in "${SCENARIOS[@]}"; do
+  echo "==> ${scenario}"
+  dotnet run --project Tests/RimBridgeServer.LiveSmoke/RimBridgeServer.LiveSmoke.csproj -- \
+    --scenario "${scenario}" \
+    --human-verify \
+    --stop-after \
+    "$@"
+done
