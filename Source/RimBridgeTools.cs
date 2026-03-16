@@ -82,12 +82,32 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs)));
     }
 
-    [Tool("rimbridge/run_script", Description = "Execute a JSON script containing an ordered list of capability calls and return a step-by-step report")]
+    [Tool("rimbridge/get_script_reference", Description = "Get a machine-readable authoring reference for rimbridge/run_script, including statement types, expressions, conditions, limits, and examples")]
+    public object GetScriptReference()
+    {
+        return InvokeAlias();
+    }
+
+    [Tool("rimbridge/run_script", Description = "Execute a JSON script containing ordered capability calls and generic control statements; call rimbridge/get_script_reference for the machine-readable language reference")]
     public object RunScript(
-        [ToolParameter(Description = "Structured JSON script. Example: {\"name\":\"setup\",\"continueOnError\":false,\"steps\":[{\"id\":\"pause\",\"call\":\"rimworld/pause_game\",\"arguments\":{\"pause\":true}}]}")] string scriptJson,
+        [ToolParameter(Description = "Structured JSON script. Call rimbridge/get_script_reference for the full machine-readable language reference. Example: {\"name\":\"setup\",\"continueOnError\":false,\"steps\":[{\"id\":\"pause\",\"call\":\"rimworld/pause_game\",\"arguments\":{\"pause\":true}}]}")] string scriptJson,
         [ToolParameter(Description = "Include each step's result payload in the returned script report")] bool includeStepResults = true)
     {
         return InvokeAlias(Arguments((nameof(scriptJson), scriptJson), (nameof(includeStepResults), includeStepResults)));
+    }
+
+    [Tool("rimbridge/run_lua", Description = "Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry")]
+    public object RunLua(
+        [ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Use rimbridge/compile_lua to inspect the lowered JSON script.")] string luaSource,
+        [ToolParameter(Description = "Include each successful call step's result payload in the returned script report")] bool includeStepResults = true)
+    {
+        return InvokeAlias(Arguments((nameof(luaSource), luaSource), (nameof(includeStepResults), includeStepResults)));
+    }
+
+    [Tool("rimbridge/compile_lua", Description = "Compile supported Lua source into the lowered JSON script model without executing capability calls")]
+    public object CompileLua([ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset")] string luaSource)
+    {
+        return InvokeAlias(Arguments((nameof(luaSource), luaSource)));
     }
 
     [Tool("rimworld/pause_game", Description = "Pause or unpause the game")]
@@ -278,6 +298,12 @@ public class RimBridgeTools
 
     [Tool("rimworld/start_debug_game", Description = "Start RimWorld's built-in quick test colony from the main menu")]
     public object StartDebugGame()
+    {
+        return InvokeAlias();
+    }
+
+    [Tool("rimworld/go_to_main_menu", Description = "Return to the RimWorld main menu entry scene, or no-op if already there")]
+    public object GoToMainMenu()
     {
         return InvokeAlias();
     }

@@ -21,6 +21,7 @@ public class SmokeScenarioCatalogTests
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.ArchitectZoneAreaDragScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.ScreenTargetClickRoundTripScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.ScreenTargetClipScenarioName);
+        Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.ScriptColonistPrisonScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.ScriptWallSequenceScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.SelectionRoundTripScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.SaveLoadRoundTripScenarioName);

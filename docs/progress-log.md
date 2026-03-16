@@ -751,4 +751,307 @@ Notes:
 
 Next:
 
-- Step A20: add a bounded structured pawn-event journal for `job_changed`, `draft_changed`, and `mental_state_changed`, with push when supported and cursor-based pull as the correctness path
+- Step A20: add controlled step-output references to `rimbridge/run_script` so later steps can consume values produced by earlier steps without introducing conditions or full flow control yet
+
+## 2026-03-16 - Step A20 - Controlled Step-Output References for Scripts
+
+Status:
+
+- completed
+
+Completed:
+
+- extended [`CapabilityScriptRunner.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptRunner.cs) so script step arguments can now contain explicit reference objects of the form `{"$ref":"step_id","path":"result.someField"}`, resolved only against already executed steps
+- kept the new scripting dataflow intentionally within the “simple” level: ordered steps remain the only execution model, while conditions, branching, loops, and a separate DSL are still out of scope
+- made references work even when `includeStepResults = false` in the returned script report by storing internal raw step results separately from the projected response payload
+- added duplicate step-id rejection in the runner because step references require unambiguous step identities inside one script
+- expanded [`CapabilityScriptRunnerTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptRunnerTests.cs) to cover successful result references, reference resolution with suppressed projected results, and invalid reference-path failures
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) so the scripting section now documents the `$ref`/`path` shape and includes a concrete value-passing example
+
+Verification:
+
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj --filter CapabilityScriptRunnerTests`
+- `dotnet test Tests/RimBridgeServer.Contracts.Tests/RimBridgeServer.Contracts.Tests.csproj`
+- `dotnet build RimBridgeServer.sln`
+
+Notes:
+
+- this step matches the architecture note in [`docs/architecture.md`](/Users/ap/Projects/RimBridgeServer/docs/architecture.md) that the next increment after the first script slice should add controlled step-output references rather than jumping straight to a full scripting language
+- the reference root intentionally exposes both step result data and report metadata such as `operationId`, `success`, `status`, `error`, and `warnings`, but only through explicit `$ref` objects so ordinary strings remain literal
+- this is still level 1 scripting: multiple steps after each other with bounded dataflow. Continue conditions and general flow control remain separate future increments.
+
+Next:
+
+- Step A21: add bounded level-2 continue conditions to `rimbridge/run_script` so ordered scripts can poll until a generic result condition is satisfied without adding full flow control
+
+## 2026-03-16 - Step A21 - Script Continue Conditions
+
+Status:
+
+- completed
+
+Completed:
+
+- extended [`CapabilityScriptContracts.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Contracts/CapabilityScriptContracts.cs) with an optional `continueUntil` policy per step plus `Attempts` in step reports so scripts can express bounded polling while keeping the overall model JSON-only and step-oriented
+- extended [`CapabilityScriptRunner.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptRunner.cs) so a step can now be re-invoked until a generic condition matches or a timeout expires
+- kept the condition model intentionally constrained and data-oriented: `all`, `any`, `path`, `exists`, `equals`, `notEquals`, `in`, `notIn`, numeric comparisons, `countEquals`, `allItems`, and `anyItem`
+- reused the same step-reference resolver inside condition evaluation so continue checks can consume literal values or earlier-step references without introducing a second expression runtime
+- added focused coverage in [`CapabilityScriptRunnerTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptRunnerTests.cs) for numeric polling, collection-shaped polling similar to grouped-colonist waits, and timeout failure behavior
+- updated [`ScriptingCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ScriptingCapabilityModule.cs) and [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) so transport projection and user-facing docs both describe the new `continueUntil` surface
+
+Verification:
+
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj --filter CapabilityScriptRunnerTests`
+- `dotnet build RimBridgeServer.sln`
+
+Notes:
+
+- this is the level-2 scripting slice: ordered steps plus bounded continue conditions. It intentionally does not add branching, loops, or a custom DSL
+- `continueUntil` is safest when attached to read or poll steps such as `list_colonists` after an earlier mutating step has already happened; the runner simply re-invokes the same registered capability until the condition is satisfied or times out
+- the collection operators are intentionally enough to express practical waits like “all listed colonists are inside this rectangle and standing in combat posture” without forcing callers to write a separate helper capability for each scenario
+
+Next:
+
+- Step A22: add a bounded structured pawn-event journal for `job_changed`, `draft_changed`, and `mental_state_changed`, with push when supported and cursor-based pull as the correctness path
+
+## 2026-03-16 - Step A22 - Idempotent Main-Menu Reset for In-Game Scripts
+
+Status:
+
+- completed
+
+Completed:
+
+- added [`rimworld/go_to_main_menu`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) through [`LifecycleCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/LifecycleCapabilityModule.cs) as an idempotent lifecycle capability that succeeds as a no-op when RimWorld is already at the entry scene and otherwise queues a return to the main menu
+- registered the new lifecycle seam in [`BuiltInCapabilityModuleProvider.cs`](/Users/ap/Projects/RimBridgeServer/Source/BuiltInCapabilityModuleProvider.cs) as a long-event-bound capability so script steps can safely include it before `start_debug_game`
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) to document the new command and show a single `rimbridge/run_script` example that starts from a connected RimWorld session, resets to the main menu, starts a debug colony, waits for the load to finish, and captures a screenshot
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- manual in-game verification through GABS: one `rimbridge/run_script` can now start with `rimworld/go_to_main_menu`, wait for the entry scene, create a fresh debug colony, and continue with later scripted actions
+
+Notes:
+
+- this does not expand `rimbridge/run_script` into host-level process control; `games.start` and `games.connect` still live outside the in-game capability registry
+- the new lifecycle seam moves the practical script boundary to “connected to RimWorld”, which is the right starting contract for the next scripting increments
+
+Next:
+
+- Step A23: add a bounded structured pawn-event journal for `job_changed`, `draft_changed`, and `mental_state_changed`, with push when supported and cursor-based pull as the correctness path
+
+## 2026-03-16 - Design Note - Lua Front-End Proposal
+
+Status:
+
+- completed
+
+Completed:
+
+- added [`lua-frontend-design.md`](/Users/ap/Projects/RimBridgeServer/docs/lua-frontend-design.md) to capture the first concrete proposal for a human-friendly scripting layer on top of the current JSON runner
+- kept the recommendation aligned with the architecture rules already in the repo: MoonSharp/Lua is the preferred language front-end, but the existing script runner remains the execution backend
+- documented the minimal internal work needed before `run_lua` is practical: control-flow nodes, expression support, bounded loops, and a narrow sandboxed host API rather than direct RimWorld object exposure
+- updated [`architecture.md`](/Users/ap/Projects/RimBridgeServer/docs/architecture.md) so the general “DSL later” note now points at the concrete Lua design proposal
+
+Verification:
+
+- document review against the current scripting implementation in [`ScriptingCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ScriptingCapabilityModule.cs), [`CapabilityScriptRunner.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptRunner.cs), and [`CapabilityScriptContracts.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Contracts/CapabilityScriptContracts.cs)
+
+Notes:
+
+- this is intentionally a design slice, not an implementation slice; no runtime code changed yet for `run_lua`
+- the recommended sequence is still: extend the internal script model first, then add Lua as a front-end over that backend
+
+Next:
+
+- Step A23: add the minimal internal script control-flow and expression model needed for a future `rimbridge/run_lua` frontend
+
+## 2026-03-16 - Step A23 - Minimal Internal Script Control Flow for Future Lua Front-End
+
+Status:
+
+- completed
+
+Completed:
+
+- extended [`CapabilityScriptContracts.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Contracts/CapabilityScriptContracts.cs) so script steps can now represent internal control statements through `type`, `name`, `value`, `condition`, `body`, `elseBody`, `collection`, `itemName`, `indexName`, and `maxIterations`
+- updated [`ScriptingCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ScriptingCapabilityModule.cs) so the `rimbridge/run_script` transport normalizes those new control-flow and expression fields recursively instead of only normalizing plain call arguments
+- refactored [`CapabilityScriptRunner.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptRunner.cs) around a shared execution state that now supports `call`, `let`, `set`, `if`, `foreach`, and bounded `while`
+- kept the existing dataflow model instead of inventing a second runtime: control statements reuse the current `$ref` mechanism, add `$var` for scoped variable lookup, and support only a small arithmetic expression surface with `$add`, `$subtract`, `$multiply`, `$divide`, and `$mod`
+- kept the script report focused on concrete capability executions: successful control statements do not emit ordinary report rows, while invalid control statements still surface as failed script steps
+- expanded [`CapabilityScriptRunnerTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptRunnerTests.cs) to cover variable declaration plus branching, collection iteration with repeated call ids and latest-result references, bounded while loops with mutation and arithmetic, and max-iteration loop safety failures
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) to document the new control statements and expression forms and added a small bounded-loop example
+- updated [`lua-frontend-design.md`](/Users/ap/Projects/RimBridgeServer/docs/lua-frontend-design.md) to note that the internal JSON-side control-flow layer is now implemented and that the remaining major step is the Lua front-end itself
+
+Verification:
+
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj --filter CapabilityScriptRunnerTests`
+- `dotnet build RimBridgeServer.sln`
+
+Notes:
+
+- this is still not `run_lua`; it is the internal scripting slice that makes a later Lua front-end practical without bypassing the shared registry-backed execution path
+- `set` was added alongside `let` because bounded loops are not very useful without a minimal mutation primitive for counters and accumulators
+- repeated executions of the same call statement now receive report ids like `step`, `step#2`, `step#3`, while `$ref` continues to resolve by the base step id to the latest execution of that statement
+
+Next:
+
+- Step A24: make `rimbridge/run_script` usable as a test-like tool call with explicit bailout, trace output, and final return values
+
+## 2026-03-16 - Step A24 - Script Assertions, Bailout, and Trace Output
+
+Status:
+
+- completed
+
+Completed:
+
+- extended [`CapabilityScriptContracts.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Contracts/CapabilityScriptContracts.cs) so script steps can now carry a `message`, and script reports can now return top-level `error`, `output`, `result`, and `returned` state
+- extended [`CapabilityScriptRunner.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptRunner.cs) with four new control statements: `assert`, `fail`, `print`, and `return`
+- made `assert` and `fail` act as explicit bailout points for scripts, including a top-level propagated script error and immediate stop semantics suitable for test-style scripts
+- made `print` append structured output entries instead of polluting the per-step capability report, so scripts can leave a readable trace that comes back with the outer `rimbridge/run_script` tool result
+- made `return` end the script successfully with a final structured result payload, allowing scripts to behave more like small test/program units rather than only imperative batches
+- updated [`ScriptingCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ScriptingCapabilityModule.cs) so the outer tool projection now includes `error`, `output`, `result`, and `returned`, and failed scripts surface their failure message at the top level instead of requiring callers to dig through step details first
+- expanded [`CapabilityScriptRunnerTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptRunnerTests.cs) to cover printed output, assertion bailout, explicit fail semantics even with `continueOnError = true`, and early return behavior
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) so the scripting section now documents the new test-like statements and the shape of the outer script result
+
+Verification:
+
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj --filter CapabilityScriptRunnerTests`
+- `dotnet build RimBridgeServer.sln`
+
+Notes:
+
+- this keeps the “script as one tool call” model intact: callers still invoke one capability, but they now get a much better failure boundary and human-readable trace when a script assumption is violated
+- the outer tool result still uses the existing `success` projection model, which means current clients that already treat `success: false` as a tool failure continue to work without a transport redesign
+- `print` is intentionally structured rather than plain text only, so future Lua support can map onto the same output surface without inventing a second logging model
+
+Next:
+
+- Step A25: add global script execution guards so runaway loops and oversized scripts fail predictably at the script boundary before `run_lua` broadens the surface
+
+## 2026-03-16 - Step A25 - Global Script Execution Guards
+
+Status:
+
+- completed
+
+Completed:
+
+- enforced the already-modeled script-wide `maxDurationMs`, `maxExecutedStatements`, and `maxControlDepth` limits inside [`CapabilityScriptRunner.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptRunner.cs) so they now apply to ordinary call steps, loop iterations, nested control bodies, and `continueUntil` retry attempts
+- made global limit failures surface as explicit top-level script errors with `script.timeout`, `script.statement_limit_exceeded`, `script.max_depth_exceeded`, and `script.invalid_definition` instead of hanging or failing ambiguously later
+- kept the existing local loop and poll bounds in place, so `while.maxIterations` and `continueUntil.timeoutMs` still protect the specific statement while the new guards cap the whole script run
+- expanded [`CapabilityScriptRunnerTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptRunnerTests.cs) with focused coverage for statement-budget failure, wall-clock timeout, control-depth overflow, and invalid script-definition limits
+- added a small `test/sleep` capability in the script-runner test provider so the duration guard can be exercised deterministically
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) to document the new top-level script guard fields and the corresponding failure codes
+
+Verification:
+
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj --filter CapabilityScriptRunnerTests`
+- `dotnet build RimBridgeServer.sln`
+
+Notes:
+
+- this was the right hardening slice before `run_lua`: a pleasant scripting surface without whole-script budgets would make accidental infinite or near-infinite loops too easy to create
+- the current guard fields already existed on the script contract, but this step is what makes them real runtime behavior instead of passive configuration data
+- the scripting surface is still discoverable as a tool through GABS, but the advanced script language is not yet machine-described enough for a fresh AI to author reliably from metadata alone
+
+Next:
+
+- Step A26: expose a machine-readable scripting reference over GABS so new agents can discover the JSON scripting surface without relying on repo docs
+
+## 2026-03-16 - Step A26 - Machine-Readable Script Reference Over GABS
+
+Status:
+
+- completed
+
+Completed:
+
+- added [`CapabilityScriptReferenceBuilder.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptReferenceBuilder.cs) in the core library to produce a structured scripting reference document for `rimbridge/run_script`
+- exposed that document through a new [`rimbridge/get_script_reference`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) capability routed by [`ScriptingCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ScriptingCapabilityModule.cs) and marked it `Immediate` in [`BuiltInCapabilityModuleProvider.cs`](/Users/ap/Projects/RimBridgeServer/Source/BuiltInCapabilityModuleProvider.cs)
+- documented the script root shape, statement types, expression forms, condition operators, limits, failure codes, result shape, and multiple example scripts in a machine-readable payload instead of leaving that knowledge only in the README
+- updated the `rimbridge/run_script` tool description and `scriptJson` parameter description in [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) so discoverers are explicitly pointed at the new reference tool
+- added focused coverage in [`CapabilityScriptReferenceBuilderTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptReferenceBuilderTests.cs) for the exposed metadata, defaults, statement coverage, condition operators, and example presence
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) so the public docs now mention the GABS-discoverable reference tool directly
+
+Verification:
+
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj --filter CapabilityScriptReferenceBuilderTests`
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj --filter CapabilityScriptRunnerTests`
+- `dotnet build RimBridgeServer.sln`
+
+Notes:
+
+- this does not replace the README or the future Lua front-end; it closes the immediate discoverability gap for machine agents that only see the live tool surface
+- the reference document intentionally returns examples as structured objects so a client can inspect or serialize them directly instead of scraping prose
+
+Next:
+
+- Step A27: add a MoonSharp-backed `rimbridge/run_lua` front-end that lowers the supported Lua subset into the shared script runner model
+
+## 2026-03-17 - Step A27 - MoonSharp-Backed `rimbridge/run_lua`
+
+Status:
+
+- completed
+
+Completed:
+
+- added the `MoonSharp` dependency to [`RimBridgeServer.Core.csproj`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/RimBridgeServer.Core.csproj) and introduced [`LuaScriptCompiler.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/LuaScriptCompiler.cs) as the narrow Lua front-end that parses supported Lua source and lowers it into the existing `CapabilityScriptDefinition` model
+- kept the architectural boundary from the design note intact: Lua does not execute capabilities directly and does not become a second automation runtime; the compiler lowers into the same runner/reporting path already used by `rimbridge/run_script`
+- implemented a first supported Lua subset covering `local` variables, scoped shadowing, table literals, static field and one-based index access, arithmetic and comparison operators, boolean `and` / `or`, unary `not` and unary minus, `if` / `elseif` / `else`, bounded `while`, numeric `for`, `for ... in ipairs(...)`, `return`, `print` / `rb.print`, and `rb.call` / `rb.poll` / `rb.assert` / `rb.fail`
+- intentionally rejected broader language surface in v1, including arbitrary global mutation, dynamic table keys, dynamic indexing, `break`, module loading, coroutines, metatables, and direct CLR exposure
+- extended [`CapabilityScriptRunner.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptRunner.cs) with the extra value-expression operators needed by lowered Lua, including boolean/comparison operators and unary negation, instead of inventing Lua-only execution semantics
+- wired the new front-end through [`ScriptingCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ScriptingCapabilityModule.cs), exposed it publicly in [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs), and registered both `rimbridge/run_lua` and `rimbridge/compile_lua` as immediate capabilities in [`BuiltInCapabilityModuleProvider.cs`](/Users/ap/Projects/RimBridgeServer/Source/BuiltInCapabilityModuleProvider.cs)
+- made `rimbridge/compile_lua` a first-class debugging seam so callers can inspect the lowered JSON script directly and verify that Lua remains a front-end over the shared script model
+- added focused coverage in [`LuaScriptCompilerTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/LuaScriptCompilerTests.cs) for call lowering, `ipairs` iteration, boolean argument lowering, control flow plus structured output, assertion behavior, preservation of local shadowing, and compile-time rejection of unsupported global assignment
+- updated [`CapabilityScriptReferenceBuilder.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptReferenceBuilder.cs) and [`CapabilityScriptReferenceBuilderTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptReferenceBuilderTests.cs) so the machine-readable JSON script reference now reflects the full current expression surface shared by JSON scripts and lowered Lua
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) and [`lua-frontend-design.md`](/Users/ap/Projects/RimBridgeServer/docs/lua-frontend-design.md) to document the new Lua tools, supported subset, and compile-vs-run workflow
+
+Verification:
+
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj`
+- `dotnet build RimBridgeServer.sln`
+
+Notes:
+
+- local-variable detection in the compiler now uses MoonSharp `SourceRef` spans against the original Lua source text rather than depending on MoonSharp's registered source list; that preserves correct `local` shadowing behavior without needing a second parser
+- the same script guardrails still apply after lowering, so `run_lua` inherits `maxDurationMs`, `maxExecutedStatements`, `maxControlDepth`, `while.maxIterations`, and `continueUntil.timeoutMs` through the shared runner rather than duplicating safety logic
+- this completes the core Lua front-end milestone, but it does not yet prove a full live scenario end to end; the next useful acceptance step is to drive the prison scenario through `run_lua` rather than through JSON assembled by the smoke harness
+
+Next:
+
+- Step A28: prove `rimbridge/run_lua` against the prison scenario as a live smoke / acceptance test
+
+## 2026-03-17 - Step A28 - Live Lua Prison Smoke
+
+Status:
+
+- completed
+
+Completed:
+
+- rewrote the existing `script-colonist-prison` live smoke in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) so the actual gameplay sequence now runs through `rimbridge/run_lua` instead of `rimbridge/run_script`
+- kept the same real acceptance behavior as the earlier JSON smoke: draft the first three colonists, rally them to a tested cell, wait until they are grouped, enable god mode, build the surrounding wall ring, undraft them, unpause, and capture a screenshot
+- added a preflight `rimbridge/compile_lua` call in the same live smoke so the harness now verifies both the compile-only and execute paths for the Lua front-end
+- expanded the Lua script itself to exercise more than raw capability batching: it uses locals, table literals, `ipairs`, arithmetic, `rb.poll`, `rb.print`, `rb.assert`, and `return`, then the harness validates the returned result object and structured output rows
+- fixed the shared script reference-root shape in [`CapabilityScriptRunner.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptRunner.cs) to expose `attempts` alongside the other step metadata so Lua and JSON scripts can inspect poll retry counts through assigned `rb.poll(...)` / `$ref` values
+- added focused regression coverage in [`CapabilityScriptRunnerTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptRunnerTests.cs) for `$ref` access to `attempts`, and updated [`CapabilityScriptReferenceBuilder.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityScriptReferenceBuilder.cs), [`CapabilityScriptReferenceBuilderTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityScriptReferenceBuilderTests.cs), and [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) so the documented step-reference root matches the real runtime surface
+
+Verification:
+
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj --filter "CapabilityScriptRunnerTests|CapabilityScriptReferenceBuilderTests|LuaScriptCompilerTests"`
+- `dotnet test Tests/RimBridgeServer.LiveSmoke.Tests/RimBridgeServer.LiveSmoke.Tests.csproj`
+- `dotnet build RimBridgeServer.sln`
+- `scripts/live-smoke.sh --scenario script-colonist-prison --game-id rimworld --verbose`
+
+Notes:
+
+- the successful live run produced report [`20260316_233929_script-colonist-prison.json`](/Users/ap/Projects/RimBridgeServer/artifacts/live-smoke/20260316_233929_script-colonist-prison.json) and screenshot [`rimbridge_script_colonist_prison_20260316_233942.png`](/Users/ap/Library/Application%20Support/RimWorld/Screenshots/rimbridge_script_colonist_prison_20260316_233942.png)
+- the harness now records both `compileLua` and `runLua` scenario data artifacts for later inspection instead of keeping the old `runScript` naming
+- this proves the Lua front-end on a real gameplay sequence, but the rally-cell search and playable-game bootstrap still happen in the harness rather than inside Lua itself
+
+Next:
+
+- Step A29: decide whether the next priority is a machine-readable Lua authoring reference or moving more of the prison setup and planning logic into Lua itself

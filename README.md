@@ -71,7 +71,10 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimbridge/wait_for_operation`** - Wait until a recorded operation reaches a terminal status
 - **`rimbridge/wait_for_game_loaded`** - Wait until RimWorld has finished loading a playable game
 - **`rimbridge/wait_for_long_event_idle`** - Wait until RimWorld reports no long event in progress
+- **`rimbridge/get_script_reference`** - Get a machine-readable authoring reference for `rimbridge/run_script`
 - **`rimbridge/run_script`** - Execute a JSON script containing an ordered list of capability calls and return a step-by-step report
+- **`rimbridge/run_lua`** - Compile and execute a narrow Lua scripting subset through the shared script runner
+- **`rimbridge/compile_lua`** - Compile supported Lua into the lowered JSON script model without executing capability calls
 
 ### Game control
 - **`rimworld/get_game_info`** - Get information about the current game
@@ -101,6 +104,7 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
 - **`rimworld/close_window`** - Close an open RimWorld window by type name or close the topmost window
 - **`rimworld/click_screen_target`** - Semantically click a known actionable target id returned by `rimworld/get_screen_targets`
+- **`rimworld/go_to_main_menu`** - Return to the RimWorld main menu entry scene, or no-op if already there
 - **`rimworld/start_debug_game`** - Start RimWorld's built-in quick test colony from the main menu
 - **`rimworld/list_saves`** - List saved games
 - **`rimworld/spawn_thing`** - Spawn a thing on the current map at a target cell
@@ -135,6 +139,8 @@ Your external program can send these commands to RimBridgeServer:
 
 `rimworld/start_debug_game` mirrors RimWorld's own dev quick-test flow. It only works from the main menu and returns a detailed state snapshot when the request is rejected.
 
+`rimworld/go_to_main_menu` is the matching lifecycle reset seam. It is idempotent: if RimWorld is already at the entry scene with no loaded game, the call succeeds with a no-op status. Otherwise it queues a return to the main menu so later script steps can start from a stable known state.
+
 `rimworld/open_context_menu` supports `mode: auto`, `mode: achtung`, and `mode: vanilla`. When Achtung is loaded, `auto` prefers Achtung's merged multi-pawn menu via reflection so external tools can reproduce issues against the same action builder the player sees in-game.
 
 ### Debug menu mapping
@@ -160,6 +166,10 @@ The stateful parts of RimWorld's Zone menu now also have explicit bridge control
 ### Batch scripting
 
 `rimbridge/run_script` is the first low-risk batch layer on top of the capability registry. It accepts a JSON payload with ordinary capability calls as steps, executes them in order, and returns a uniform per-step report with child operation ids, timings, success/failure state, and optional step results.
+
+Fresh clients do not need to infer the script language from this README alone. Call `rimbridge/get_script_reference` over GABS to retrieve a machine-readable reference document covering the root script shape, statement types, expressions, conditions, limits, failure codes, result shape, and copyable examples.
+
+That means a single in-game script can now own the full lifecycle from "connected to RimWorld" onward. A script can begin by calling `rimworld/go_to_main_menu`, wait until `rimbridge/get_bridge_status` reports the entry scene, start a fresh debug colony, wait for the map to finish loading, and then continue into normal gameplay actions and a final screenshot.
 
 Current first-shape example:
 
@@ -187,7 +197,269 @@ Current first-shape example:
 }
 ```
 
-This first version deliberately keeps the model simple: every step is just another registered capability call, so waits, screenshots, debug actions, Architect operations, and future extension capabilities can all participate without a separate script-specific runtime path. The next obvious power-up is step-to-step value passing, but even the current static-call form already removes RPC round trips and returns one detailed batch report.
+Lifecycle example from a connected RimWorld session:
+
+```json
+{
+  "name": "debug-colony-bootstrap",
+  "continueOnError": false,
+  "steps": [
+    {
+      "id": "main_menu",
+      "call": "rimworld/go_to_main_menu"
+    },
+    {
+      "id": "wait_entry",
+      "call": "rimbridge/get_bridge_status",
+      "continueUntil": {
+        "timeoutMs": 30000,
+        "pollIntervalMs": 100,
+        "condition": {
+          "all": [
+            { "path": "result.state.inEntryScene", "equals": true },
+            { "path": "result.state.programState", "equals": "Entry" },
+            { "path": "result.state.hasCurrentGame", "equals": false },
+            { "path": "result.state.longEventPending", "equals": false }
+          ]
+        }
+      }
+    },
+    {
+      "id": "start_debug",
+      "call": "rimworld/start_debug_game"
+    },
+    {
+      "id": "wait_start_complete",
+      "call": "rimbridge/wait_for_operation",
+      "arguments": {
+        "operationId": { "$ref": "start_debug", "path": "operationId" },
+        "timeoutMs": 60000,
+        "pollIntervalMs": 50
+      }
+    },
+    {
+      "id": "wait_loaded",
+      "call": "rimbridge/wait_for_game_loaded",
+      "arguments": {
+        "timeoutMs": 60000,
+        "pollIntervalMs": 100,
+        "waitForScreenFade": true,
+        "pauseIfNeeded": true
+      }
+    },
+    {
+      "id": "capture",
+      "call": "rimworld/take_screenshot",
+      "arguments": {
+        "fileName": "rimbridge_debug_colony_bootstrap",
+        "includeTargets": false
+      }
+    }
+  ]
+}
+```
+
+Step-to-step value passing is now available through explicit reference objects inside `arguments`. Use `{"$ref":"step_id","path":"result.someField"}` to pull a value from an earlier step. The `path` is optional and defaults to `result`, so `{"$ref":"step_id"}` reuses the earlier step's raw result object.
+
+Level 2 polling is available through optional per-step `continueUntil` blocks. A `continueUntil` policy re-runs that same step until its condition matches or the timeout expires. This is useful for read or poll steps such as `list_colonists`, `get_ui_state`, or `get_designator_state` after an earlier mutating action has already been issued.
+
+The runner now also supports a small generic control-flow layer inside the same JSON format:
+
+- `{"type":"let","name":"x","value":...}` declares a scoped variable
+- `{"type":"set","name":"x","value":...}` updates an existing variable in the active scope chain
+- `{"type":"if","condition":{...},"body":[...],"elseBody":[...]}` branches on the same bounded condition model used by `continueUntil`
+- `{"type":"foreach","itemName":"item","indexName":"i","collection":...,"body":[...]}` iterates a resolved collection
+- `{"type":"while","condition":{...},"maxIterations":100,"body":[...]}` executes a bounded loop
+- `{"type":"assert","condition":{...},"message":"..."}` fails the script immediately when an assumption is not satisfied
+- `{"type":"fail","message":"...","value":...}` stops the script immediately with an explicit failure
+- `{"type":"print","message":"...","value":...}` appends a structured trace row to the script output
+- `{"type":"return","value":...}` ends the script successfully with a final structured result
+
+Value expressions can now also read variables with `{"$var":"name"}`, do arithmetic with `{"$add":[...]}`, `{"$subtract":[left,right]}`, `{"$multiply":[...]}`, `{"$divide":[left,right]}`, and `{"$mod":[left,right]}`, and produce booleans with `{"$negate":...}`, `{"$not":...}`, `{"$and":[...]}`, `{"$or":[...]}`, `{"$equals":[left,right]}`, `{"$notEquals":[left,right]}`, `{"$greaterThan":[left,right]}`, `{"$greaterThanOrEqual":[left,right]}`, `{"$lessThan":[left,right]}`, and `{"$lessThanOrEqual":[left,right]}`.
+
+Successful control statements do not add rows to the per-step report. The report remains focused on capability calls, while failed control statements such as `assert` and `fail` surface as failed script steps.
+
+This also makes `rimbridge/run_script` usable as a test-like tool call. The outer tool response now includes:
+
+- `success`: overall script pass/fail
+- `message`: success summary or the assertion/failure message
+- `error`: the top-level script error when the run fails
+- `output`: structured rows produced by `print`
+- `result`: the value returned by `return`, if any
+- `script`: the full operational report with child step details
+
+Scripts also now have three global guardrails at the definition level:
+
+- `maxDurationMs`: whole-script wall-clock budget, default `60000`
+- `maxExecutedStatements`: total execution budget across control statements, loop iterations, and retry attempts, default `1000`
+- `maxControlDepth`: maximum nested control-body depth, default `32`
+
+Those global limits complement the existing local bounds on `while.maxIterations` and `continueUntil.timeoutMs`. When a script exceeds them, `rimbridge/run_script` fails with `script.timeout`, `script.statement_limit_exceeded`, or `script.max_depth_exceeded`.
+
+### Lua front-end
+
+`rimbridge/run_lua` now sits on top of that same runner instead of introducing a second execution path. It compiles a narrow Lua subset into the shared JSON script model, then executes the lowered script through the normal capability registry. The outer result shape matches `rimbridge/run_script`: `success`, `message`, `error`, `output`, `result`, and the full `script` report.
+
+Use `rimbridge/compile_lua` when you want to inspect the lowered JSON without executing anything. That is the debugging seam for Lua lowering problems and the easiest way to confirm that Lua remains a front-end over the existing runner rather than a separate runtime.
+
+Supported `run_lua` v1 features:
+
+- `local` variables and scoped shadowing
+- table literals with array-style or object-style fields
+- static field access such as `snapshot.result.count`
+- static one-based index access such as `names[1]`
+- arithmetic, comparisons, `and` / `or`, unary `not`, and unary minus
+- `if` / `elseif` / `else`
+- bounded `while`
+- numeric `for`
+- `for ... in ipairs(...)`
+- `return`
+- `print(...)` or `rb.print(...)`
+- `rb.call(...)`, `rb.poll(...)`, `rb.assert(...)`, and `rb.fail(...)`
+
+Not supported in v1:
+
+- `require`
+- metatables
+- coroutines
+- arbitrary global assignment
+- dynamic table keys
+- arbitrary dynamic indexing
+- `break`
+
+Lua example:
+
+```lua
+rb.call("rimworld/go_to_main_menu")
+
+rb.poll("rimbridge/get_bridge_status", {}, {
+  timeoutMs = 30000,
+  pollIntervalMs = 100,
+  condition = {
+    all = {
+      { path = "result.state.inEntryScene", equals = true },
+      { path = "result.state.programState", equals = "Entry" },
+      { path = "result.state.hasCurrentGame", equals = false },
+      { path = "result.state.longEventPending", equals = false }
+    }
+  }
+})
+
+local snapshot = rb.call("rimworld/list_colonists", { currentMapOnly = true })
+
+for i, colonist in ipairs(snapshot.result.colonists) do
+  rb.print("colonist", { index = i, name = colonist.name, append = i > 1 })
+end
+
+rb.assert(snapshot.result.count > 0, "Expected at least one colonist.")
+return snapshot.result.count
+```
+
+Reference example:
+
+```json
+{
+  "name": "value-passing",
+  "continueOnError": false,
+  "steps": [
+    {
+      "id": "discover",
+      "call": "rimworld/list_architect_categories"
+    },
+    {
+      "id": "structure_designators",
+      "call": "rimworld/list_architect_designators",
+      "arguments": {
+        "categoryId": {
+          "$ref": "discover",
+          "path": "result.categories[0].id"
+        }
+      }
+    }
+  ]
+}
+```
+
+Control-flow example:
+
+```json
+{
+  "name": "bounded-loop",
+  "continueOnError": false,
+  "steps": [
+    {
+      "type": "let",
+      "name": "count",
+      "value": 0
+    },
+    {
+      "type": "while",
+      "maxIterations": 3,
+      "condition": {
+        "path": "vars.count",
+        "lessThan": 2
+      },
+      "body": [
+        {
+          "type": "set",
+          "name": "count",
+          "value": {
+            "$add": [
+              { "$var": "count" },
+              1
+            ]
+          }
+        },
+        {
+          "id": "ping",
+          "call": "rimbridge/ping"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The reference root also exposes step metadata such as `operationId`, `success`, `status`, `attempts`, `error`, and `warnings`, so later steps can reuse either result payloads or report metadata without a separate script runtime. The model still stays intentionally constrained: every capability execution goes through the normal registry-backed path, and even the control statements remain JSON data rather than a separate direct automation runtime.
+
+`continueUntil` example:
+
+```json
+{
+  "id": "wait_until_grouped",
+  "call": "rimworld/list_colonists",
+  "arguments": {
+    "currentMapOnly": true
+  },
+  "continueUntil": {
+    "timeoutMs": 10000,
+    "pollIntervalMs": 100,
+    "condition": {
+      "all": [
+        {
+          "path": "result.colonists",
+          "countEquals": 3
+        },
+        {
+          "path": "result.colonists",
+          "allItems": {
+            "path": "position.x",
+            "greaterThanOrEqual": 143,
+            "lessThanOrEqual": 144
+          }
+        },
+        {
+          "path": "result.colonists",
+          "allItems": {
+            "path": "job",
+            "in": ["Wait_Combat", "Wait_MaintainPosture"]
+          }
+        }
+      ]
+    }
+  }
+}
+```
 
 ### Example workflow for Achtung Issue #95
 
@@ -352,6 +624,15 @@ The `script-wall-sequence` scenario covers the first script-runner slice:
 - verifies the script report shape, child step execution order, and the on-disk screenshot artifact
 - confirms both target cells contain directly built `Wall` things instead of blueprints
 
+The `script-colonist-prison` scenario is the stronger control-flow smoke for the same runner:
+
+- ensures a playable game exists
+- discovers the `Wall` designator and precomputes one accepted rally layout
+- runs one JSON script that uses references, variables, `foreach`, arithmetic, and `continueUntil`
+- verifies loop-generated report ids such as `select_pawn#2` and `build_wall#4`
+- confirms the resulting perimeter contains real `Wall` things, the starting colonists are undrafted, and they remain inside the prison interior
+- verifies the script-produced screenshot artifact
+
 The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.
 
 The runner looks for `gabs` on `PATH`, honors `GABS_BIN`, and also auto-detects a sibling checkout at `../GABS/gabs`. Use `--config-dir` or `GABS_CONFIG_DIR` if you need to point it at a non-default GABS configuration directory.
@@ -376,6 +657,7 @@ The current human-verification set covers:
 - `screen-target-clip` with a cropped image focused on one real actionable target
 - `screenshot-capture` by exporting the captured screenshot itself with a matching explanation file
 - `architect-floor-dropdown` with one screenshot showing a directly placed dropdown-selected floor patch
+- `script-colonist-prison` with the screenshot artifact produced by the script after grouping, enclosing, and undrafting the starting colonists
 - `script-wall-sequence` with the screenshot artifact produced by the script itself after placing two direct-build walls
 - `architect-stateful-targeting` with one screenshot showing a custom allowed area overlay and one showing an explicitly targeted stockpile expansion
 - `architect-wall-placement` with one screenshot showing the blueprint wall state and one showing the direct-build wall state

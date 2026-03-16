@@ -531,6 +531,8 @@ The important property is not syntax. The important property is that every step 
 
 Later, a human-friendly DSL can be layered on top if it is still worth it.
 
+The current concrete recommendation for that next layer is documented in [`docs/lua-frontend-design.md`](/Users/ap/Projects/RimBridgeServer/docs/lua-frontend-design.md): use Lua syntax via MoonSharp, but keep the existing script runner as the shared execution backend instead of inventing a second direct automation runtime.
+
 ## Extension Strategy
 
 The extension system should begin with explicit registration, not automatic scanning magic.

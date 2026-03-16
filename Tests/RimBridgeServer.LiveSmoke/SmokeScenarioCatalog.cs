@@ -26,6 +26,7 @@ internal static class SmokeScenarioCatalog
     public const string ArchitectZoneAreaDragScenarioName = "architect-zone-area-drag";
     public const string ScreenTargetClickRoundTripScenarioName = "screen-target-click-roundtrip";
     public const string ScreenTargetClipScenarioName = "screen-target-clip";
+    public const string ScriptColonistPrisonScenarioName = "script-colonist-prison";
     public const string ScriptWallSequenceScenarioName = "script-wall-sequence";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
@@ -94,6 +95,12 @@ internal static class SmokeScenarioCatalog
                 Name = ScreenTargetClipScenarioName,
                 Description = "Ensure a playable game exists, then capture a screenshot clipped to a real target id returned by rimworld/get_screen_targets.",
                 RunAsync = RunScreenTargetClipAsync
+            },
+            [ScriptColonistPrisonScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ScriptColonistPrisonScenarioName,
+                Description = "Ensure a playable game exists, then use run_lua to draft colonists, group them, wall them in, and release them inside the prison as one scripted acceptance flow.",
+                RunAsync = RunScriptColonistPrisonAsync
             },
             [ScriptWallSequenceScenarioName] = new SmokeScenarioDefinition
             {
@@ -1090,6 +1097,349 @@ internal static class SmokeScenarioCatalog
             "script_wall.final_bridge_status",
             "script_wall.collect_operation_events",
             "script_wall.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunScriptColonistPrisonAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("script_prison.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("script_prison.snapshot_bridge_status", cancellationToken);
+        var initialDesignatorState = await context.CallGameToolAsync("script_prison.get_designator_state_before", "rimworld/get_designator_state", new { }, cancellationToken);
+        context.EnsureSucceeded(initialDesignatorState, "Reading initial architect state for the script colonist prison scenario");
+        var originalGodMode = JsonNodeHelpers.ReadBoolean(initialDesignatorState.StructuredContent, "godMode") == true;
+
+        Exception? scenarioError = null;
+
+        try
+        {
+            var categories = await context.CallGameToolAsync("script_prison.list_categories", "rimworld/list_architect_categories", new
+            {
+                includeHidden = false,
+                includeEmpty = false
+            }, cancellationToken);
+            context.EnsureSucceeded(categories, "Listing architect categories for the script colonist prison scenario");
+
+            var categoryArray = JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories");
+            var structureCategoryId = ResolveArchitectCategoryId(categoryArray, "Structure");
+
+            var designators = await context.CallGameToolAsync("script_prison.list_structure_designators", "rimworld/list_architect_designators", new
+            {
+                categoryId = structureCategoryId,
+                includeHidden = false
+            }, cancellationToken);
+            context.EnsureSucceeded(designators, "Listing structure designators for the script colonist prison scenario");
+
+            var designatorArray = JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators");
+            var wallDesignatorId = ResolveArchitectBuildDesignatorId(designatorArray, "Wall");
+
+            var colonists = await context.CallGameToolAsync("script_prison.list_colonists", "rimworld/list_colonists", new
+            {
+                currentMapOnly = true
+            }, cancellationToken);
+            context.EnsureSucceeded(colonists, "Listing current-map colonists for the script colonist prison scenario");
+
+            var colonistArray = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists");
+            if (colonistArray.Count < 3)
+                throw new InvalidOperationException("The script colonist prison scenario requires at least three current-map colonists.");
+
+            var rally = await FindAcceptedPrisonRallyCellAsync(
+                context,
+                "script_prison.find_rally",
+                wallDesignatorId,
+                colonists.StructuredContent,
+                cancellationToken);
+
+            var northWall = new { x = rally.RallyX - 2, z = rally.RallyZ - 2, width = 5, height = 1 };
+            var southWall = new { x = rally.RallyX - 2, z = rally.RallyZ + 2, width = 5, height = 1 };
+            var westWall = new { x = rally.RallyX - 2, z = rally.RallyZ - 1, width = 1, height = 3 };
+            var eastWall = new { x = rally.RallyX + 2, z = rally.RallyZ - 1, width = 1, height = 3 };
+            var screenshotFileName = "rimbridge_script_colonist_prison_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+
+            var luaSource = $$"""
+                              local rallyX = {{rally.RallyX}}
+                              local rallyZ = {{rally.RallyZ}}
+                              local wallDesignatorId = {{ToLuaStringLiteral(wallDesignatorId)}}
+                              local screenshotFileName = {{ToLuaStringLiteral(screenshotFileName)}}
+
+                              local colonists = rb.call("rimworld/list_colonists", { currentMapOnly = true })
+                              rb.assert(colonists.result.count >= 3, "Expected at least three current-map colonists.")
+
+                              local selectedColonists = {
+                                colonists.result.colonists[1],
+                                colonists.result.colonists[2],
+                                colonists.result.colonists[3]
+                              }
+
+                              rb.call("rimworld/clear_selection")
+
+                              for i, colonist in ipairs(selectedColonists) do
+                                rb.call("rimworld/select_pawn", { pawnName = colonist.name, append = i > 1 })
+                                rb.call("rimworld/set_draft", { pawnName = colonist.name, drafted = true })
+                              end
+
+                              local interiorMinX = rallyX - 1
+                              local interiorMaxX = rallyX + 1
+                              local interiorMinZ = rallyZ - 1
+                              local interiorMaxZ = rallyZ + 1
+
+                              rb.print("rally", { x = rallyX, z = rallyZ })
+
+                              rb.call("rimworld/open_context_menu", { x = rallyX, z = rallyZ, mode = "vanilla" })
+                              rb.call("rimworld/execute_context_menu_option", { label = "Go here" })
+                              rb.call("rimworld/pause_game", { pause = false })
+
+                              local grouped = rb.poll("rimworld/list_colonists", { currentMapOnly = true }, {
+                                timeoutMs = 10000,
+                                pollIntervalMs = 100,
+                                condition = {
+                                  all = {
+                                    { path = "result.colonists", countEquals = 3 },
+                                    {
+                                      path = "result.colonists",
+                                      allItems = {
+                                        path = "position.x",
+                                        greaterThanOrEqual = interiorMinX,
+                                        lessThanOrEqual = interiorMaxX
+                                      }
+                                    },
+                                    {
+                                      path = "result.colonists",
+                                      allItems = {
+                                        path = "position.z",
+                                        greaterThanOrEqual = interiorMinZ,
+                                        lessThanOrEqual = interiorMaxZ
+                                      }
+                                    },
+                                    {
+                                      path = "result.colonists",
+                                      allItems = {
+                                        path = "job",
+                                        ["in"] = { "Wait_Combat", "Wait_MaintainPosture" }
+                                      }
+                                    }
+                                  }
+                                }
+                              })
+
+                              rb.print("grouped_attempts", grouped.attempts)
+
+                              rb.call("rimworld/pause_game", { pause = true })
+                              rb.call("rimworld/set_god_mode", { enabled = true })
+
+                              local wallSegments = {
+                                { x = rallyX - 2, z = rallyZ - 2, width = 5, height = 1 },
+                                { x = rallyX - 2, z = rallyZ + 2, width = 5, height = 1 },
+                                { x = rallyX - 2, z = rallyZ - 1, width = 1, height = 3 },
+                                { x = rallyX + 2, z = rallyZ - 1, width = 1, height = 3 }
+                              }
+
+                              for _, wallSegment in ipairs(wallSegments) do
+                                rb.call("rimworld/apply_architect_designator", {
+                                  designatorId = wallDesignatorId,
+                                  x = wallSegment.x,
+                                  z = wallSegment.z,
+                                  width = wallSegment.width,
+                                  height = wallSegment.height,
+                                  dryRun = false,
+                                  keepSelected = true
+                                })
+                              end
+
+                              for _, colonist in ipairs(selectedColonists) do
+                                rb.call("rimworld/set_draft", { pawnName = colonist.name, drafted = false })
+                              end
+
+                              rb.call("rimworld/pause_game", { pause = false })
+
+                              local captured = rb.poll("rimworld/list_colonists", { currentMapOnly = true }, {
+                                timeoutMs = 5000,
+                                pollIntervalMs = 100,
+                                condition = {
+                                  all = {
+                                    {
+                                      path = "result.colonists",
+                                      allItems = {
+                                        path = "drafted",
+                                        equals = false
+                                      }
+                                    },
+                                    {
+                                      path = "result.colonists",
+                                      allItems = {
+                                        path = "position.x",
+                                        greaterThanOrEqual = interiorMinX,
+                                        lessThanOrEqual = interiorMaxX
+                                      }
+                                    },
+                                    {
+                                      path = "result.colonists",
+                                      allItems = {
+                                        path = "position.z",
+                                        greaterThanOrEqual = interiorMinZ,
+                                        lessThanOrEqual = interiorMaxZ
+                                      }
+                                    }
+                                  }
+                                }
+                              })
+
+                              local capture = rb.call("rimworld/take_screenshot", {
+                                fileName = screenshotFileName,
+                                includeTargets = false
+                              })
+
+                              return {
+                                rallyX = rallyX,
+                                rallyZ = rallyZ,
+                                groupedAttempts = grouped.attempts,
+                                capturedAttempts = captured.attempts,
+                                screenshotPath = capture.result.path
+                              }
+                              """;
+
+            var compileLua = await context.CallGameToolAsync("script_prison.compile_lua", "rimbridge/compile_lua", new
+            {
+                luaSource
+            }, cancellationToken);
+            context.EnsureSucceeded(compileLua, "Compiling the Lua-driven colonist prison sequence");
+
+            var compiledScript = JsonNodeHelpers.ReadObject(compileLua.StructuredContent, "script");
+            var compiledSteps = JsonNodeHelpers.ReadArray(compiledScript, "Steps");
+            if (compiledSteps.Count == 0)
+                throw new InvalidOperationException("Expected compile_lua to produce at least one lowered script step.");
+
+            var runLua = await context.CallGameToolAsync("script_prison.run_lua", "rimbridge/run_lua", new
+            {
+                luaSource,
+                includeStepResults = true
+            }, cancellationToken);
+            context.EnsureSucceeded(runLua, "Running the Lua-driven colonist prison sequence");
+
+            if (JsonNodeHelpers.ReadBoolean(runLua.StructuredContent, "returned") != true)
+                throw new InvalidOperationException("Expected the Lua colonist prison script to end with a return value.");
+
+            var scriptResult = JsonNodeHelpers.ReadObject(runLua.StructuredContent, "result");
+            var scriptReport = JsonNodeHelpers.ReadObject(runLua.StructuredContent, "script");
+            if (JsonNodeHelpers.ReadBoolean(scriptReport, "success") != true)
+                throw new InvalidOperationException("Expected the colonist prison Lua script report to succeed.");
+
+            var scriptSteps = JsonNodeHelpers.ReadArray(scriptReport, "steps");
+            if (!scriptSteps.Any(step => (JsonNodeHelpers.ReadString(step, "id") ?? string.Empty).Contains("#2", StringComparison.Ordinal)))
+                throw new InvalidOperationException("Expected the Lua colonist prison script report to include repeated loop or poll step ids.");
+
+            var scriptOutput = JsonNodeHelpers.ReadArray(runLua.StructuredContent, "output");
+            if (scriptOutput.Count < 2)
+                throw new InvalidOperationException("Expected the Lua colonist prison script to emit structured output rows.");
+
+            var outputMessages = scriptOutput
+                .Select(entry => JsonNodeHelpers.ReadString(entry, "message"))
+                .Where(message => !string.IsNullOrWhiteSpace(message))
+                .ToHashSet(StringComparer.Ordinal);
+            if (!outputMessages.Contains("rally") || !outputMessages.Contains("grouped_attempts"))
+                throw new InvalidOperationException("Expected the Lua colonist prison script output to include 'rally' and 'grouped_attempts' trace rows.");
+
+            var captureStep = scriptSteps.FirstOrDefault(step =>
+                string.Equals(JsonNodeHelpers.ReadString(step, "call"), "rimworld/take_screenshot", StringComparison.Ordinal));
+            var scriptScreenshotPath = JsonNodeHelpers.ReadString(scriptResult, "screenshotPath");
+            var captureScreenshotPath = JsonNodeHelpers.ReadString(captureStep, "result", "path");
+            if (string.IsNullOrWhiteSpace(scriptScreenshotPath) || !File.Exists(scriptScreenshotPath))
+                throw new InvalidOperationException("Expected the capture step to produce a valid screenshot artifact.");
+            if (!string.Equals(scriptScreenshotPath, captureScreenshotPath, StringComparison.Ordinal))
+                throw new InvalidOperationException("Expected the Lua script return value to surface the same screenshot path returned by the capture step.");
+            if (JsonNodeHelpers.ReadInt32(scriptResult, "groupedAttempts").GetValueOrDefault() < 1)
+                throw new InvalidOperationException("Expected the Lua script return value to include groupedAttempts >= 1.");
+            if (JsonNodeHelpers.ReadInt32(scriptResult, "capturedAttempts").GetValueOrDefault() < 1)
+                throw new InvalidOperationException("Expected the Lua script return value to include capturedAttempts >= 1.");
+
+            foreach (var perimeterCell in new[]
+                     {
+                         (northWall.x + 1, northWall.z),
+                         (southWall.x + 1, southWall.z),
+                         (westWall.x, westWall.z + 1),
+                         (eastWall.x, eastWall.z + 1)
+                     })
+            {
+                var cellInfo = await context.CallGameToolAsync($"script_prison.verify_wall_{perimeterCell.Item1}_{perimeterCell.Item2}", "rimworld/get_cell_info", new
+                {
+                    x = perimeterCell.Item1,
+                    z = perimeterCell.Item2
+                }, cancellationToken);
+                context.EnsureSucceeded(cellInfo, $"Reading prison perimeter cell info for ({perimeterCell.Item1}, {perimeterCell.Item2})");
+                AssertCellContainsSolidThing(cellInfo.StructuredContent, "Wall");
+                AssertCellDoesNotContainBuildBlueprint(cellInfo.StructuredContent, "Wall");
+            }
+
+            var finalColonists = await context.CallGameToolAsync("script_prison.final_colonists", "rimworld/list_colonists", new
+            {
+                currentMapOnly = true
+            }, cancellationToken);
+            context.EnsureSucceeded(finalColonists, "Listing final colonists after the script colonist prison sequence");
+
+            var finalColonistArray = JsonNodeHelpers.ReadArray(finalColonists.StructuredContent, "colonists");
+            if (finalColonistArray.Count < 3)
+                throw new InvalidOperationException("Expected at least three colonists after the script colonist prison sequence.");
+
+            foreach (var colonist in finalColonistArray.Take(3))
+            {
+                if (JsonNodeHelpers.ReadBoolean(colonist, "drafted") == true)
+                    throw new InvalidOperationException($"Colonist '{JsonNodeHelpers.ReadString(colonist, "name")}' was still drafted after the prison script.");
+
+                var x = JsonNodeHelpers.ReadInt32(colonist, "position", "x");
+                var z = JsonNodeHelpers.ReadInt32(colonist, "position", "z");
+                if (!x.HasValue || !z.HasValue || x.Value < rally.InteriorMinX || x.Value > rally.InteriorMaxX || z.Value < rally.InteriorMinZ || z.Value > rally.InteriorMaxZ)
+                    throw new InvalidOperationException($"Colonist '{JsonNodeHelpers.ReadString(colonist, "name")}' was not inside the prison interior after the script.");
+            }
+
+            if (context.HumanVerificationEnabled)
+            {
+                await context.ExportHumanVerificationArtifactAsync(
+                    "script_colonist_prison",
+                    scriptScreenshotPath,
+                    "The script-driven colonist prison scenario should show the starting colonists enclosed by a full wall perimeter after the script grouped, enclosed, and undrafted them.",
+                    [
+                        "A full wall ring should enclose the default starting colonists.",
+                        "The colonists should be inside the prison rather than standing on the wall perimeter.",
+                        "This image was produced by the script itself after the final unpause and capture steps."
+                    ],
+                    cancellationToken);
+            }
+
+            context.SetSummaryValue("wallDesignatorId", wallDesignatorId);
+            context.SetSummaryValue("rallyCell", $"{rally.RallyX},{rally.RallyZ}");
+            context.SetSummaryValue("interiorRect", $"{rally.InteriorMinX},{rally.InteriorMinZ}..{rally.InteriorMaxX},{rally.InteriorMaxZ}");
+            context.SetSummaryValue("scriptScreenshotPath", scriptScreenshotPath);
+            context.SetScenarioData("compileLua", compileLua.StructuredContent);
+            context.SetScenarioData("runLua", runLua.StructuredContent);
+            context.SetScenarioData("finalColonists", finalColonists.StructuredContent);
+            context.SetScenarioData("structureDesignators", new JsonArray(designatorArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+        }
+        catch (Exception ex)
+        {
+            scenarioError = ex;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                await EnsureGodModeAsync(context, "script_prison.restore_god_mode", originalGodMode, cancellationToken);
+            }
+            catch (Exception restoreError)
+            {
+                if (scenarioError is null)
+                    throw;
+
+                context.Note($"Failed to restore god mode after the script colonist prison sequence: {restoreError.Message}");
+            }
+        }
+
+        var observation = await observationWindow.CaptureAsync(
+            "script_prison.final_bridge_status",
+            "script_prison.collect_operation_events",
+            "script_prison.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }
@@ -2400,6 +2750,104 @@ internal static class SmokeScenarioCatalog
 
         if (JsonNodeHelpers.ReadBoolean(setGodMode.StructuredContent, "godMode") != enabled)
             throw new InvalidOperationException($"God mode did not reach the requested value '{enabled}'.");
+    }
+
+    private static string ToLuaStringLiteral(string value)
+    {
+        var text = value ?? string.Empty;
+        return "\"" + text
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal)
+            .Replace("\t", "\\t", StringComparison.Ordinal) + "\"";
+    }
+
+    private static JsonObject BuildArchitectApplyArguments(string designatorId, int x, int z, int width, int height)
+    {
+        return new JsonObject
+        {
+            ["designatorId"] = designatorId,
+            ["x"] = x,
+            ["z"] = z,
+            ["width"] = width,
+            ["height"] = height,
+            ["dryRun"] = false,
+            ["keepSelected"] = true
+        };
+    }
+
+    private static async Task<(int RallyX, int RallyZ, int InteriorMinX, int InteriorMaxX, int InteriorMinZ, int InteriorMaxZ)> FindAcceptedPrisonRallyCellAsync(
+        SmokeScenarioContext context,
+        string stepPrefix,
+        string wallDesignatorId,
+        JsonNode? colonistsStructuredContent,
+        CancellationToken cancellationToken)
+    {
+        var origin = ResolveColonistSearchOrigin(colonistsStructuredContent);
+        var attempt = 0;
+
+        foreach (var candidate in BuildArchitectProbeCells(origin, minRadius: 4, maxRadius: 24))
+        {
+            attempt++;
+            if (!await PrisonLayoutIsAcceptedAsync(context, $"{stepPrefix}_{attempt}", wallDesignatorId, candidate.X, candidate.Z, cancellationToken))
+                continue;
+
+            return (candidate.X, candidate.Z, candidate.X - 1, candidate.X + 1, candidate.Z - 1, candidate.Z + 1);
+        }
+
+        throw new InvalidOperationException("Could not find an accepted rally cell for the scripted colonist prison layout.");
+    }
+
+    private static async Task<bool> PrisonLayoutIsAcceptedAsync(
+        SmokeScenarioContext context,
+        string stepPrefix,
+        string wallDesignatorId,
+        int rallyX,
+        int rallyZ,
+        CancellationToken cancellationToken)
+    {
+        foreach (var interiorCell in EnumerateRectangleCells(rallyX - 1, rallyZ - 1, width: 3, height: 3))
+        {
+            var interiorInfo = await context.CallGameToolAsync($"{stepPrefix}.interior_{interiorCell.X}_{interiorCell.Z}", "rimworld/get_cell_info", new
+            {
+                x = interiorCell.X,
+                z = interiorCell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(interiorInfo, $"Reading prison-layout interior cell info for ({interiorCell.X}, {interiorCell.Z})");
+
+            if (JsonNodeHelpers.ReadBoolean(interiorInfo.StructuredContent, "cell", "walkable") != true)
+                return false;
+            if (JsonNodeHelpers.ReadArray(interiorInfo.StructuredContent, "cell", "solidThingDefs").Count > 0)
+                return false;
+        }
+
+        foreach (var segment in new[]
+                 {
+                     (x: rallyX - 2, z: rallyZ - 2, width: 5, height: 1),
+                     (x: rallyX - 2, z: rallyZ + 2, width: 5, height: 1),
+                     (x: rallyX - 2, z: rallyZ - 1, width: 1, height: 3),
+                     (x: rallyX + 2, z: rallyZ - 1, width: 1, height: 3)
+                 })
+        {
+            var dryRun = await context.CallGameToolAsync($"{stepPrefix}.dry_run_{segment.x}_{segment.z}", "rimworld/apply_architect_designator", new
+            {
+                designatorId = wallDesignatorId,
+                x = segment.x,
+                z = segment.z,
+                width = segment.width,
+                height = segment.height,
+                dryRun = true,
+                keepSelected = false
+            }, cancellationToken);
+            if (JsonNodeHelpers.ReadBoolean(dryRun.StructuredContent, "operation", "Success") != true)
+                throw new InvalidOperationException($"Prison-layout architect probe failed for cell ({segment.x}, {segment.z}). {dryRun.Message}".Trim());
+
+            if (JsonNodeHelpers.ReadInt32(dryRun.StructuredContent, "acceptedCellCount").GetValueOrDefault() < segment.width * segment.height)
+                return false;
+        }
+
+        return true;
     }
 
     private static async Task<(int X, int Z)> FindAcceptedArchitectPlacementCellAsync(

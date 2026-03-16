@@ -81,6 +81,40 @@ internal sealed class LifecycleCapabilityModule
         };
     }
 
+    public object GoToMainMenu()
+    {
+        var state = RimWorldState.ToolStateSnapshot();
+        if (GenScene.InEntryScene && Current.ProgramState == ProgramState.Entry && Current.Game == null)
+        {
+            return new
+            {
+                success = true,
+                status = "noop",
+                message = "RimWorld is already at the main menu entry scene.",
+                state
+            };
+        }
+
+        if (LongEventHandler.AnyEventNowOrWaiting)
+        {
+            return new
+            {
+                success = false,
+                message = "RimWorld is busy with another long event. Wait for it to finish before returning to the main menu.",
+                state
+            };
+        }
+
+        GenScene.GoToMainMenu();
+        return new
+        {
+            success = true,
+            status = "queued",
+            message = "Queued return to the RimWorld main menu.",
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
     public object ListSaves()
     {
         var saves = GenFilePaths.AllSavedGameFiles
