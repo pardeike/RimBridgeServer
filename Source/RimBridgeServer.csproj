@@ -45,6 +45,18 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<Compile Remove="RimBridgeServer.Contracts\**\*.cs" />
+		<Compile Remove="RimBridgeServer.Extensions.Abstractions\**\*.cs" />
+		<None Include="RimBridgeServer.Contracts\**\*" />
+		<None Include="RimBridgeServer.Extensions.Abstractions\**\*" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="RimBridgeServer.Contracts\RimBridgeServer.Contracts.csproj" />
+		<ProjectReference Include="RimBridgeServer.Extensions.Abstractions\RimBridgeServer.Extensions.Abstractions.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4566" GeneratePathProperty="true" />
 		<PackageReference Include="Lib.Harmony.Ref" Version="2.4.1" />
 		<PackageReference Include="Microsoft.NETCore.Platforms" Version="7.0.4" />

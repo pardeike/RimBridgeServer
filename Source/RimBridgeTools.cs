@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Lib.GAB.Tools;
 using RimWorld;
@@ -16,7 +17,7 @@ public class RimBridgeTools
     [Tool("rimbridge/ping", Description = "Connectivity test. Returns 'pong'.")]
     public object Ping()
     {
-        return new { message = "pong", timestamp = DateTime.UtcNow };
+        return RunBackgroundTool(() => new { message = "pong", timestamp = DateTime.UtcNow });
     }
 
     [Tool("rimworld/get_game_info", Description = "Get basic information about the current RimWorld game")]
@@ -344,7 +345,7 @@ public class RimBridgeTools
     [Tool("rimworld/take_screenshot", Description = "Take an in-game screenshot and return the saved file path")]
     public object TakeScreenshot([ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null)
     {
-        try
+        return RunBackgroundTool(() =>
         {
             var safeName = RimWorldState.SanitizeName(fileName, "rimbridge");
             var expectedPath = RimBridgeMainThread.Invoke(() =>
@@ -380,11 +381,7 @@ public class RimBridgeTools
                 message = "Timed out waiting for RimWorld to finish writing the screenshot file.",
                 expectedPath
             };
-        }
-        catch (Exception ex)
-        {
-            return ToolException(ex);
-        }
+        });
     }
 
     [Tool("rimworld/get_achtung_state", Description = "Get Achtung-specific debug state when the mod is loaded")]
@@ -781,25 +778,13 @@ public class RimBridgeTools
         menu.windowRect = new Rect(x, y, size.x, size.y);
     }
 
-    private static object RunTool(Func<object> func)
+    private static object RunTool(Func<object> func, [CallerMemberName] string memberName = null)
     {
-        try
-        {
-            return RimBridgeMainThread.Invoke(func, timeoutMs: 10000);
-        }
-        catch (Exception ex)
-        {
-            return ToolException(ex);
-        }
+        return LegacyToolExecution.Run(func, marshalToMainThread: true, memberName);
     }
 
-    private static object ToolException(Exception ex)
+    private static object RunBackgroundTool(Func<object> func, [CallerMemberName] string memberName = null)
     {
-        return new
-        {
-            success = false,
-            message = ex.InnerException?.Message ?? ex.Message,
-            exception = ex.ToString()
-        };
+        return LegacyToolExecution.Run(func, marshalToMainThread: false, memberName);
     }
 }
