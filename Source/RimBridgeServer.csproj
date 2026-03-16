@@ -45,13 +45,16 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<Compile Remove="RimBridgeServer.Core\**\*.cs" />
 		<Compile Remove="RimBridgeServer.Contracts\**\*.cs" />
 		<Compile Remove="RimBridgeServer.Extensions.Abstractions\**\*.cs" />
+		<None Include="RimBridgeServer.Core\**\*" />
 		<None Include="RimBridgeServer.Contracts\**\*" />
 		<None Include="RimBridgeServer.Extensions.Abstractions\**\*" />
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="RimBridgeServer.Core\RimBridgeServer.Core.csproj" />
 		<ProjectReference Include="RimBridgeServer.Contracts\RimBridgeServer.Contracts.csproj" />
 		<ProjectReference Include="RimBridgeServer.Extensions.Abstractions\RimBridgeServer.Extensions.Abstractions.csproj" />
 	</ItemGroup>

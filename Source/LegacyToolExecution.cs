@@ -5,11 +5,13 @@ using System.Linq;
 using System.Reflection;
 using Lib.GAB.Tools;
 using RimBridgeServer.Contracts;
+using RimBridgeServer.Core;
 
 namespace RimBridgeServer;
 
 internal static class LegacyToolExecution
 {
+    private static readonly OperationRunner Runner = new(new MainThreadDispatcher());
     private static readonly Dictionary<string, string> ToolIdsByMemberName = typeof(RimBridgeTools)
         .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
         .Select(method => new { Method = method, Attribute = method.GetCustomAttribute<ToolAttribute>() })
@@ -19,36 +21,22 @@ internal static class LegacyToolExecution
     public static object Run(Func<object> func, bool marshalToMainThread, string memberName)
     {
         var capabilityId = ResolveCapabilityId(memberName);
-        var operationId = "op_" + Guid.NewGuid().ToString("N");
-        var startedAtUtc = DateTimeOffset.UtcNow;
-
-        try
+        var envelope = Runner.Run(func, new OperationExecutionOptions
         {
-            var result = marshalToMainThread
-                ? RimBridgeMainThread.Invoke(func, timeoutMs: 10000)
-                : func();
-
-            var envelope = OperationEnvelope.Completed(operationId, capabilityId, startedAtUtc, result);
-            return ComposeLegacyResponse(result, envelope);
-        }
-        catch (Exception ex)
-        {
-            var root = ex.InnerException ?? ex;
-            var failure = new
+            CapabilityId = capabilityId,
+            MarshalToMainThread = marshalToMainThread,
+            TimeoutMs = 10000,
+            FailureCode = "tool.failed"
+        });
+        var payload = envelope.Success
+            ? envelope.Result
+            : new
             {
                 success = false,
-                message = root.Message,
-                exception = ex.ToString()
+                message = envelope.Error?.Message ?? "The tool failed.",
+                exception = envelope.Error?.Details?.ToString()
             };
-            var envelope = OperationEnvelope.Failed(operationId, capabilityId, startedAtUtc, new OperationError
-            {
-                Code = "tool.failed",
-                Message = root.Message,
-                ExceptionType = root.GetType().FullName ?? root.GetType().Name,
-                Details = ex.ToString()
-            }, failure);
-            return ComposeLegacyResponse(failure, envelope);
-        }
+        return ComposeLegacyResponse(payload, envelope);
     }
 
     private static string ResolveCapabilityId(string memberName)
