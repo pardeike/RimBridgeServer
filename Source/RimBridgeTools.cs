@@ -88,6 +88,43 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pause), pause)));
     }
 
+    [Tool("rimworld/list_debug_action_roots", Description = "List top-level RimWorld debug action roots using stable internal debug-action paths")]
+    public object ListDebugActionRoots([ToolParameter(Description = "Include roots that are currently hidden in the active game state")] bool includeHidden = false)
+    {
+        return InvokeAlias(Arguments((nameof(includeHidden), includeHidden)));
+    }
+
+    [Tool("rimworld/list_debug_action_children", Description = "List direct children of a RimWorld debug action path")]
+    public object ListDebugActionChildren(
+        [ToolParameter(Description = "Stable debug action path returned by the discovery tools")] string path,
+        [ToolParameter(Description = "Include child nodes that are currently hidden in the active game state")] bool includeHidden = false)
+    {
+        return InvokeAlias(Arguments((nameof(path), path), (nameof(includeHidden), includeHidden)));
+    }
+
+    [Tool("rimworld/get_debug_action", Description = "Get metadata for one RimWorld debug action path and, optionally, its immediate children")]
+    public object GetDebugAction(
+        [ToolParameter(Description = "Stable debug action path returned by the discovery tools")] string path,
+        [ToolParameter(Description = "Include immediate child nodes in the response")] bool includeChildren = true,
+        [ToolParameter(Description = "Include hidden child nodes when includeChildren is true")] bool includeHiddenChildren = false)
+    {
+        return InvokeAlias(Arguments((nameof(path), path), (nameof(includeChildren), includeChildren), (nameof(includeHiddenChildren), includeHiddenChildren)));
+    }
+
+    [Tool("rimworld/execute_debug_action", Description = "Execute a directly supported RimWorld debug action leaf by stable path")]
+    public object ExecuteDebugAction([ToolParameter(Description = "Stable debug action path returned by the discovery tools")] string path)
+    {
+        return InvokeAlias(Arguments((nameof(path), path)));
+    }
+
+    [Tool("rimworld/set_debug_setting", Description = "Set a RimWorld debug setting toggle by stable path to a deterministic on/off state")]
+    public object SetDebugSetting(
+        [ToolParameter(Description = "Stable debug setting path returned by the discovery tools")] string path,
+        [ToolParameter(Description = "Desired enabled state")] bool enabled)
+    {
+        return InvokeAlias(Arguments((nameof(path), path), (nameof(enabled), enabled)));
+    }
+
     [Tool("rimworld/get_ui_state", Description = "Get the current RimWorld window stack and input state for background-safe UI automation")]
     public object GetUiState()
     {

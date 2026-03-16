@@ -18,6 +18,7 @@ internal static class SmokeScenarioCatalog
 {
     public const string DebugGameLoadScenarioName = "debug-game-load";
     public const string ContextMenuCancelRoundTripScenarioName = "context-menu-cancel-roundtrip";
+    public const string DebugActionDiscoveryScenarioName = "debug-action-discovery";
     public const string ScreenTargetClickRoundTripScenarioName = "screen-target-click-roundtrip";
     public const string ScreenTargetClipScenarioName = "screen-target-clip";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
@@ -39,6 +40,12 @@ internal static class SmokeScenarioCatalog
                 Name = ContextMenuCancelRoundTripScenarioName,
                 Description = "Ensure a playable game exists, open a real context menu, and dismiss it again through background-safe semantic input.",
                 RunAsync = RunContextMenuCancelRoundTripAsync
+            },
+            [DebugActionDiscoveryScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = DebugActionDiscoveryScenarioName,
+                Description = "Ensure a playable game exists, discover debug-action roots and children, then execute one low-side-effect direct leaf action by stable path.",
+                RunAsync = RunDebugActionDiscoveryAsync
             },
             [ScreenTargetClickRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -132,6 +139,121 @@ internal static class SmokeScenarioCatalog
             "final_bridge_status",
             "collect_operation_events",
             "collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunDebugActionDiscoveryAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("debug_actions.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("debug_actions.snapshot_bridge_status", cancellationToken);
+
+        var roots = await context.CallGameToolAsync("debug_actions.list_roots", "rimworld/list_debug_action_roots", new
+        {
+            includeHidden = false
+        }, cancellationToken);
+        context.EnsureSucceeded(roots, "Listing RimWorld debug-action roots");
+
+        var rootArray = JsonNodeHelpers.ReadArray(roots.StructuredContent, "roots");
+        if (rootArray.Count == 0)
+            throw new InvalidOperationException("Debug-action discovery returned no visible roots.");
+
+        var outputRootPath = ResolveDebugActionRootPath(rootArray, "Outputs");
+        var outputChildren = await context.CallGameToolAsync("debug_actions.list_output_children", "rimworld/list_debug_action_children", new
+        {
+            path = outputRootPath,
+            includeHidden = false
+        }, cancellationToken);
+        context.EnsureSucceeded(outputChildren, $"Listing debug-action children under '{outputRootPath}'");
+
+        var outputChildArray = JsonNodeHelpers.ReadArray(outputChildren.StructuredContent, "children");
+        if (outputChildArray.Count == 0)
+            throw new InvalidOperationException($"Debug-action root '{outputRootPath}' did not expose any visible child nodes.");
+
+        var executablePath = ResolveExecutableDebugActionPath(outputChildArray);
+        var executableNode = await context.CallGameToolAsync("debug_actions.get_executable", "rimworld/get_debug_action", new
+        {
+            path = executablePath,
+            includeChildren = false
+        }, cancellationToken);
+        context.EnsureSucceeded(executableNode, $"Reading debug-action metadata for '{executablePath}'");
+
+        if (JsonNodeHelpers.ReadBoolean(executableNode.StructuredContent, "node", "execution", "supported") != true)
+            throw new InvalidOperationException($"Debug action '{executablePath}' was not reported as directly executable.");
+
+        var execute = await context.CallGameToolAsync("debug_actions.execute", "rimworld/execute_debug_action", new
+        {
+            path = executablePath
+        }, cancellationToken);
+        context.EnsureSucceeded(execute, $"Executing debug action '{executablePath}'");
+
+        var executedPath = JsonNodeHelpers.ReadString(execute.StructuredContent, "path");
+        if (!string.Equals(executablePath, executedPath, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Debug action execution returned path '{executedPath}' instead of '{executablePath}'.");
+
+        var executeEffects = JsonNodeHelpers.GetPath(execute.StructuredContent, "effects");
+        if (executeEffects == null)
+            throw new InvalidOperationException($"Debug action '{executablePath}' did not return execution effects.");
+
+        var settingsRootPath = ResolveDebugActionRootPath(rootArray, "Settings");
+        var settingChildren = await context.CallGameToolAsync("debug_actions.list_setting_children", "rimworld/list_debug_action_children", new
+        {
+            path = settingsRootPath,
+            includeHidden = false
+        }, cancellationToken);
+        context.EnsureSucceeded(settingChildren, $"Listing debug-action children under '{settingsRootPath}'");
+
+        var settingChildArray = JsonNodeHelpers.ReadArray(settingChildren.StructuredContent, "children");
+        var settingPath = ResolveSafeDebugSettingPath(settingChildArray);
+        var settingNode = await context.CallGameToolAsync("debug_actions.get_setting", "rimworld/get_debug_action", new
+        {
+            path = settingPath,
+            includeChildren = false
+        }, cancellationToken);
+        context.EnsureSucceeded(settingNode, $"Reading debug setting '{settingPath}'");
+
+        var originalSettingValue = JsonNodeHelpers.ReadBoolean(settingNode.StructuredContent, "node", "on") == true;
+
+        var flipSetting = await context.CallGameToolAsync("debug_actions.flip_setting", "rimworld/set_debug_setting", new
+        {
+            path = settingPath,
+            enabled = !originalSettingValue
+        }, cancellationToken);
+        context.EnsureSucceeded(flipSetting, $"Setting debug toggle '{settingPath}' to '{!originalSettingValue}'");
+
+        if (JsonNodeHelpers.ReadBoolean(flipSetting.StructuredContent, "value") != !originalSettingValue)
+            throw new InvalidOperationException($"Debug setting '{settingPath}' did not report the requested value after the first toggle.");
+
+        var restoreSetting = await context.CallGameToolAsync("debug_actions.restore_setting", "rimworld/set_debug_setting", new
+        {
+            path = settingPath,
+            enabled = originalSettingValue
+        }, cancellationToken);
+        context.EnsureSucceeded(restoreSetting, $"Restoring debug toggle '{settingPath}' to '{originalSettingValue}'");
+
+        if (JsonNodeHelpers.ReadBoolean(restoreSetting.StructuredContent, "value") != originalSettingValue)
+            throw new InvalidOperationException($"Debug setting '{settingPath}' did not restore its original value.");
+
+        context.SetSummaryValue("outputRootPath", outputRootPath);
+        context.SetSummaryValue("executedPath", executablePath);
+        context.SetSummaryValue("settingsRootPath", settingsRootPath);
+        context.SetSummaryValue("settingPath", settingPath);
+        context.SetSummaryValue("rootCount", rootArray.Count.ToString());
+        context.SetSummaryValue("outputChildCount", outputChildArray.Count.ToString());
+        context.SetSummaryValue("settingChildCount", settingChildArray.Count.ToString());
+        context.SetScenarioData("roots", new JsonArray(rootArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+        context.SetScenarioData("outputChildren", new JsonArray(outputChildArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+        context.SetScenarioData("settingChildren", new JsonArray(settingChildArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+        context.SetScenarioData("execute", execute.StructuredContent);
+        context.SetScenarioData("flipSetting", flipSetting.StructuredContent);
+        context.SetScenarioData("restoreSetting", restoreSetting.StructuredContent);
+
+        var observation = await observationWindow.CaptureAsync(
+            "debug_actions.final_bridge_status",
+            "debug_actions.collect_operation_events",
+            "debug_actions.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }
@@ -799,6 +921,71 @@ internal static class SmokeScenarioCatalog
     {
         var saves = JsonNodeHelpers.ReadArray(structuredContent, "saves");
         return saves.Any(save => string.Equals(JsonNodeHelpers.ReadString(save, "name"), saveName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string ResolveDebugActionRootPath(IReadOnlyList<JsonNode?> roots, string preferredPath)
+    {
+        foreach (var root in roots)
+        {
+            var path = JsonNodeHelpers.ReadString(root, "path");
+            if (string.Equals(path, preferredPath, StringComparison.Ordinal))
+                return path;
+        }
+
+        foreach (var root in roots)
+        {
+            var childCount = JsonNodeHelpers.ReadInt32(root, "visibleChildCount") ?? JsonNodeHelpers.ReadInt32(root, "childCount");
+            var path = JsonNodeHelpers.ReadString(root, "path");
+            if (!string.IsNullOrWhiteSpace(path) && childCount.GetValueOrDefault() > 0)
+                return path;
+        }
+
+        throw new InvalidOperationException("No usable debug-action root path was returned by the bridge.");
+    }
+
+    private static string ResolveExecutableDebugActionPath(IReadOnlyList<JsonNode?> children)
+    {
+        foreach (var child in children)
+        {
+            var path = JsonNodeHelpers.ReadString(child, "path");
+            if (string.Equals(path, @"Outputs\Tick Rates", StringComparison.Ordinal))
+                return path;
+        }
+
+        foreach (var child in children)
+        {
+            if (JsonNodeHelpers.ReadBoolean(child, "execution", "supported") != true)
+                continue;
+
+            var path = JsonNodeHelpers.ReadString(child, "path");
+            if (!string.IsNullOrWhiteSpace(path))
+                return path;
+        }
+
+        throw new InvalidOperationException("The chosen debug-action root did not expose any directly executable child actions.");
+    }
+
+    private static string ResolveSafeDebugSettingPath(IReadOnlyList<JsonNode?> children)
+    {
+        foreach (var child in children)
+        {
+            var path = JsonNodeHelpers.ReadString(child, "path");
+            if (string.Equals(path, @"Settings\Show Architect Menu Order", StringComparison.Ordinal))
+                return path;
+        }
+
+        foreach (var child in children)
+        {
+            var path = JsonNodeHelpers.ReadString(child, "path");
+            if (string.IsNullOrWhiteSpace(path))
+                continue;
+            if (JsonNodeHelpers.ReadBoolean(child, "hasSettingsToggle") != true)
+                continue;
+            if (path.StartsWith(@"Settings\Show ", StringComparison.Ordinal))
+                return path;
+        }
+
+        throw new InvalidOperationException("The Settings tab did not expose a safe toggle suitable for the debug-action smoke scenario.");
     }
 
     private static async Task<(ToolInvocationResult OpenContextMenu, (int X, int Z) Cell, int DirectOptionIndex)> OpenVanillaContextMenuNearPawnAsync(

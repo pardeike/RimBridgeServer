@@ -427,6 +427,44 @@ Next:
 
 - Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots
 
+## 2026-03-16 - Step A14 - Debug Menu Graph, Output Effects, and Settings Toggles
+
+Status:
+
+- completed
+
+Completed:
+
+- added a dedicated debug-actions module in [`DebugActionsCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/DebugActionsCapabilityModule.cs) and the shared runtime helper in [`RimWorldDebugActions.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldDebugActions.cs) so RimBridgeServer can enumerate and execute the same internal node graph that powers RimWorld's debug dialog
+- extended [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) with `rimworld/list_debug_action_roots`, `rimworld/list_debug_action_children`, `rimworld/get_debug_action`, `rimworld/execute_debug_action`, and `rimworld/set_debug_setting`
+- kept the internal seam generic by path, but surfaced UI-aligned tab metadata for `Actions/tools`, `Settings`, and `Output` so clients can stay close to the in-game dialog while still using stable paths like `Outputs\\Tick Rates`
+- added shared execution policy coverage in [`DebugActionExecutionPolicy.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/DebugActionExecutionPolicy.cs) and [`DebugActionExecutionPolicyTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/DebugActionExecutionPolicyTests.cs)
+- made debug-action execution report side effects instead of only success/failure by capturing log deltas and opened/closed RimWorld windows around the action call
+- added deterministic settings semantics on top of the same graph: settings nodes now expose current state through `get_debug_action`, and `rimworld/set_debug_setting` drives them to an explicit target value instead of relying on blind toggle calls
+- added a new live-smoke scenario, `debug-action-discovery`, in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) that discovers roots, executes a low-side-effect output action, and flips then restores a safe debug setting
+- improved the live harness in [`SmokeHarness.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeHarness.cs) with bounded `games.connect` retries after game start so fresh launches do not fail immediately on the first GABP timing race
+- documented the new debug-menu surface in [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md)
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- manual real-instance validation through the ambient GABS MCP session after restarting RimWorld with the rebuilt mod:
+  - `rimworld/list_debug_action_roots`
+  - `rimbridge/wait_for_game_loaded`
+  - `rimworld/execute_debug_action` with `Outputs\\Tick Rates`
+  - `rimworld/set_debug_setting` with `Settings\\Show Architect Menu Order` to `true`, then back to `false`
+
+Notes:
+
+- the real-instance validation confirmed the user-facing debug dialog mapping: the bridge now reports `tabId` / `tabTitle` for `actions`, `settings`, and `output`, and output execution correctly surfaced side effects by reporting a newly opened `LudeonTK.Window_DebugTable`
+- `rimworld/set_debug_setting` was validated against `Settings\\Show Architect Menu Order`, which changed deterministically and restored cleanly
+- the repo-owned `scripts/live-smoke.sh --scenario debug-action-discovery` path is still blocked under the latest standalone `gabs server stdio` launch flow in this environment because the isolated harness tried to `games.connect` on port `49152` while `Player.log` reported `GABP server connected to GABS on port 49153`; that points to an external GABS launch/connect mismatch rather than a RimBridgeServer feature failure
+
+Next:
+
+- Step A15: add explicit god-mode control plus Architect/designator discovery and application on top of `DesignationCategoryDef`, `DesignatorManager`, and `DebugSettings.godMode`
+
 ## 2026-03-16 - Step A13 - Target-Relative Screenshot Clipping
 
 Status:

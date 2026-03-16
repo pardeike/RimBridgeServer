@@ -829,4 +829,4 @@ Tests:
 
 ## Immediate Next Step
 
-The next implementation step should be generic debug-action mapping and execution, followed by god-mode designator discovery and application before the script runner. That order increases the bridge's expressive power faster: once debug actions and designators are in place, a later batch/script layer can build whole structures and richer test fixtures instead of only chaining small primitives.
+The next implementation step should be explicit god-mode control plus Architect/designator discovery and application, followed by the script runner. The debug dialog is now the right internal seam for `Actions/tools`, `Settings`, and `Output`; the fastest remaining power increase comes from mapping `DesignationCategoryDef`, `DesignatorManager`, and designator application so the bridge can place real structures and blueprints, especially in god mode, before a later batch/script layer starts composing those actions.

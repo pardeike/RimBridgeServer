@@ -75,6 +75,11 @@ Your external program can send these commands to RimBridgeServer:
 ### Game control
 - **`rimworld/get_game_info`** - Get information about the current game
 - **`rimworld/pause_game`** - Pause or unpause the game
+- **`rimworld/list_debug_action_roots`** - List the top-level debug menu tabs and their stable internal paths
+- **`rimworld/list_debug_action_children`** - List direct children under one debug menu path
+- **`rimworld/get_debug_action`** - Get one debug node with metadata such as tab, toggle state, and execution mode
+- **`rimworld/execute_debug_action`** - Execute a directly supported debug action and return captured side effects such as logs and opened windows
+- **`rimworld/set_debug_setting`** - Set a debug settings toggle to a deterministic on/off state by stable path
 - **`rimworld/get_ui_state`** - Inspect the current RimWorld window stack and UI/input state
 - **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
 - **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
@@ -115,6 +120,14 @@ Your external program can send these commands to RimBridgeServer:
 `rimworld/start_debug_game` mirrors RimWorld's own dev quick-test flow. It only works from the main menu and returns a detailed state snapshot when the request is rejected.
 
 `rimworld/open_context_menu` supports `mode: auto`, `mode: achtung`, and `mode: vanilla`. When Achtung is loaded, `auto` prefers Achtung's merged multi-pawn menu via reflection so external tools can reproduce issues against the same action builder the player sees in-game.
+
+### Debug menu mapping
+
+`rimworld/list_debug_action_roots` exposes the same internal graph that powers RimWorld's debug dialog, including the three important tabs: `Actions/tools`, `Settings`, and `Output`. The bridge keeps the stable internal paths such as `Outputs\\Tick Rates` and `Settings\\Show Architect Menu Order`, while also returning normalized tab metadata so clients can stay close to the in-game UI model.
+
+`rimworld/execute_debug_action` is intentionally side-effect aware. Instead of pretending every debug action has a typed function return, the bridge captures what actually happened around the execution: new log entries, window opens/closes, and before/after game state snapshots. This makes the `Output` tab useful without bespoke wrappers for each individual output command.
+
+`rimworld/set_debug_setting` builds deterministic semantics on top of the same graph. Settings nodes already expose their current `on` state and a direct toggle action, so the bridge can move them to an explicit target value and report whether anything changed.
 
 ### Example workflow for Achtung Issue #95
 

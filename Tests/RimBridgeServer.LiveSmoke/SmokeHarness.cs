@@ -56,6 +56,7 @@ internal static class SmokeHarness
     {
         WriteIndented = true
     };
+    private const int ConnectRetryDelayMs = 1000;
 
     public static async Task<SmokeRunReport> RunAsync(CliOptions options, CancellationToken cancellationToken)
     {
@@ -101,8 +102,7 @@ internal static class SmokeHarness
                 context.Note("Reused an already running RimWorld instance.");
             }
 
-            var connect = await context.CallServerToolAsync("connect_game", "games.connect", new { gameId = options.GameId }, cancellationToken);
-            context.EnsureSucceeded(connect, "Connecting to GABP");
+            await ConnectGameAsync(context, options.GameId, cancellationToken);
 
             await scenario.RunAsync(context, cancellationToken);
             report.Success = true;
@@ -223,6 +223,38 @@ internal static class SmokeHarness
     private static bool IsStoppedStatus(string text)
     {
         return text.Contains(": stopped", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task ConnectGameAsync(SmokeScenarioContext context, string gameId, CancellationToken cancellationToken)
+    {
+        var connectDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30);
+        var attempt = 0;
+
+        while (true)
+        {
+            attempt++;
+            var stepName = attempt == 1 ? "connect_game" : $"connect_game_retry_{attempt}";
+            var connect = await context.CallServerToolAsync(stepName, "games.connect", new { gameId }, cancellationToken);
+            if (connect.Success)
+                return;
+
+            if (!ShouldRetryConnect(connect.Text, connect.Message) || DateTimeOffset.UtcNow >= connectDeadlineUtc)
+            {
+                context.EnsureSucceeded(connect, "Connecting to GABP");
+                return;
+            }
+
+            context.Note($"Waiting for the RimWorld GABP server to finish opening before connect retry {attempt + 1}.");
+            await Task.Delay(ConnectRetryDelayMs, cancellationToken);
+        }
+    }
+
+    private static bool ShouldRetryConnect(string text, string message)
+    {
+        var combined = string.Join(" ", new[] { text, message }.Where(value => string.IsNullOrWhiteSpace(value) == false));
+        return combined.Contains("Failed to connect to GABP server", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("connection refused", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("timed out", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<string> SaveReportAsync(SmokeRunReport report, string reportDirectory, CancellationToken cancellationToken)
