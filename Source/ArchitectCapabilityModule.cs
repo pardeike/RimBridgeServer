@@ -42,6 +42,36 @@ internal sealed class ArchitectCapabilityModule
         return RimWorldArchitect.ListAreasResponse(includeEmpty, includeAssignableOnly);
     }
 
+    public object CreateAllowedArea(string label = null, bool select = true)
+    {
+        return RimWorldArchitect.CreateAllowedAreaResponse(label, select);
+    }
+
+    public object SelectAllowedArea(string areaId = null)
+    {
+        return RimWorldArchitect.SelectAllowedAreaResponse(areaId);
+    }
+
+    public object SetZoneTarget(string designatorId, string zoneId = null)
+    {
+        return RimWorldArchitect.SetZoneTargetResponse(designatorId, zoneId);
+    }
+
+    public object ClearArea(string areaId)
+    {
+        return RimWorldArchitect.ClearAreaResponse(areaId);
+    }
+
+    public object DeleteArea(string areaId)
+    {
+        return RimWorldArchitect.DeleteAreaResponse(areaId);
+    }
+
+    public object DeleteZone(string zoneId)
+    {
+        return RimWorldArchitect.DeleteZoneResponse(zoneId);
+    }
+
     public object GetCellInfo(int x, int z)
     {
         return RimWorldArchitect.GetCellInfoResponse(x, z);

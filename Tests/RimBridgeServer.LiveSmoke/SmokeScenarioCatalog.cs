@@ -20,6 +20,7 @@ internal static class SmokeScenarioCatalog
     public const string ContextMenuCancelRoundTripScenarioName = "context-menu-cancel-roundtrip";
     public const string DebugActionDiscoveryScenarioName = "debug-action-discovery";
     public const string ArchitectFloorDropdownScenarioName = "architect-floor-dropdown";
+    public const string ArchitectStatefulTargetingScenarioName = "architect-stateful-targeting";
     public const string ArchitectWallPlacementScenarioName = "architect-wall-placement";
     public const string ArchitectZoneAreaDragScenarioName = "architect-zone-area-drag";
     public const string ScreenTargetClickRoundTripScenarioName = "screen-target-click-roundtrip";
@@ -55,6 +56,12 @@ internal static class SmokeScenarioCatalog
                 Name = ArchitectFloorDropdownScenarioName,
                 Description = "Ensure a playable game exists, then verify a dropdown child floor designator can be selected and applied over a rectangle.",
                 RunAsync = RunArchitectFloorDropdownAsync
+            },
+            [ArchitectStatefulTargetingScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ArchitectStatefulTargetingScenarioName,
+                Description = "Ensure a playable game exists, then verify explicit allowed-area selection, existing-zone targeting, and cleanup helpers.",
+                RunAsync = RunArchitectStatefulTargetingAsync
             },
             [ArchitectWallPlacementScenarioName] = new SmokeScenarioDefinition
             {
@@ -1451,6 +1458,456 @@ internal static class SmokeScenarioCatalog
         context.ApplyObservationWindow(observation);
     }
 
+    private static async Task RunArchitectStatefulTargetingAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("architect_state.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("architect_state.snapshot_bridge_status", cancellationToken);
+
+        string? createdAllowedAreaId = null;
+        string? createdZoneId = null;
+        string? stockpileDesignatorId = null;
+        (int X, int Z)? allowedAreaRect = null;
+        ((int X, int Z) First, (int X, int Z) Second)? zoneRects = null;
+        Exception? scenarioError = null;
+
+        try
+        {
+            var categories = await context.CallGameToolAsync("architect_state.list_categories", "rimworld/list_architect_categories", new
+            {
+                includeHidden = false,
+                includeEmpty = false
+            }, cancellationToken);
+            context.EnsureSucceeded(categories, "Listing architect categories for the stateful targeting scenario");
+
+            var categoryArray = JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories");
+            var zoneCategoryId = ResolveArchitectCategoryId(categoryArray, "Zone");
+
+            var designators = await context.CallGameToolAsync("architect_state.list_zone_designators", "rimworld/list_architect_designators", new
+            {
+                categoryId = zoneCategoryId,
+                includeHidden = false
+            }, cancellationToken);
+            context.EnsureSucceeded(designators, "Listing zone designators for the stateful targeting scenario");
+
+            var designatorArray = JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators");
+            stockpileDesignatorId = ResolveArchitectDesignatorIdByClassName(designatorArray, "RimWorld.Designator_ZoneAddStockpile_Resources");
+            var allowedAreaExpandDesignatorId = ResolveArchitectDesignatorIdByClassName(designatorArray, "RimWorld.Designator_AreaAllowedExpand");
+
+            var colonists = await context.CallGameToolAsync("architect_state.list_colonists", "rimworld/list_colonists", new
+            {
+                currentMapOnly = true
+            }, cancellationToken);
+            context.EnsureSucceeded(colonists, "Listing current-map colonists for the stateful targeting scenario");
+
+            var zonesBefore = await context.CallGameToolAsync("architect_state.list_zones_before", "rimworld/list_zones", new
+            {
+                includeHidden = false,
+                includeEmpty = false
+            }, cancellationToken);
+            context.EnsureSucceeded(zonesBefore, "Listing zones before the stateful targeting scenario");
+            var zoneCountBefore = JsonNodeHelpers.ReadInt32(zonesBefore.StructuredContent, "count").GetValueOrDefault();
+
+            var areasBefore = await context.CallGameToolAsync("architect_state.list_areas_before", "rimworld/list_areas", new
+            {
+                includeEmpty = true,
+                includeAssignableOnly = false
+            }, cancellationToken);
+            context.EnsureSucceeded(areasBefore, "Listing areas before the stateful targeting scenario");
+            var areaArrayBefore = JsonNodeHelpers.ReadArray(areasBefore.StructuredContent, "areas");
+            var areaCountBefore = JsonNodeHelpers.ReadInt32(areasBefore.StructuredContent, "count").GetValueOrDefault();
+
+            var allowedAreaLabel = "RimBridge Live Allowed " + DateTime.UtcNow.ToString("HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+            var createAllowedArea = await context.CallGameToolAsync("architect_state.create_allowed_area", "rimworld/create_allowed_area", new
+            {
+                label = allowedAreaLabel,
+                select = true
+            }, cancellationToken);
+            context.EnsureSucceeded(createAllowedArea, $"Creating allowed area '{allowedAreaLabel}'");
+
+            createdAllowedAreaId = JsonNodeHelpers.ReadString(createAllowedArea.StructuredContent, "area", "id");
+            if (string.IsNullOrWhiteSpace(createdAllowedAreaId))
+                throw new InvalidOperationException("Expected create_allowed_area to return the new area id.");
+
+            var selectAllowedArea = await context.CallGameToolAsync("architect_state.select_allowed_area", "rimworld/select_allowed_area", new
+            {
+                areaId = createdAllowedAreaId
+            }, cancellationToken);
+            context.EnsureSucceeded(selectAllowedArea, $"Selecting allowed area '{createdAllowedAreaId}'");
+            if (!string.Equals(JsonNodeHelpers.ReadString(selectAllowedArea.StructuredContent, "selectedAllowedArea", "id"), createdAllowedAreaId, StringComparison.Ordinal))
+                throw new InvalidOperationException("select_allowed_area did not report the requested allowed area as selected.");
+
+            var designatorState = await context.CallGameToolAsync("architect_state.get_designator_state_after_select_area", "rimworld/get_designator_state", new { }, cancellationToken);
+            context.EnsureSucceeded(designatorState, "Reading architect state after selecting the allowed area");
+            if (!string.Equals(JsonNodeHelpers.ReadString(designatorState.StructuredContent, "designatorState", "selectedAllowedArea", "id"), createdAllowedAreaId, StringComparison.Ordinal))
+                throw new InvalidOperationException("get_designator_state did not surface the selected allowed area.");
+
+            var allowedAreaCandidateSet = new HashSet<string>(StringComparer.Ordinal);
+            allowedAreaRect = await FindAcceptedArchitectPlacementCellAsync(
+                context,
+                "architect_state.find_allowed_area_rect",
+                allowedAreaExpandDesignatorId,
+                colonists.StructuredContent,
+                allowedAreaCandidateSet,
+                cancellationToken,
+                width: 2,
+                height: 2,
+                minRadius: 28,
+                maxRadius: 44,
+                preflightAsync: (innerContext, x, z, width, height, token) => RectangleHasNoAreaAsync(innerContext, x, z, width, height, createdAllowedAreaId, token));
+
+            var allowedAreaPlacement = await context.CallGameToolAsync("architect_state.apply_allowed_area", "rimworld/apply_architect_designator", new
+            {
+                designatorId = allowedAreaExpandDesignatorId,
+                x = allowedAreaRect.Value.X,
+                z = allowedAreaRect.Value.Z,
+                width = 2,
+                height = 2,
+                keepSelected = false
+            }, cancellationToken);
+            context.EnsureSucceeded(allowedAreaPlacement, "Applying the selected allowed-area designator");
+
+            var allowedAreaCellInfo = await context.CallGameToolAsync("architect_state.get_allowed_area_cell_info", "rimworld/get_cell_info", new
+            {
+                x = allowedAreaRect.Value.X,
+                z = allowedAreaRect.Value.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(allowedAreaCellInfo, $"Reading cell info for allowed-area cell ({allowedAreaRect.Value.X}, {allowedAreaRect.Value.Z})");
+            AssertCellContainsAreaId(allowedAreaCellInfo.StructuredContent, createdAllowedAreaId);
+
+            var areasAfterPlacement = await context.CallGameToolAsync("architect_state.list_areas_after_place", "rimworld/list_areas", new
+            {
+                includeEmpty = true,
+                includeAssignableOnly = false
+            }, cancellationToken);
+            context.EnsureSucceeded(areasAfterPlacement, "Listing areas after allowed-area placement");
+            var areaCountAfterCreate = JsonNodeHelpers.ReadInt32(areasAfterPlacement.StructuredContent, "count").GetValueOrDefault();
+            if (areaCountAfterCreate <= areaCountBefore)
+                throw new InvalidOperationException("Expected creating a custom allowed area to increase the visible area count.");
+
+            var areaArrayAfterPlacement = JsonNodeHelpers.ReadArray(areasAfterPlacement.StructuredContent, "areas");
+            var createdAreaAfterPlacement = ResolveAreaById(areaArrayAfterPlacement, createdAllowedAreaId);
+            if (JsonNodeHelpers.ReadInt32(createdAreaAfterPlacement, "cellCount").GetValueOrDefault() < 4)
+                throw new InvalidOperationException("Expected the created allowed area to cover the full 2x2 placement rectangle.");
+
+            var zoneCandidateSet = new HashSet<string>(StringComparer.Ordinal);
+            var firstZoneRect = await FindAcceptedArchitectPlacementCellAsync(
+                context,
+                "architect_state.find_first_zone_rect",
+                stockpileDesignatorId,
+                colonists.StructuredContent,
+                zoneCandidateSet,
+                cancellationToken,
+                width: 3,
+                height: 2,
+                minRadius: 20,
+                maxRadius: 34,
+                preflightAsync: RectangleHasNoZoneAsync);
+
+            var firstZonePlacement = await context.CallGameToolAsync("architect_state.apply_first_zone", "rimworld/apply_architect_designator", new
+            {
+                designatorId = stockpileDesignatorId,
+                x = firstZoneRect.X,
+                z = firstZoneRect.Z,
+                width = 3,
+                height = 2,
+                keepSelected = false
+            }, cancellationToken);
+            context.EnsureSucceeded(firstZonePlacement, "Creating the initial stockpile zone");
+
+            var firstZoneCellInfo = await context.CallGameToolAsync("architect_state.get_first_zone_cell_info", "rimworld/get_cell_info", new
+            {
+                x = firstZoneRect.X,
+                z = firstZoneRect.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(firstZoneCellInfo, $"Reading cell info for initial stockpile zone cell ({firstZoneRect.X}, {firstZoneRect.Z})");
+
+            createdZoneId = JsonNodeHelpers.ReadString(firstZoneCellInfo.StructuredContent, "cell", "zone", "id");
+            if (string.IsNullOrWhiteSpace(createdZoneId))
+                throw new InvalidOperationException("Expected the initial stockpile zone cell to return a zone id.");
+
+            var zonesAfterCreate = await context.CallGameToolAsync("architect_state.list_zones_after_create", "rimworld/list_zones", new
+            {
+                includeHidden = false,
+                includeEmpty = false
+            }, cancellationToken);
+            context.EnsureSucceeded(zonesAfterCreate, "Listing zones after creating the first stockpile zone");
+            var zoneCountAfterCreate = JsonNodeHelpers.ReadInt32(zonesAfterCreate.StructuredContent, "count").GetValueOrDefault();
+            if (zoneCountAfterCreate <= zoneCountBefore)
+                throw new InvalidOperationException("Expected the first stockpile zone to increase the zone count.");
+
+            var zonesAfterCreateArray = JsonNodeHelpers.ReadArray(zonesAfterCreate.StructuredContent, "zones");
+            var createdZoneAfterCreate = ResolveZoneById(zonesAfterCreateArray, createdZoneId);
+            var createdZoneCellCountBeforeExpand = JsonNodeHelpers.ReadInt32(createdZoneAfterCreate, "cellCount").GetValueOrDefault();
+            if (createdZoneCellCountBeforeExpand < 6)
+                throw new InvalidOperationException("Expected the initial stockpile zone to cover the full 3x2 rectangle.");
+
+            var setZoneTarget = await context.CallGameToolAsync("architect_state.set_zone_target", "rimworld/set_zone_target", new
+            {
+                designatorId = stockpileDesignatorId,
+                zoneId = createdZoneId
+            }, cancellationToken);
+            context.EnsureSucceeded(setZoneTarget, $"Selecting existing zone '{createdZoneId}' as the stockpile target");
+            if (!string.Equals(JsonNodeHelpers.ReadString(setZoneTarget.StructuredContent, "zone", "id"), createdZoneId, StringComparison.Ordinal))
+                throw new InvalidOperationException("set_zone_target did not report the expected zone id.");
+
+            var secondZoneRect = await FindAcceptedArchitectPlacementCellAsync(
+                context,
+                "architect_state.find_second_zone_rect",
+                stockpileDesignatorId,
+                colonists.StructuredContent,
+                zoneCandidateSet,
+                cancellationToken,
+                width: 2,
+                height: 2,
+                minRadius: 36,
+                maxRadius: 52,
+                preflightAsync: RectangleHasNoZoneAsync);
+            zoneRects = (firstZoneRect, secondZoneRect);
+
+            var expandZonePlacement = await context.CallGameToolAsync("architect_state.expand_existing_zone", "rimworld/apply_architect_designator", new
+            {
+                designatorId = stockpileDesignatorId,
+                x = secondZoneRect.X,
+                z = secondZoneRect.Z,
+                width = 2,
+                height = 2,
+                keepSelected = false
+            }, cancellationToken);
+            context.EnsureSucceeded(expandZonePlacement, "Expanding the existing stockpile zone through an explicit zone target");
+
+            var secondZoneCellInfo = await context.CallGameToolAsync("architect_state.get_second_zone_cell_info", "rimworld/get_cell_info", new
+            {
+                x = secondZoneRect.X,
+                z = secondZoneRect.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(secondZoneCellInfo, $"Reading cell info for expanded stockpile zone cell ({secondZoneRect.X}, {secondZoneRect.Z})");
+
+            var reusedZoneId = JsonNodeHelpers.ReadString(secondZoneCellInfo.StructuredContent, "cell", "zone", "id");
+            if (!string.Equals(reusedZoneId, createdZoneId, StringComparison.Ordinal))
+                throw new InvalidOperationException("Expected explicit zone targeting to reuse the existing stockpile zone instead of creating a new zone.");
+
+            var zonesAfterExpand = await context.CallGameToolAsync("architect_state.list_zones_after_expand", "rimworld/list_zones", new
+            {
+                includeHidden = false,
+                includeEmpty = false
+            }, cancellationToken);
+            context.EnsureSucceeded(zonesAfterExpand, "Listing zones after expanding the targeted stockpile zone");
+            var zoneCountAfterExpand = JsonNodeHelpers.ReadInt32(zonesAfterExpand.StructuredContent, "count").GetValueOrDefault();
+            if (zoneCountAfterExpand != zoneCountAfterCreate)
+                throw new InvalidOperationException("Expected expanding an explicitly targeted zone to keep the visible zone count unchanged.");
+
+            var zonesAfterExpandArray = JsonNodeHelpers.ReadArray(zonesAfterExpand.StructuredContent, "zones");
+            var createdZoneAfterExpand = ResolveZoneById(zonesAfterExpandArray, createdZoneId);
+            var createdZoneCellCountAfterExpand = JsonNodeHelpers.ReadInt32(createdZoneAfterExpand, "cellCount").GetValueOrDefault();
+            if (createdZoneCellCountAfterExpand < createdZoneCellCountBeforeExpand + 4)
+                throw new InvalidOperationException("Expected the targeted stockpile zone to grow by at least the 2x2 expansion rectangle.");
+
+            if (context.HumanVerificationEnabled)
+            {
+                var jumpAllowedArea = await context.CallGameToolAsync("architect_state.jump_camera_to_allowed_area", "rimworld/jump_camera_to_cell", new
+                {
+                    x = allowedAreaRect.Value.X,
+                    z = allowedAreaRect.Value.Z
+                }, cancellationToken);
+                context.EnsureSucceeded(jumpAllowedArea, $"Jumping camera to allowed-area cell ({allowedAreaRect.Value.X}, {allowedAreaRect.Value.Z})");
+
+                await context.CaptureHumanVerificationScreenshotAsync(
+                    "human_verify.architect_allowed_area",
+                    "architect_allowed_area",
+                    "A custom allowed area should be visible after selecting it explicitly and applying the allowed-area expand designator.",
+                    [
+                        "A small colored allowed-area overlay should be visible near the center of the map.",
+                        "This area should come from a newly created custom allowed area, not the built-in Home area."
+                    ],
+                    cancellationToken);
+
+                var jumpExpandedZone = await context.CallGameToolAsync("architect_state.jump_camera_to_expanded_zone", "rimworld/jump_camera_to_cell", new
+                {
+                    x = secondZoneRect.X,
+                    z = secondZoneRect.Z
+                }, cancellationToken);
+                context.EnsureSucceeded(jumpExpandedZone, $"Jumping camera to expanded stockpile zone cell ({secondZoneRect.X}, {secondZoneRect.Z})");
+
+                await context.CaptureHumanVerificationScreenshotAsync(
+                    "human_verify.architect_existing_zone_expand",
+                    "architect_existing_zone_expand",
+                    "A stockpile zone overlay should be visible after explicitly targeting an existing zone and expanding it into a second rectangle.",
+                    [
+                        "A stockpile overlay should be visible near the center of the map at the second rectangle.",
+                        "This second patch should belong to the same stockpile zone id created earlier rather than creating a new stockpile."
+                    ],
+                    cancellationToken);
+            }
+
+            context.SetSummaryValue("zoneCategoryId", zoneCategoryId);
+            context.SetSummaryValue("allowedAreaExpandDesignatorId", allowedAreaExpandDesignatorId);
+            context.SetSummaryValue("stockpileDesignatorId", stockpileDesignatorId);
+            context.SetSummaryValue("createdAllowedAreaId", createdAllowedAreaId);
+            context.SetSummaryValue("createdZoneId", createdZoneId);
+            context.SetSummaryValue("allowedAreaRect", $"{allowedAreaRect.Value.X},{allowedAreaRect.Value.Z} 2x2");
+            context.SetSummaryValue("firstZoneRect", $"{firstZoneRect.X},{firstZoneRect.Z} 3x2");
+            context.SetSummaryValue("secondZoneRect", $"{secondZoneRect.X},{secondZoneRect.Z} 2x2");
+            context.SetScenarioData("architectCategories", new JsonArray(categoryArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("zoneDesignators", new JsonArray(designatorArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("areasBefore", areasBefore.StructuredContent);
+            context.SetScenarioData("createAllowedArea", createAllowedArea.StructuredContent);
+            context.SetScenarioData("selectAllowedArea", selectAllowedArea.StructuredContent);
+            context.SetScenarioData("allowedAreaPlacement", allowedAreaPlacement.StructuredContent);
+            context.SetScenarioData("allowedAreaCellInfo", allowedAreaCellInfo.StructuredContent);
+            context.SetScenarioData("areasAfterPlacement", areasAfterPlacement.StructuredContent);
+            context.SetScenarioData("zonesBefore", zonesBefore.StructuredContent);
+            context.SetScenarioData("firstZonePlacement", firstZonePlacement.StructuredContent);
+            context.SetScenarioData("setZoneTarget", setZoneTarget.StructuredContent);
+            context.SetScenarioData("expandZonePlacement", expandZonePlacement.StructuredContent);
+            context.SetScenarioData("zonesAfterExpand", zonesAfterExpand.StructuredContent);
+            context.SetScenarioData("secondZoneCellInfo", secondZoneCellInfo.StructuredContent);
+        }
+        catch (Exception ex)
+        {
+            scenarioError = ex;
+            throw;
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(createdZoneId) && !string.IsNullOrWhiteSpace(stockpileDesignatorId))
+            {
+                try
+                {
+                    var clearZoneTarget = await context.CallGameToolAsync("architect_state.clear_zone_target", "rimworld/set_zone_target", new
+                    {
+                        designatorId = stockpileDesignatorId
+                    }, cancellationToken);
+                    context.EnsureSucceeded(clearZoneTarget, "Clearing the explicit stockpile zone target during cleanup");
+                }
+                catch (Exception cleanupError)
+                {
+                    if (scenarioError is null)
+                        throw;
+
+                    context.Note($"Failed to clear the explicit zone target during cleanup: {cleanupError.Message}");
+                }
+
+                try
+                {
+                    var deleteZone = await context.CallGameToolAsync("architect_state.delete_zone", "rimworld/delete_zone", new
+                    {
+                        zoneId = createdZoneId
+                    }, cancellationToken);
+                    context.EnsureSucceeded(deleteZone, $"Deleting stockpile zone '{createdZoneId}' during cleanup");
+                    context.SetScenarioData("deleteZone", deleteZone.StructuredContent);
+                }
+                catch (Exception cleanupError)
+                {
+                    if (scenarioError is null)
+                        throw;
+
+                    context.Note($"Failed to delete stockpile zone '{createdZoneId}' during cleanup: {cleanupError.Message}");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(createdAllowedAreaId))
+            {
+                try
+                {
+                    var clearArea = await context.CallGameToolAsync("architect_state.clear_area", "rimworld/clear_area", new
+                    {
+                        areaId = createdAllowedAreaId
+                    }, cancellationToken);
+                    context.EnsureSucceeded(clearArea, $"Clearing allowed area '{createdAllowedAreaId}' during cleanup");
+                    context.SetScenarioData("clearArea", clearArea.StructuredContent);
+                }
+                catch (Exception cleanupError)
+                {
+                    if (scenarioError is null)
+                        throw;
+
+                    context.Note($"Failed to clear allowed area '{createdAllowedAreaId}' during cleanup: {cleanupError.Message}");
+                }
+
+                try
+                {
+                    var deleteArea = await context.CallGameToolAsync("architect_state.delete_area", "rimworld/delete_area", new
+                    {
+                        areaId = createdAllowedAreaId
+                    }, cancellationToken);
+                    context.EnsureSucceeded(deleteArea, $"Deleting allowed area '{createdAllowedAreaId}' during cleanup");
+                    context.SetScenarioData("deleteArea", deleteArea.StructuredContent);
+                }
+                catch (Exception cleanupError)
+                {
+                    if (scenarioError is null)
+                        throw;
+
+                    context.Note($"Failed to delete allowed area '{createdAllowedAreaId}' during cleanup: {cleanupError.Message}");
+                }
+            }
+        }
+
+        var areasAfterCleanup = await context.CallGameToolAsync("architect_state.list_areas_after_cleanup", "rimworld/list_areas", new
+        {
+            includeEmpty = true,
+            includeAssignableOnly = false
+        }, cancellationToken);
+        context.EnsureSucceeded(areasAfterCleanup, "Listing areas after cleanup");
+        if (!string.IsNullOrWhiteSpace(createdAllowedAreaId))
+        {
+            var cleanedAreaArray = JsonNodeHelpers.ReadArray(areasAfterCleanup.StructuredContent, "areas");
+            if (cleanedAreaArray.Any(area => string.Equals(JsonNodeHelpers.ReadString(area, "id"), createdAllowedAreaId, StringComparison.Ordinal)))
+                throw new InvalidOperationException("Expected the created allowed area to be deleted during cleanup.");
+        }
+
+        var zonesAfterCleanup = await context.CallGameToolAsync("architect_state.list_zones_after_cleanup", "rimworld/list_zones", new
+        {
+            includeHidden = false,
+            includeEmpty = false
+        }, cancellationToken);
+        context.EnsureSucceeded(zonesAfterCleanup, "Listing zones after cleanup");
+        if (!string.IsNullOrWhiteSpace(createdZoneId))
+        {
+            var cleanedZoneArray = JsonNodeHelpers.ReadArray(zonesAfterCleanup.StructuredContent, "zones");
+            if (cleanedZoneArray.Any(zone => string.Equals(JsonNodeHelpers.ReadString(zone, "id"), createdZoneId, StringComparison.Ordinal)))
+                throw new InvalidOperationException("Expected the targeted stockpile zone to be deleted during cleanup.");
+        }
+
+        if (zoneRects.HasValue)
+        {
+            var postCleanupCellInfo = await context.CallGameToolAsync("architect_state.get_cleanup_zone_cell_info", "rimworld/get_cell_info", new
+            {
+                x = zoneRects.Value.Second.X,
+                z = zoneRects.Value.Second.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(postCleanupCellInfo, $"Reading post-cleanup zone cell info for ({zoneRects.Value.Second.X}, {zoneRects.Value.Second.Z})");
+            if (JsonNodeHelpers.ReadObject(postCleanupCellInfo.StructuredContent, "cell", "zone") != null)
+                throw new InvalidOperationException("Expected the expanded zone cell to report no zone after cleanup.");
+            context.SetScenarioData("postCleanupZoneCellInfo", postCleanupCellInfo.StructuredContent);
+        }
+
+        if (allowedAreaRect.HasValue)
+        {
+            var postCleanupAllowedAreaCellInfo = await context.CallGameToolAsync("architect_state.get_cleanup_area_cell_info", "rimworld/get_cell_info", new
+            {
+                x = allowedAreaRect.Value.X,
+                z = allowedAreaRect.Value.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(postCleanupAllowedAreaCellInfo, $"Reading post-cleanup allowed-area cell info for ({allowedAreaRect.Value.X}, {allowedAreaRect.Value.Z})");
+            if (!string.IsNullOrWhiteSpace(createdAllowedAreaId) && CellContainsAreaId(postCleanupAllowedAreaCellInfo.StructuredContent, createdAllowedAreaId))
+                throw new InvalidOperationException("Expected the created allowed area to no longer cover the cleanup cell.");
+            context.SetScenarioData("postCleanupAllowedAreaCellInfo", postCleanupAllowedAreaCellInfo.StructuredContent);
+        }
+
+        context.SetScenarioData("areasAfterCleanup", areasAfterCleanup.StructuredContent);
+        context.SetScenarioData("zonesAfterCleanup", zonesAfterCleanup.StructuredContent);
+
+        var observation = await observationWindow.CaptureAsync(
+            "architect_state.final_bridge_status",
+            "architect_state.collect_operation_events",
+            "architect_state.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
     private static string ResolveFirstColonistName(JsonNode? structuredContent)
     {
         var colonists = JsonNodeHelpers.ReadArray(structuredContent, "colonists");
@@ -1725,6 +2182,31 @@ internal static class SmokeScenarioCatalog
         return true;
     }
 
+    private static async Task<bool> RectangleHasNoAreaAsync(
+        SmokeScenarioContext context,
+        int x,
+        int z,
+        int width,
+        int height,
+        string areaId,
+        CancellationToken cancellationToken)
+    {
+        foreach (var cell in EnumerateRectangleCells(x, z, width, height))
+        {
+            var response = await context.CallGameToolAsync($"architect_state.preflight_area_{cell.X}_{cell.Z}", "rimworld/get_cell_info", new
+            {
+                x = cell.X,
+                z = cell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(response, $"Reading preflight allowed-area info for cell ({cell.X}, {cell.Z})");
+
+            if (CellContainsAreaId(response.StructuredContent, areaId))
+                return false;
+        }
+
+        return true;
+    }
+
     private static void AssertCellContainsBuildBlueprint(JsonNode? cellInfo, string buildDefName)
     {
         var blueprints = JsonNodeHelpers.ReadArray(cellInfo, "cell", "blueprintBuildDefs");
@@ -1759,10 +2241,22 @@ internal static class SmokeScenarioCatalog
             throw new InvalidOperationException($"Expected area '{className}' was not present in the cell info response.");
     }
 
+    private static void AssertCellContainsAreaId(JsonNode? cellInfo, string areaId)
+    {
+        if (!CellContainsAreaId(cellInfo, areaId))
+            throw new InvalidOperationException($"Expected area id '{areaId}' was not present in the cell info response.");
+    }
+
     private static bool CellContainsArea(JsonNode? cellInfo, string className)
     {
         var areas = JsonNodeHelpers.ReadArray(cellInfo, "cell", "areas");
         return areas.Any(area => string.Equals(JsonNodeHelpers.ReadString(area, "className"), className, StringComparison.Ordinal));
+    }
+
+    private static bool CellContainsAreaId(JsonNode? cellInfo, string areaId)
+    {
+        var areas = JsonNodeHelpers.ReadArray(cellInfo, "cell", "areas");
+        return areas.Any(area => string.Equals(JsonNodeHelpers.ReadString(area, "id"), areaId, StringComparison.Ordinal));
     }
 
     private static JsonNode? ResolveZoneById(IReadOnlyList<JsonNode?> zones, string zoneId)
@@ -1785,6 +2279,17 @@ internal static class SmokeScenarioCatalog
         }
 
         throw new InvalidOperationException($"Could not find area '{className}' in the area list response.");
+    }
+
+    private static JsonNode? ResolveAreaById(IReadOnlyList<JsonNode?> areas, string areaId)
+    {
+        foreach (var area in areas)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(area, "id"), areaId, StringComparison.Ordinal))
+                return area;
+        }
+
+        throw new InvalidOperationException($"Could not find area '{areaId}' in the area list response.");
     }
 
     private static string CellKey(int x, int z)

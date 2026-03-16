@@ -654,3 +654,36 @@ Notes:
 Next:
 
 - Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots
+
+## 2026-03-16 - Step A17 - Deterministic Stateful Architect Targeting
+
+Status:
+
+- completed
+
+Completed:
+
+- extended [`RimWorldArchitect.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldArchitect.cs), [`ArchitectCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ArchitectCapabilityModule.cs), and [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) with deterministic state helpers for mutable Architect flows: `rimworld/create_allowed_area`, `rimworld/select_allowed_area`, `rimworld/set_zone_target`, `rimworld/clear_area`, `rimworld/delete_area`, and `rimworld/delete_zone`
+- extended `rimworld/get_designator_state` so it now surfaces the globally selected allowed area in addition to the selected designator/container state
+- added low-friction id resolution for zones and areas so cleanup and selection helpers accept the canonical ids returned by `rimworld/list_zones` and `rimworld/list_areas` while still allowing unambiguous label fallback
+- fixed a real execution bug in [`RimWorldArchitect.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldArchitect.cs): live testing showed that vanilla stockpile placement still created a fresh zone on empty cells even when `SelectedZone` was set, so explicit zone targets now apply directly to the chosen existing zone instance to make expansion deterministic
+- extended the live smoke catalog in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) and [`SmokeScenarioCatalogTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke.Tests/SmokeScenarioCatalogTests.cs) with the new real-instance `architect-stateful-targeting` scenario
+- made `architect-stateful-targeting` prove the full stateful flow end-to-end: create a custom allowed area, select it, apply `Expand allowed area`, create a stockpile zone, pin the stockpile designator to that zone, expand the same zone into a second rectangle without increasing the zone count, then tear everything back down with the new cleanup helpers
+- updated [`scripts/human-verify.sh`](/Users/ap/Projects/RimBridgeServer/scripts/human-verify.sh) so the curated manual-review flow now includes the new stateful Architect scenario
+- documented the new helper tools and live scenario in [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md)
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln --no-build`
+- `scripts/live-smoke.sh --scenario architect-stateful-targeting --game-id rimworld --human-verify --stop-after`
+
+Notes:
+
+- the first live attempt failed in exactly the way we wanted the harness to catch: `rimworld/set_zone_target` reflected the requested zone id back, but RimWorld still created a second stockpile zone during placement; the final implementation step fixed the execution seam instead of relaxing the test
+- the live proof artifacts for this step are [`rimbridge_verify_20260316_201610_architect-stateful-targeting_architect_allowed_area.png`](/Users/ap/Desktop/rimbridge_verify_20260316_201610_architect-stateful-targeting_architect_allowed_area.png) and [`rimbridge_verify_20260316_201610_architect-stateful-targeting_architect_existing_zone_expand.png`](/Users/ap/Desktop/rimbridge_verify_20260316_201610_architect-stateful-targeting_architect_existing_zone_expand.png), each with a same-name `.txt` expectation note on the Desktop
+- using the decompiler against the publicized RimWorld reference was useful here even though `Designator_ZoneAdd` itself is extern-heavy in the reference assembly; the type graph still confirmed the relevant public seams such as `SelectedZone` and `Verse.Zone.AddCell`
+
+Next:
+
+- Step A18: return to the bulk/script layer now that debug actions, designator discovery, and deterministic Architect state control exist for meaningful scenario construction

@@ -829,4 +829,4 @@ Tests:
 
 ## Immediate Next Step
 
-The next implementation step should make the remaining stateful Architect flows deterministic: allowed-area selection and creation, explicit existing-zone targeting for expand or shrink semantics, and clearer cleanup helpers for removal tools. The bridge now already covers direct structures, dropdown floor tools, stockpile zones, and home-area drag semantics through one shared execution seam; the next power gain comes from controlling the remaining mutable designator context so a later batch or script runner can compose those map edits without hidden UI state.
+The next implementation step should return to the batch or script layer. The bridge now already covers direct structures, dropdown floor tools, stockpile zones, home-area drag semantics, explicit allowed-area selection and creation, explicit existing-zone targeting, and cleanup helpers for tearing those fixtures back down. That is the threshold where a bulk execution layer starts paying off: it can now compose meaningful scenario setup such as rooms, stockpiles, and reusable colony fixtures instead of only batching low-value primitive calls.

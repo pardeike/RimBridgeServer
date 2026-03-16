@@ -206,11 +206,20 @@ internal static class RimWorldArchitect
         }
 
         Exception applyException = null;
+        var explicitTargetZone = descriptor.Designator is Designator_ZoneAdd zoneAddWithTarget ? zoneAddWithTarget.SelectedZone : null;
         if (!dryRun && acceptedCells.Count > 0)
         {
             try
             {
-                if (acceptedCells.Count == 1)
+                // RimWorld's visible stockpile tool can still create a fresh zone on empty cells even when an
+                // existing zone target is selected. For automation we need deterministic expand semantics, so
+                // explicit zone targets apply directly to the chosen zone instance.
+                if (explicitTargetZone != null)
+                {
+                    foreach (var cell in acceptedCells)
+                        explicitTargetZone.AddCell(cell);
+                }
+                else if (acceptedCells.Count == 1)
                     descriptor.Designator.DesignateSingleCell(acceptedCells[0]);
                 else
                     descriptor.Designator.DesignateMultiCell(acceptedCells);
@@ -329,6 +338,185 @@ internal static class RimWorldArchitect
         };
     }
 
+    public static object CreateAllowedAreaResponse(string label = null, bool select = true)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+
+        var areaManager = map.areaManager;
+        if (areaManager == null)
+            return Failure("The current map does not expose an area manager.");
+        if (!areaManager.TryMakeNewAllowed(out var area) || area == null)
+            return Failure("RimWorld could not create a new allowed area for the current map.");
+
+        if (!string.IsNullOrWhiteSpace(label))
+            area.SetLabel(label.Trim());
+
+        if (select)
+            Designator_AreaAllowed.selectedArea = area;
+
+        return new
+        {
+            success = true,
+            created = true,
+            area = DescribeArea(area),
+            selectedAllowedArea = DescribeArea(Designator_AreaAllowed.SelectedArea),
+            designatorState = CreateDesignatorStatePayload(),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    public static object SelectAllowedAreaResponse(string areaId = null)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+
+        if (string.IsNullOrWhiteSpace(areaId))
+        {
+            Designator_AreaAllowed.ClearSelectedArea();
+            return new
+            {
+                success = true,
+                cleared = true,
+                selectedAllowedArea = DescribeArea(Designator_AreaAllowed.SelectedArea),
+                designatorState = CreateDesignatorStatePayload(),
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        if (!TryResolveArea(map, areaId, out var area, out error))
+            return Failure(error);
+        if (!area.AssignableAsAllowed())
+            return Failure($"Area '{areaId}' cannot be used as an allowed area.");
+
+        Designator_AreaAllowed.selectedArea = area;
+        return new
+        {
+            success = true,
+            selectedAllowedArea = DescribeArea(Designator_AreaAllowed.SelectedArea),
+            area = DescribeArea(area),
+            designatorState = CreateDesignatorStatePayload(),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    public static object SetZoneTargetResponse(string designatorId, string zoneId = null)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+        if (!TryResolveDesignator(designatorId, out var descriptor, out error))
+            return Failure(error);
+        if (descriptor.Designator is not Designator_ZoneAdd zoneAdd)
+            return Failure($"Architect designator '{designatorId}' does not support explicit existing-zone targeting.");
+        if (!TrySelectDescriptor(descriptor, out error))
+            return Failure(error);
+
+        if (string.IsNullOrWhiteSpace(zoneId))
+        {
+            zoneAdd.SelectedZone = null;
+            var clearedSelectionState = CaptureSelectionState();
+            return new
+            {
+                success = true,
+                cleared = true,
+                designator = DescribeDesignator(descriptor, clearedSelectionState),
+                designatorState = CreateDesignatorStatePayload(GetAllDesignatorDescriptors(), clearedSelectionState),
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        if (!TryResolveZone(map, zoneId, out var zone, out error))
+            return Failure(error);
+        if (zoneAdd.zoneTypeToPlace != null && !zoneAdd.zoneTypeToPlace.IsInstanceOfType(zone))
+            return Failure($"Zone '{zoneId}' is not compatible with architect designator '{designatorId}'.");
+
+        zoneAdd.SelectedZone = zone;
+        var selectionState = CaptureSelectionState();
+        return new
+        {
+            success = true,
+            designator = DescribeDesignator(descriptor, selectionState),
+            zone = DescribeZone(zone),
+            designatorState = CreateDesignatorStatePayload(GetAllDesignatorDescriptors(), selectionState),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    public static object ClearAreaResponse(string areaId)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+        if (!TryResolveArea(map, areaId, out var area, out error))
+            return Failure(error);
+        if (!area.Mutable)
+            return Failure($"Area '{areaId}' is not mutable and cannot be cleared through this helper.");
+
+        var previousCellCount = area.TrueCount;
+        area.Clear();
+
+        return new
+        {
+            success = true,
+            previousCellCount,
+            area = DescribeArea(area),
+            selectedAllowedArea = DescribeArea(Designator_AreaAllowed.SelectedArea),
+            designatorState = CreateDesignatorStatePayload(),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    public static object DeleteAreaResponse(string areaId)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+        if (!TryResolveArea(map, areaId, out var area, out error))
+            return Failure(error);
+        if (!area.Mutable)
+            return Failure($"Area '{areaId}' is not mutable and cannot be deleted through this helper.");
+
+        var deletedArea = DescribeArea(area);
+        var wasSelectedAllowedArea = ReferenceEquals(Designator_AreaAllowed.SelectedArea, area);
+        area.Delete();
+        if (wasSelectedAllowedArea)
+            Designator_AreaAllowed.ClearSelectedArea();
+
+        return new
+        {
+            success = true,
+            deletedArea,
+            selectedAllowedArea = DescribeArea(Designator_AreaAllowed.SelectedArea),
+            designatorState = CreateDesignatorStatePayload(),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    public static object DeleteZoneResponse(string zoneId)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+        if (!TryResolveZone(map, zoneId, out var zone, out error))
+            return Failure(error);
+
+        var deletedZone = DescribeZone(zone);
+        foreach (var zoneAdd in GetAllDesignatorDescriptors()
+                     .Select(descriptor => descriptor.Designator)
+                     .OfType<Designator_ZoneAdd>()
+                     .Where(zoneAdd => ReferenceEquals(zoneAdd.SelectedZone, zone)))
+        {
+            zoneAdd.SelectedZone = null;
+        }
+
+        zone.Delete();
+        var selectionState = CaptureSelectionState();
+        return new
+        {
+            success = true,
+            deletedZone,
+            designatorState = CreateDesignatorStatePayload(GetAllDesignatorDescriptors(), selectionState),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
     private static object Failure(string message)
     {
         return new
@@ -378,6 +566,105 @@ internal static class RimWorldArchitect
             return true;
 
         error = $"Could not find architect designator '{designatorId}'.";
+        return false;
+    }
+
+    private static bool TryResolveZone(Map map, string zoneId, out Zone zone, out string error)
+    {
+        zone = null;
+        error = string.Empty;
+        if (map.zoneManager == null)
+        {
+            error = "The current map does not expose a zone manager.";
+            return false;
+        }
+
+        if (!TryResolveByIdentity(
+                map.zoneManager.AllZones?.Where(candidate => candidate != null).Cast<Zone>() ?? [],
+                zoneId,
+                candidate => candidate.GetUniqueLoadID(),
+                candidate => candidate.RenamableLabel,
+                candidate => candidate.BaseLabel,
+                out zone,
+                out error))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveArea(Map map, string areaId, out Area area, out string error)
+    {
+        area = null;
+        error = string.Empty;
+        if (map.areaManager == null)
+        {
+            error = "The current map does not expose an area manager.";
+            return false;
+        }
+
+        if (!TryResolveByIdentity(
+                map.areaManager.AllAreas?.Where(candidate => candidate != null).Cast<Area>() ?? [],
+                areaId,
+                candidate => candidate.GetUniqueLoadID(),
+                candidate => candidate.RenamableLabel,
+                candidate => candidate.Label,
+                out area,
+                out error))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveByIdentity<T>(
+        IEnumerable<T> candidates,
+        string requestedId,
+        Func<T, string> identitySelector,
+        Func<T, string> primaryLabelSelector,
+        Func<T, string> secondaryLabelSelector,
+        out T value,
+        out string error)
+        where T : class
+    {
+        value = default;
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(requestedId))
+        {
+            error = "An id is required.";
+            return false;
+        }
+
+        var trimmed = requestedId.Trim();
+        var allCandidates = candidates.ToList();
+        var exact = allCandidates.FirstOrDefault(candidate => string.Equals(identitySelector(candidate), trimmed, StringComparison.Ordinal));
+        if (exact != null)
+        {
+            value = exact;
+            return true;
+        }
+
+        var labelMatches = allCandidates
+            .Where(candidate =>
+                string.Equals(primaryLabelSelector(candidate), trimmed, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(secondaryLabelSelector(candidate), trimmed, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (labelMatches.Count == 1)
+        {
+            value = labelMatches[0];
+            return true;
+        }
+
+        if (labelMatches.Count > 1)
+        {
+            error = $"'{requestedId}' matched multiple entries. Use the exact unique id instead.";
+            return false;
+        }
+
+        error = $"Could not find '{requestedId}'.";
         return false;
     }
 
@@ -660,6 +947,7 @@ internal static class RimWorldArchitect
             selectedDesignator = selected == null ? null : DescribeDesignator(selected, currentSelection),
             selectedContainerDesignatorId = selectedContainer?.Id,
             selectedContainerDesignator = selectedContainer == null ? null : DescribeDesignator(selectedContainer, currentSelection),
+            selectedAllowedArea = DescribeArea(Designator_AreaAllowed.SelectedArea),
             unmappedSelectedDesignator = selected == null && selectedRoot != null ? DescribeUnmappedSelectedDesignator(selectedRoot) : null
         };
     }

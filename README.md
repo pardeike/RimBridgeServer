@@ -88,6 +88,12 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/apply_architect_designator`** - Apply an Architect designator to one cell or rectangle, with optional dry-run validation
 - **`rimworld/list_zones`** - List current-map zones such as stockpiles and growing zones
 - **`rimworld/list_areas`** - List current-map areas such as home, roof, snow-clear, and allowed areas
+- **`rimworld/create_allowed_area`** - Create a new allowed area and optionally select it for later area-designator calls
+- **`rimworld/select_allowed_area`** - Select or clear the current allowed-area target deterministically
+- **`rimworld/set_zone_target`** - Set or clear the explicit existing-zone target on a zone-add designator
+- **`rimworld/clear_area`** - Clear all cells from a mutable area
+- **`rimworld/delete_area`** - Delete a mutable area such as a custom allowed area
+- **`rimworld/delete_zone`** - Delete an existing zone by id
 - **`rimworld/get_cell_info`** - Inspect one map cell, including blueprints, frames, solid things, designations, zones, and areas
 - **`rimworld/get_ui_state`** - Inspect the current RimWorld window stack and UI/input state
 - **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
@@ -145,6 +151,8 @@ Your external program can send these commands to RimBridgeServer:
 The designator payload now also reports drag and targeting metadata from RimWorld itself, including `applicationKind`, `supportsRectangleApplication`, `dragDrawMeasurements`, `drawStyleCategoryDefName`, and `zoneTypeName` where applicable. That makes dropdown-heavy floor tools, zone tools, and area tools discoverable without guessing from UI text.
 
 `rimworld/set_god_mode` and `rimworld/apply_architect_designator` make the important dev workflow deterministic. With god mode disabled, build designators create blueprints; with god mode enabled, the same designator can place the finished structure directly. `rimworld/list_zones`, `rimworld/list_areas`, and `rimworld/get_cell_info` exist specifically so tests can verify zone, area, and structure outcomes without OCR or pixel heuristics.
+
+The stateful parts of RimWorld's Zone menu now also have explicit bridge controls instead of hidden UI context. `rimworld/create_allowed_area` and `rimworld/select_allowed_area` control the allowed-area target used by `Designator_AreaAllowedExpand`, while `rimworld/set_zone_target` pins a zone-add designator to an existing zone so later placement expands that specific zone instead of creating a new one. `rimworld/clear_area`, `rimworld/delete_area`, and `rimworld/delete_zone` provide the corresponding cleanup seam for test fixture teardown.
 
 ### Example workflow for Achtung Issue #95
 
@@ -285,6 +293,14 @@ The `architect-zone-area-drag` scenario covers rectangle drag semantics for non-
 - expands the home area over a 2x2 rectangle and verifies the change through both `rimworld/list_areas` and `rimworld/get_cell_info`
 - exports human-checkable screenshots for both overlays when `--human-verify` is enabled
 
+The `architect-stateful-targeting` scenario covers the remaining mutable Architect state:
+
+- ensures a playable game exists
+- creates a new custom allowed area and verifies `rimworld/get_designator_state` surfaces it as the selected allowed-area target
+- applies `Expand allowed area` over a 2x2 rectangle and verifies the created area id through both `rimworld/list_areas` and `rimworld/get_cell_info`
+- creates a stockpile zone, pins the stockpile designator to that zone with `rimworld/set_zone_target`, then expands the same zone into a second rectangle without increasing the zone count
+- tears the fixture back down with `rimworld/delete_zone`, `rimworld/clear_area`, and `rimworld/delete_area`
+
 The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.
 
 The runner looks for `gabs` on `PATH`, honors `GABS_BIN`, and also auto-detects a sibling checkout at `../GABS/gabs`. Use `--config-dir` or `GABS_CONFIG_DIR` if you need to point it at a non-default GABS configuration directory.
@@ -309,6 +325,7 @@ The current human-verification set covers:
 - `screen-target-clip` with a cropped image focused on one real actionable target
 - `screenshot-capture` by exporting the captured screenshot itself with a matching explanation file
 - `architect-floor-dropdown` with one screenshot showing a directly placed dropdown-selected floor patch
+- `architect-stateful-targeting` with one screenshot showing a custom allowed area overlay and one showing an explicitly targeted stockpile expansion
 - `architect-wall-placement` with one screenshot showing the blueprint wall state and one showing the direct-build wall state
 - `architect-zone-area-drag` with one screenshot showing a stockpile zone overlay and one showing a home-area overlay
 

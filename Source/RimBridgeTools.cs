@@ -188,6 +188,46 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(includeEmpty), includeEmpty), (nameof(includeAssignableOnly), includeAssignableOnly)));
     }
 
+    [Tool("rimworld/create_allowed_area", Description = "Create a new allowed area and optionally make it the selected allowed-area target")]
+    public object CreateAllowedArea(
+        [ToolParameter(Description = "Optional label for the new allowed area")] string label = null,
+        [ToolParameter(Description = "Select the new area as the current allowed-area target")] bool select = true)
+    {
+        return InvokeAlias(Arguments((nameof(label), label), (nameof(select), select)));
+    }
+
+    [Tool("rimworld/select_allowed_area", Description = "Select an allowed area by id for area-designator flows, or clear the selection when areaId is omitted")]
+    public object SelectAllowedArea([ToolParameter(Description = "Area id from rimworld/list_areas, or omit to clear the selected allowed area")] string areaId = null)
+    {
+        return InvokeAlias(Arguments((nameof(areaId), areaId)));
+    }
+
+    [Tool("rimworld/set_zone_target", Description = "Set or clear the explicit existing-zone target on a zone-add designator")]
+    public object SetZoneTarget(
+        [ToolParameter(Description = "Stable zone-add designator id returned by rimworld/list_architect_designators")] string designatorId,
+        [ToolParameter(Description = "Zone id from rimworld/list_zones, or omit to clear the explicit zone target")] string zoneId = null)
+    {
+        return InvokeAlias(Arguments((nameof(designatorId), designatorId), (nameof(zoneId), zoneId)));
+    }
+
+    [Tool("rimworld/clear_area", Description = "Clear all cells from a mutable area such as a custom allowed area")]
+    public object ClearArea([ToolParameter(Description = "Area id from rimworld/list_areas")] string areaId)
+    {
+        return InvokeAlias(Arguments((nameof(areaId), areaId)));
+    }
+
+    [Tool("rimworld/delete_area", Description = "Delete a mutable area such as a custom allowed area")]
+    public object DeleteArea([ToolParameter(Description = "Area id from rimworld/list_areas")] string areaId)
+    {
+        return InvokeAlias(Arguments((nameof(areaId), areaId)));
+    }
+
+    [Tool("rimworld/delete_zone", Description = "Delete an existing zone by id")]
+    public object DeleteZone([ToolParameter(Description = "Zone id from rimworld/list_zones")] string zoneId)
+    {
+        return InvokeAlias(Arguments((nameof(zoneId), zoneId)));
+    }
+
     [Tool("rimworld/get_cell_info", Description = "Inspect one map cell, including things, blueprints, frames, designations, zones, and areas")]
     public object GetCellInfo(
         [ToolParameter(Description = "Target cell x coordinate")] int x,
