@@ -758,7 +758,23 @@ Tests:
 - discovery stability
 - integration execution cases
 
-### Step A8. Script runner
+### Step A8. Optional UI adapters and god-mode designators
+
+Deliverables:
+
+- gizmo access
+- context menu improvements
+- designator discovery
+- god-mode designator selection and application
+- inspect pane and widget row extraction
+
+Tests:
+
+- per-adapter integration tests
+- designator execution cases in god mode
+- UI regression scenarios around structure placement
+
+### Step A9. Script runner
 
 Deliverables:
 
@@ -772,20 +788,6 @@ Tests:
 - report correctness
 - rollback and failure reporting semantics
 - end-to-end script execution
-
-### Step A9. Optional UI adapters
-
-Deliverables:
-
-- gizmo access
-- context menu improvements
-- designator access
-- inspect pane and widget row extraction
-
-Tests:
-
-- per-adapter integration tests
-- UI regression scripts
 
 ### Step A10. Extension system
 
@@ -827,4 +829,4 @@ Tests:
 
 ## Immediate Next Step
 
-The next implementation step should be Step A13: add target-relative screenshot clipping on top of `rimworld/get_screen_targets` and `rimworld/click_screen_target` so live tests can make focused visual assertions without relying on full-frame screenshots. That keeps the risk low by building on the new target-id and geometry surface instead of widening physical input simulation before the visual test path is solid.
+The next implementation step should be generic debug-action mapping and execution, followed by god-mode designator discovery and application before the script runner. That order increases the bridge's expressive power faster: once debug actions and designators are in place, a later batch/script layer can build whole structures and richer test fixtures instead of only chaining small primitives.

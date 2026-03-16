@@ -454,7 +454,7 @@ Notes:
 
 Next:
 
-- Step A14: expose explicit scriptable clip and target-selection patterns in the bulk execution layer so screenshot assertions can be composed into higher-level automated test scripts
+- Step A14: add generic debug-action discovery and path execution, then prioritize god-mode designator selection/application before returning to the bulk script layer
 
 ## 2026-03-16 - Step A12.2 - Automation-Ready Load Waits
 
