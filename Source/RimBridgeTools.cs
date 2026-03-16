@@ -24,6 +24,12 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(operationId), operationId)));
     }
 
+    [Tool("rimbridge/get_bridge_status", Description = "Get the current bridge and RimWorld state snapshot without mutating game state")]
+    public object GetBridgeStatus()
+    {
+        return InvokeAlias();
+    }
+
     [Tool("rimbridge/list_operations", Description = "List recent bridge operations from the in-memory operation journal")]
     public object ListOperations([ToolParameter(Description = "Maximum number of operations to return")] int limit = 20)
     {
@@ -34,6 +40,31 @@ public class RimBridgeTools
     public object ListOperationEvents([ToolParameter(Description = "Maximum number of events to return")] int limit = 50)
     {
         return InvokeAlias(Arguments((nameof(limit), limit)));
+    }
+
+    [Tool("rimbridge/wait_for_operation", Description = "Wait for an operation in the journal to reach a terminal status")]
+    public object WaitForOperation(
+        [ToolParameter(Description = "Operation id returned in tool metadata")] string operationId,
+        [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 10000,
+        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 50)
+    {
+        return InvokeAlias(Arguments((nameof(operationId), operationId), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs)));
+    }
+
+    [Tool("rimbridge/wait_for_game_loaded", Description = "Wait until RimWorld has finished loading a playable game")]
+    public object WaitForGameLoaded(
+        [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 30000,
+        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 100)
+    {
+        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs)));
+    }
+
+    [Tool("rimbridge/wait_for_long_event_idle", Description = "Wait until RimWorld reports no long events in progress")]
+    public object WaitForLongEventIdle(
+        [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 30000,
+        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 100)
+    {
+        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs)));
     }
 
     [Tool("rimworld/pause_game", Description = "Pause or unpause the game")]

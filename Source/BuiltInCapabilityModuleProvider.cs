@@ -167,9 +167,13 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
         return toolName switch
         {
             "rimbridge/ping" => CapabilityExecutionKind.Immediate,
+            "rimbridge/get_bridge_status" => CapabilityExecutionKind.Immediate,
             "rimbridge/get_operation" => CapabilityExecutionKind.Immediate,
             "rimbridge/list_operations" => CapabilityExecutionKind.Immediate,
             "rimbridge/list_operation_events" => CapabilityExecutionKind.Immediate,
+            "rimbridge/wait_for_operation" => CapabilityExecutionKind.Immediate,
+            "rimbridge/wait_for_game_loaded" => CapabilityExecutionKind.Immediate,
+            "rimbridge/wait_for_long_event_idle" => CapabilityExecutionKind.Immediate,
             "rimworld/start_debug_game" => CapabilityExecutionKind.LongEventBound,
             "rimworld/load_game" => CapabilityExecutionKind.LongEventBound,
             "rimworld/take_screenshot" => CapabilityExecutionKind.BackgroundObserved,

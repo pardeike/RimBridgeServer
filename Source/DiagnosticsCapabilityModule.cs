@@ -8,6 +8,7 @@ namespace RimBridgeServer;
 internal sealed class DiagnosticsCapabilityModule
 {
     private readonly OperationJournal _journal;
+    private readonly ConditionWaiter _waiter = new();
 
     public DiagnosticsCapabilityModule(OperationJournal journal)
     {
@@ -49,6 +50,11 @@ internal sealed class DiagnosticsCapabilityModule
         };
     }
 
+    public object GetBridgeStatus()
+    {
+        return RimWorldWaits.GetBridgeStatus(_journal);
+    }
+
     public object ListOperations(int limit = 20)
     {
         return new
@@ -63,5 +69,60 @@ internal sealed class DiagnosticsCapabilityModule
         {
             events = _journal.GetRecentEvents(limit)
         };
+    }
+
+    public object WaitForOperation(string operationId, int timeoutMs = 10000, int pollIntervalMs = 50)
+    {
+        var outcome = _waiter.WaitUntil(() =>
+        {
+            var operation = _journal.GetOperation(operationId);
+            if (operation == null)
+            {
+                return new WaitProbeResult
+                {
+                    IsSatisfied = false,
+                    Message = $"Waiting for operation '{operationId}' to appear in the journal."
+                };
+            }
+
+            var satisfied = operation.Status is Contracts.OperationStatus.Completed
+                or Contracts.OperationStatus.Failed
+                or Contracts.OperationStatus.Cancelled
+                or Contracts.OperationStatus.TimedOut;
+
+            return new WaitProbeResult
+            {
+                IsSatisfied = satisfied,
+                Message = satisfied
+                    ? $"Operation '{operationId}' reached status {operation.Status}."
+                    : $"Waiting for operation '{operationId}' to reach a terminal status.",
+                Snapshot = operation
+            };
+        }, new WaitOptions
+        {
+            TimeoutMs = timeoutMs,
+            PollIntervalMs = pollIntervalMs,
+            TimeoutMessage = $"Timed out waiting for operation '{operationId}'."
+        });
+
+        return new
+        {
+            success = outcome.Satisfied,
+            satisfied = outcome.Satisfied,
+            message = outcome.Message,
+            elapsedMs = outcome.ElapsedMs,
+            attempts = outcome.Attempts,
+            trackedOperation = outcome.Snapshot
+        };
+    }
+
+    public object WaitForGameLoaded(int timeoutMs = 30000, int pollIntervalMs = 100)
+    {
+        return RimWorldWaits.WaitForGameLoaded(timeoutMs, pollIntervalMs);
+    }
+
+    public object WaitForLongEventIdle(int timeoutMs = 30000, int pollIntervalMs = 100)
+    {
+        return RimWorldWaits.WaitForLongEventIdle(timeoutMs, pollIntervalMs);
     }
 }

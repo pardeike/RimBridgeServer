@@ -156,6 +156,42 @@ Next:
 
 - Step A5: add explicit wait conditions and synchronous fast-path helpers so long-event and frame-bound capabilities can expose lower-latency polling and blocking behavior through the shared execution kernel
 
+## 2026-03-16 - Step A5 - Explicit Wait Conditions and Live Smoke Baseline
+
+Status:
+
+- completed
+
+Completed:
+
+- added shared polling primitives in [`ConditionWaiter.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/ConditionWaiter.cs) for bounded condition waits with timeout, poll interval, elapsed time, attempt count, and last-state snapshots
+- added host-side RimWorld wait helpers in [`RimWorldWaits.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldWaits.cs) that probe game state safely through [`MainThreadDispatcher.cs`](/Users/ap/Projects/RimBridgeServer/Source/MainThreadDispatcher.cs) instead of relying on blind sleeps from callers
+- extended [`DiagnosticsCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/DiagnosticsCapabilityModule.cs) and [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) with `rimbridge/get_bridge_status`, `rimbridge/wait_for_operation`, `rimbridge/wait_for_game_loaded`, and `rimbridge/wait_for_long_event_idle`
+- marked the new wait and status tools as immediate/background-safe in [`BuiltInCapabilityModuleProvider.cs`](/Users/ap/Projects/RimBridgeServer/Source/BuiltInCapabilityModuleProvider.cs) so the outer execution runner does not marshal the whole wait loop onto the RimWorld main thread
+- added focused unit coverage in [`ConditionWaiterTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/ConditionWaiterTests.cs) for successful polling and timeout behavior
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) so the new bridge diagnostics and wait commands are visible as part of the supported automation surface
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+- `dotnet test RimBridgeServer.sln`
+- live GABS smoke against a fresh RimWorld instance:
+- `rimbridge/get_bridge_status`
+- `rimbridge/wait_for_long_event_idle`
+- `rimworld/start_debug_game`
+- `rimbridge/wait_for_game_loaded`
+- `rimbridge/wait_for_operation`
+
+Notes:
+
+- the live smoke replaced a manual sleep with `rimbridge/wait_for_game_loaded`, which reported a ready playable state after about 3.2 seconds in the current environment
+- this is the first real RimWorld-instance verification step recorded in the project and it establishes the shape for a future reproducible smoke harness
+- MCP-style push notifications are still host-dependent, so the wait and journal path remains the correctness baseline even if event push is added next
+
+Next:
+
+- Step A6: add structured event and log publication on top of the journal so hosts that support unsolicited notifications can receive warnings, errors, and operation progress without polling
+
 ## 2026-03-16 - Step A4.1 - Lib.GAB NuGet Adoption
 
 Status:
