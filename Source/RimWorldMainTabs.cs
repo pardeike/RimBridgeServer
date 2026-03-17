@@ -68,7 +68,7 @@ internal static class RimWorldMainTabs
                 $"Main tab '{tab.defName}' is currently disabled and cannot be opened.");
         }
 
-        var root = Find.MainTabsRoot;
+        var root = TryGetMainTabsRoot();
         if (root == null)
             return CreateFailedCommandResponse("open_main_tab", before, "RimWorld main tabs are not available.");
 
@@ -84,7 +84,8 @@ internal static class RimWorldMainTabs
     public static object CloseMainTabResponse(string mainTabId = null)
     {
         var before = RimWorldInput.GetUiState();
-        var openTab = Find.MainTabsRoot?.OpenTab;
+        var root = TryGetMainTabsRoot();
+        var openTab = root?.OpenTab;
         if (openTab == null)
         {
             return CreateFailedCommandResponse(
@@ -102,7 +103,6 @@ internal static class RimWorldMainTabs
                 $"The currently open main tab '{openTab.defName}' does not match '{mainTabId}'.");
         }
 
-        var root = Find.MainTabsRoot;
         if (root == null)
             return CreateFailedCommandResponse("close_main_tab", before, "RimWorld main tabs are not available.");
 
@@ -117,19 +117,31 @@ internal static class RimWorldMainTabs
 
     public static UiMainTabSnapshot GetOpenMainTabSnapshot()
     {
-        var openTab = Find.MainTabsRoot?.OpenTab;
+        var openTab = TryGetMainTabsRoot()?.OpenTab;
         return openTab == null ? null : DescribeMainTab(openTab, isOpen: true);
     }
 
     internal static List<UiMainTabSnapshot> ListMainTabs(bool includeHidden)
     {
-        var openTab = Find.MainTabsRoot?.OpenTab;
+        var openTab = TryGetMainTabsRoot()?.OpenTab;
         return DefDatabase<MainButtonDef>.AllDefsListForReading?
             .OrderBy(tab => tab.order)
             .ThenBy(tab => tab.defName, StringComparer.Ordinal)
             .Select(tab => DescribeMainTab(tab, ReferenceEquals(tab, openTab)))
             .Where(tab => includeHidden || tab.Visible)
             .ToList() ?? [];
+    }
+
+    private static MainTabsRoot TryGetMainTabsRoot()
+    {
+        try
+        {
+            return Find.MainTabsRoot;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static UiMainTabSnapshot DescribeMainTab(MainButtonDef tab, bool isOpen)
