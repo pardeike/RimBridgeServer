@@ -64,6 +64,9 @@ internal static class RimWorldTargeting
         clipArea = null;
         error = string.Empty;
 
+        if (RimBridgeUiWorkbench.TryResolveClipArea(targetId, out clipArea, out error))
+            return clipArea != null;
+
         if (!ScreenTargetIds.TryParse(targetId, out var target))
         {
             error = $"Target id '{targetId}' is not a supported screen target identifier.";

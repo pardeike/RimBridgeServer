@@ -454,6 +454,22 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(mainTabId), mainTabId)));
     }
 
+    [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable control target ids")]
+    public object GetUiLayout(
+        [ToolParameter(Description = "Optional surface target id such as a window target from rimworld/get_screen_targets or a main-tab target from rimworld/list_main_tabs")] string surfaceId = null,
+        [ToolParameter(Description = "Maximum time to wait for the requested UI surface to draw on screen")] int timeoutMs = 2000)
+    {
+        return InvokeAlias(Arguments((nameof(surfaceId), surfaceId), (nameof(timeoutMs), timeoutMs)));
+    }
+
+    [Tool("rimworld/click_ui_target", Description = "Activate an actionable UI control target returned by rimworld/get_ui_layout on the next real draw frame")]
+    public object ClickUiTarget(
+        [ToolParameter(Description = "Actionable ui-element target id returned by rimworld/get_ui_layout")] string targetId,
+        [ToolParameter(Description = "Maximum time to wait for the target control to be redrawn so the click can be injected")] int timeoutMs = 2000)
+    {
+        return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(timeoutMs), timeoutMs)));
+    }
+
     [Tool("rimworld/press_accept", Description = "Send semantic accept input to the active RimWorld window stack without requiring OS focus")]
     public object PressAccept()
     {

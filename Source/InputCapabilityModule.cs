@@ -41,4 +41,14 @@ internal sealed class InputCapabilityModule
     {
         return RimWorldMainTabs.CloseMainTabResponse(mainTabId);
     }
+
+    public object GetUiLayout(string surfaceId = null, int timeoutMs = 2000)
+    {
+        return RimBridgeUiWorkbench.GetUiLayoutResponse(surfaceId, timeoutMs);
+    }
+
+    public object ClickUiTarget(string targetId, int timeoutMs = 2000)
+    {
+        return RimBridgeUiWorkbench.ClickUiTargetResponse(targetId, timeoutMs);
+    }
 }

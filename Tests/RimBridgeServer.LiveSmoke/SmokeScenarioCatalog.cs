@@ -33,6 +33,7 @@ internal static class SmokeScenarioCatalog
     public const string ModSettingsDiscoveryScenarioName = "mod-settings-discovery";
     public const string ModSettingsRoundTripScenarioName = "mod-settings-roundtrip";
     public const string MainTabNavigationScenarioName = "main-tab-navigation";
+    public const string UiLayoutRoundTripScenarioName = "ui-layout-roundtrip";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
@@ -141,6 +142,12 @@ internal static class SmokeScenarioCatalog
                 Name = MainTabNavigationScenarioName,
                 Description = "Ensure a playable game exists, then open the Work main tab, verify it through UI state and screen targets, capture a clipped screenshot, and close it again.",
                 RunAsync = RunMainTabNavigationAsync
+            },
+            [UiLayoutRoundTripScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = UiLayoutRoundTripScenarioName,
+                Description = "Ensure a playable game exists, capture a generic layout snapshot for the Work tab, clip to a real control target, click it, verify the state change, and restore it.",
+                RunAsync = RunUiLayoutRoundTripAsync
             },
             [SaveLoadRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -681,6 +688,109 @@ internal static class SmokeScenarioCatalog
             "main_tab.final_bridge_status",
             "main_tab.collect_operation_events",
             "main_tab.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunUiLayoutRoundTripAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("ui_layout.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("ui_layout.snapshot_bridge_status", cancellationToken);
+
+        var openMainTab = await context.CallGameToolAsync("ui_layout.open_work_tab", "rimworld/open_main_tab", new
+        {
+            mainTabId = "main-tab:Work"
+        }, cancellationToken);
+        context.EnsureSucceeded(openMainTab, "Opening the Work main tab before capturing UI layout");
+
+        var initialLayout = await context.CallGameToolAsync("ui_layout.capture_initial", "rimworld/get_ui_layout", new
+        {
+            surfaceId = "main-tab:Work",
+            timeoutMs = 3000
+        }, cancellationToken);
+        context.EnsureSucceeded(initialLayout, "Capturing the initial Work main-tab layout");
+
+        var surface = ResolveUiLayoutSurface(initialLayout.StructuredContent, "main-tab:Work");
+        var checkbox = ResolveUiLayoutElement(surface, "checkbox");
+        var initialTargetId = ReadRequiredString(checkbox, "targetId");
+        var initialChecked = JsonNodeHelpers.ReadBoolean(checkbox, "isChecked");
+        if (!initialChecked.HasValue)
+            throw new InvalidOperationException("The captured Work-tab checkbox did not expose a boolean checked state.");
+
+        var clippedScreenshot = await context.CallGameToolAsync("ui_layout.clip_checkbox", "rimworld/take_screenshot", new
+        {
+            fileName = BuildScreenshotFileName(context.Report.StartedAtUtc) + "_ui_checkbox",
+            includeTargets = true,
+            clipTargetId = initialTargetId
+        }, cancellationToken);
+        context.EnsureSucceeded(clippedScreenshot, $"Capturing a screenshot clipped to UI target '{initialTargetId}'");
+        if (JsonNodeHelpers.ReadBoolean(clippedScreenshot.StructuredContent, "clipped") != true)
+            throw new InvalidOperationException("The UI control screenshot was not reported as clipped.");
+
+        var clickCheckbox = await context.CallGameToolAsync("ui_layout.click_checkbox", "rimworld/click_ui_target", new
+        {
+            targetId = initialTargetId,
+            timeoutMs = 3000
+        }, cancellationToken);
+        context.EnsureSucceeded(clickCheckbox, $"Clicking UI target '{initialTargetId}'");
+
+        var toggledLayout = await context.CallGameToolAsync("ui_layout.capture_toggled", "rimworld/get_ui_layout", new
+        {
+            surfaceId = "main-tab:Work",
+            timeoutMs = 3000
+        }, cancellationToken);
+        context.EnsureSucceeded(toggledLayout, "Capturing the Work main-tab layout after clicking the checkbox");
+
+        var toggledSurface = ResolveUiLayoutSurface(toggledLayout.StructuredContent, "main-tab:Work");
+        var toggledCheckbox = ResolveUiLayoutElement(toggledSurface, "checkbox");
+        var toggledChecked = JsonNodeHelpers.ReadBoolean(toggledCheckbox, "isChecked");
+        if (!toggledChecked.HasValue)
+            throw new InvalidOperationException("The toggled Work-tab checkbox did not expose a boolean checked state.");
+        if (toggledChecked.Value == initialChecked.Value)
+            throw new InvalidOperationException("Clicking the captured Work-tab checkbox did not change its checked state.");
+
+        var restoreTargetId = ReadRequiredString(toggledCheckbox, "targetId");
+        var restoreCheckbox = await context.CallGameToolAsync("ui_layout.restore_checkbox", "rimworld/click_ui_target", new
+        {
+            targetId = restoreTargetId,
+            timeoutMs = 3000
+        }, cancellationToken);
+        context.EnsureSucceeded(restoreCheckbox, $"Restoring UI target '{restoreTargetId}' to its original state");
+
+        var restoredLayout = await context.CallGameToolAsync("ui_layout.capture_restored", "rimworld/get_ui_layout", new
+        {
+            surfaceId = "main-tab:Work",
+            timeoutMs = 3000
+        }, cancellationToken);
+        context.EnsureSucceeded(restoredLayout, "Capturing the Work main-tab layout after restoring the checkbox");
+
+        var restoredSurface = ResolveUiLayoutSurface(restoredLayout.StructuredContent, "main-tab:Work");
+        var restoredCheckbox = ResolveUiLayoutElement(restoredSurface, "checkbox");
+        var restoredChecked = JsonNodeHelpers.ReadBoolean(restoredCheckbox, "isChecked");
+        if (restoredChecked != initialChecked)
+            throw new InvalidOperationException("Restoring the Work-tab checkbox did not return it to the original checked state.");
+
+        var closeMainTab = await context.CallGameToolAsync("ui_layout.close_work_tab", "rimworld/close_main_tab", new
+        {
+            mainTabId = "main-tab:Work"
+        }, cancellationToken);
+        context.EnsureSucceeded(closeMainTab, "Closing the Work main tab after the UI layout roundtrip");
+
+        context.SetSummaryValue("uiTargetId", initialTargetId);
+        context.SetSummaryValue("checkboxSource", ReadRequiredString(checkbox, "source"));
+        context.SetScenarioData("initialLayout", initialLayout.StructuredContent);
+        context.SetScenarioData("clippedScreenshot", clippedScreenshot.StructuredContent);
+        context.SetScenarioData("clickCheckbox", clickCheckbox.StructuredContent);
+        context.SetScenarioData("toggledLayout", toggledLayout.StructuredContent);
+        context.SetScenarioData("restoreCheckbox", restoreCheckbox.StructuredContent);
+        context.SetScenarioData("restoredLayout", restoredLayout.StructuredContent);
+
+        var observation = await observationWindow.CaptureAsync(
+            "ui_layout.final_bridge_status",
+            "ui_layout.collect_operation_events",
+            "ui_layout.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }
@@ -3488,6 +3598,30 @@ internal static class SmokeScenarioCatalog
         }
 
         throw new InvalidOperationException($"Could not find the expected main tab '{preferredDefName}' / '{preferredWindowType}'.");
+    }
+
+    private static JsonNode? ResolveUiLayoutSurface(JsonNode? structuredContent, string surfaceTargetId)
+    {
+        var surfaces = JsonNodeHelpers.ReadArray(structuredContent, "surfaces");
+        foreach (var surface in surfaces)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(surface, "surfaceTargetId"), surfaceTargetId, StringComparison.Ordinal))
+                return surface;
+        }
+
+        throw new InvalidOperationException($"Could not find UI layout surface '{surfaceTargetId}'.");
+    }
+
+    private static JsonNode? ResolveUiLayoutElement(JsonNode? surface, string kind)
+    {
+        var elements = JsonNodeHelpers.ReadArray(surface, "elements");
+        foreach (var element in elements)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(element, "kind"), kind, StringComparison.Ordinal))
+                return element;
+        }
+
+        throw new InvalidOperationException($"Could not find a UI layout element of kind '{kind}'.");
     }
 
     private static string ResolveArchitectBuildDesignatorId(IReadOnlyList<JsonNode?> designators, string buildableDefName, bool requireDropdownChild = false)

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using HarmonyLib;
 using RimBridgeServer.Core;
+using UnityEngine;
 using Verse;
 
 namespace RimBridgeServer;
@@ -28,6 +29,7 @@ internal static class Root_Update_Patch
     public static void Postfix()
     {
         RimBridgeMainThread.Pump();
+        RimBridgeUiWorkbench.AdvanceFrame(Time.frameCount);
     }
 }
 

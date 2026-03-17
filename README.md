@@ -113,6 +113,8 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/list_main_tabs`** - List RimWorld main tabs such as Work, Assign, Research, and mod-provided tabs with stable target ids
 - **`rimworld/open_main_tab`** - Open one RimWorld main tab by stable target id, `defName`, label, or tab window type
 - **`rimworld/close_main_tab`** - Close the currently open RimWorld main tab, optionally asserting which tab is open first
+- **`rimworld/get_ui_layout`** - Capture a structured layout snapshot for the currently drawn dialogs, windows, or main tabs, including actionable `ui-element` target ids
+- **`rimworld/click_ui_target`** - Activate an actionable `ui-element` target returned by `rimworld/get_ui_layout` without foreground mouse input
 - **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
 - **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
 - **`rimworld/close_window`** - Close an open RimWorld window by type name or close the topmost window
@@ -182,6 +184,14 @@ Pawn-target debug actions are now supported through the same surface. Discovery 
 `rimworld/list_main_tabs` exposes RimWorld's built-in and mod-provided main tabs through stable `main-tab:<defName>` target ids. Each entry reports the tab `defName`, label, window type, order, visibility, disabled state, and the live rect when that tab is open.
 
 `rimworld/open_main_tab` and `rimworld/close_main_tab` then make those tabs deterministic harness surfaces instead of something that must be clicked in the foreground. `rimworld/get_ui_state` now reports `mainTabOpen`, `openMainTabId`, `openMainTabType`, `openMainTabLabel`, and a `mainTab` object, while `rimworld/get_screen_targets` exposes the active main tab as a clip-capable target so screenshots can be cropped directly to built-in windows such as Work/Priorities.
+
+### Generic UI layout workbench
+
+`rimworld/get_ui_layout` adds a generic dialog and window workbench on top of RimWorld's actual draw pass. It can capture every currently drawn surface, or a specific one when `surfaceId` is provided. Use `main-tab:<defName>` for built-in or mod-provided main tabs, or pass a live `windowTargetId` from `rimworld/get_ui_state` / `rimworld/get_screen_targets` when you want to isolate one ordinary dialog window.
+
+Each captured surface reports its rect, type, label/title metadata, and a flat list of semantic UI elements such as labels, buttons, icon buttons, checkboxes, text fields, sliders, groups, and scroll views. Actionable controls receive stable `ui-element:<captureId>:<surfaceIndex>:<elementIndex>` target ids, and those same ids are also valid `clipTargetId` values for `rimworld/take_screenshot`.
+
+`rimworld/click_ui_target` is the matching activation seam. It consumes only actionable `ui-element` ids emitted by `rimworld/get_ui_layout`, redraw-matches the corresponding control on the real surface, and invokes the underlying RimWorld widget directly instead of simulating OS-level mouse movement. That makes built-in windows, mod settings dialogs, and sub-dialog drilldowns background-safe for automated UX checks.
 
 ### Architect and god-mode mapping
 
@@ -649,6 +659,14 @@ The `main-tab-navigation` scenario covers deterministic built-in window navigati
 - verifies `rimworld/get_ui_state` and `rimworld/get_screen_targets` report the active main-tab target
 - captures a screenshot clipped directly to that main-tab target
 - closes the Work tab again through `rimworld/close_main_tab`
+
+The `ui-layout-roundtrip` scenario covers the generic UI layout workbench against a real built-in surface:
+
+- ensures a playable game exists and opens the Work tab
+- captures `rimworld/get_ui_layout` for `surfaceId: "main-tab:Work"`
+- clips a screenshot directly to the discovered `Manual priorities` checkbox target
+- toggles that checkbox through `rimworld/click_ui_target`
+- captures a fresh layout to verify the checkbox state changed, then restores the original state
 
 The `context-menu-cancel-roundtrip` scenario exercises the first background-safe input path:
 
