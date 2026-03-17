@@ -515,6 +515,15 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(x), x), (nameof(z), z), (nameof(mode), mode)));
     }
 
+    [Tool("rimworld/right_click_cell", Description = "Apply RimWorld's native right-click map interaction for the current pawn selection, auto-executing the default action when possible and only opening a menu as fallback")]
+    public object RightClickCell(
+        [ToolParameter(Description = "Target pawn name on the current map. Optional if x/z are provided.")] string targetPawnName = null,
+        [ToolParameter(Description = "Target cell x coordinate when no pawn name is given")] int x = 0,
+        [ToolParameter(Description = "Target cell z coordinate when no pawn name is given")] int z = 0)
+    {
+        return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(x), x), (nameof(z), z)));
+    }
+
     [Tool("rimworld/get_context_menu_options", Description = "Get the currently opened debug context menu options")]
     public object GetContextMenuOptions()
     {

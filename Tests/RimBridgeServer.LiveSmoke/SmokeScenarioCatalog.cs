@@ -1187,8 +1187,7 @@ internal static class SmokeScenarioCatalog
 
                               rb.print("rally", { x = rallyX, z = rallyZ })
 
-                              rb.call("rimworld/open_context_menu", { x = rallyX, z = rallyZ, mode = "vanilla" })
-                              rb.call("rimworld/execute_context_menu_option", { label = "Go here" })
+                              rb.call("rimworld/right_click_cell", { x = rallyX, z = rallyZ })
                               rb.call("rimworld/pause_game", { pause = false })
 
                               local grouped = rb.poll("rimworld/list_colonists", { currentMapOnly = true }, {
