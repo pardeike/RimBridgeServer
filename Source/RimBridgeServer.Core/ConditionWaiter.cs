@@ -34,6 +34,8 @@ public sealed class WaitOutcome
 
     public int ProbeFailureCount { get; set; }
 
+    public string LastProbeError { get; set; } = string.Empty;
+
     public string Message { get; set; } = string.Empty;
 
     public object Snapshot { get; set; }
@@ -54,8 +56,10 @@ public sealed class ConditionWaiter
 
         var stopwatch = Stopwatch.StartNew();
         WaitProbeResult lastProbe = null;
+        object lastSnapshot = null;
         var attempts = 0;
         var probeFailureCount = 0;
+        var lastProbeError = string.Empty;
 
         while (true)
         {
@@ -65,6 +69,8 @@ public sealed class ConditionWaiter
             try
             {
                 lastProbe = probe() ?? new WaitProbeResult();
+                if (lastProbe.Snapshot != null)
+                    lastSnapshot = lastProbe.Snapshot;
             }
             catch (Exception ex)
             {
@@ -76,6 +82,8 @@ public sealed class ConditionWaiter
                     throw;
 
                 probeFailureCount++;
+                lastProbeError = ex.Message;
+                lastProbe.Snapshot ??= lastSnapshot;
             }
 
             if (lastProbe.IsSatisfied)
@@ -86,6 +94,7 @@ public sealed class ConditionWaiter
                     Attempts = attempts,
                     ElapsedMs = stopwatch.ElapsedMilliseconds,
                     ProbeFailureCount = probeFailureCount,
+                    LastProbeError = lastProbeError,
                     Message = string.IsNullOrWhiteSpace(lastProbe.Message) ? "Condition satisfied." : lastProbe.Message,
                     Snapshot = lastProbe.Snapshot
                 };
@@ -93,14 +102,21 @@ public sealed class ConditionWaiter
 
             if (stopwatch.ElapsedMilliseconds >= options.TimeoutMs)
             {
+                var timeoutMessage = string.IsNullOrWhiteSpace(options.TimeoutMessage) ? lastProbe.Message : options.TimeoutMessage;
+                if (string.IsNullOrWhiteSpace(timeoutMessage))
+                    timeoutMessage = "Timed out waiting for the condition.";
+                if (string.IsNullOrWhiteSpace(lastProbeError) == false && string.Equals(timeoutMessage, lastProbeError, StringComparison.Ordinal) == false)
+                    timeoutMessage += $" Last probe error: {lastProbeError}";
+
                 return new WaitOutcome
                 {
                     Satisfied = false,
                     Attempts = attempts,
                     ElapsedMs = stopwatch.ElapsedMilliseconds,
                     ProbeFailureCount = probeFailureCount,
-                    Message = string.IsNullOrWhiteSpace(options.TimeoutMessage) ? lastProbe.Message : options.TimeoutMessage,
-                    Snapshot = lastProbe.Snapshot
+                    LastProbeError = lastProbeError,
+                    Message = timeoutMessage,
+                    Snapshot = lastProbe.Snapshot ?? lastSnapshot
                 };
             }
 

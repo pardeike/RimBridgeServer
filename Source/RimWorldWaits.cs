@@ -31,7 +31,7 @@ internal static class RimWorldWaits
 
     public static object WaitForGameLoaded(int timeoutMs = 30000, int pollIntervalMs = 100, bool waitForScreenFade = true, bool pauseIfNeeded = false)
     {
-        var outcome = Waiter.WaitUntil(() => Dispatcher.Invoke(() =>
+        var outcome = WaitUntilMainThreadProbe(() =>
         {
             var status = RimWorldState.ReadStatus();
             var readiness = status.Readiness;
@@ -53,7 +53,7 @@ internal static class RimWorldWaits
                 Message = message,
                 Snapshot = state
             };
-        }, timeoutMs: 2000), new WaitOptions
+        }, new WaitOptions
         {
             TimeoutMs = timeoutMs,
             PollIntervalMs = pollIntervalMs,
@@ -68,7 +68,7 @@ internal static class RimWorldWaits
 
     public static object WaitForLongEventIdle(int timeoutMs = 30000, int pollIntervalMs = 100)
     {
-        var outcome = Waiter.WaitUntil(() => Dispatcher.Invoke(() =>
+        var outcome = WaitUntilMainThreadProbe(() =>
         {
             var state = RimWorldState.ToolStateSnapshot();
             var satisfied = LongEventHandler.AnyEventNowOrWaiting == false;
@@ -81,7 +81,7 @@ internal static class RimWorldWaits
                     : "Waiting for RimWorld long events to finish.",
                 Snapshot = state
             };
-        }, timeoutMs: 2000), new WaitOptions
+        }, new WaitOptions
         {
             TimeoutMs = timeoutMs,
             PollIntervalMs = pollIntervalMs,
@@ -94,7 +94,22 @@ internal static class RimWorldWaits
 
     private static object SnapshotState()
     {
-        return Dispatcher.Invoke(RimWorldState.ToolStateSnapshot, timeoutMs: 2000);
+        return Dispatcher.Invoke(RimWorldState.ToolStateSnapshot, timeoutMs: 5000);
+    }
+
+    private static WaitOutcome WaitUntilMainThreadProbe(Func<WaitProbeResult> probe, WaitOptions options)
+    {
+        return Waiter.WaitUntil(
+            () => Dispatcher.Invoke(probe, timeoutMs: ResolveProbeTimeout(options.TimeoutMs)),
+            options);
+    }
+
+    private static int ResolveProbeTimeout(int waitTimeoutMs)
+    {
+        if (waitTimeoutMs <= 0)
+            return 0;
+
+        return System.Math.Min(waitTimeoutMs, 10000);
     }
 
     private static string DescribeLoadedWaitState(
@@ -131,20 +146,17 @@ internal static class RimWorldWaits
             elapsedMs = outcome.ElapsedMs,
             attempts = outcome.Attempts,
             probeFailureCount = outcome.ProbeFailureCount,
+            lastProbeError = string.IsNullOrWhiteSpace(outcome.LastProbeError) ? null : outcome.LastProbeError,
             state = outcome.Snapshot
         };
     }
 
-    private static WaitProbeResult HandleMainThreadProbeException(System.Exception exception, string message)
+    private static WaitProbeResult HandleMainThreadProbeException(System.Exception _, string message)
     {
-        return exception switch
+        return new WaitProbeResult
         {
-            System.TimeoutException => new WaitProbeResult
-            {
-                IsSatisfied = false,
-                Message = message
-            },
-            _ => null
+            IsSatisfied = false,
+            Message = message
         };
     }
 }

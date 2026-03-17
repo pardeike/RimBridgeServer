@@ -1246,7 +1246,11 @@ public sealed class CapabilityScriptRunner
             }
 
             if (pollIntervalMs > 0)
-                Thread.Sleep(pollIntervalMs);
+            {
+                var remainingMs = timeoutMs - (int)stopwatch.ElapsedMilliseconds;
+                if (remainingMs > 0)
+                    Thread.Sleep(Math.Min(pollIntervalMs, remainingMs));
+            }
         }
     }
 
