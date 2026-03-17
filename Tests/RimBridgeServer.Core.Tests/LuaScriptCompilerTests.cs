@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using RimBridgeServer.Contracts;
@@ -111,6 +112,49 @@ public class LuaScriptCompilerTests
 
         Assert.True(report.Success);
         Assert.Equal(10, report.Result);
+    }
+
+    [Fact]
+    public void InjectsReadOnlyParamsBinding()
+    {
+        var compiler = new LuaScriptCompiler();
+        var definition = compiler.Compile("""
+            rb.assert(params.screenshotFileName ~= nil, "Expected screenshotFileName.")
+
+            return {
+              screenshotFileName = params.screenshotFileName,
+              retryLimit = params.retryLimit,
+              firstPawn = params.pawnNames[1]
+            }
+            """, new Dictionary<string, object>
+            {
+                ["screenshotFileName"] = "capture_001",
+                ["retryLimit"] = 8,
+                ["pawnNames"] = new List<object> { "Blue", "Dee", "Trigger" }
+            });
+
+        var runner = new CapabilityScriptRunner(new CapabilityRegistry());
+        var report = runner.Execute(definition);
+
+        Assert.True(report.Success);
+        Assert.True(report.Returned);
+
+        var result = Assert.IsType<Dictionary<string, object>>(report.Result);
+        Assert.Equal("capture_001", Assert.IsType<string>(result["screenshotFileName"]));
+        Assert.Equal(8, Convert.ToInt32(result["retryLimit"]));
+        Assert.Equal("Blue", Assert.IsType<string>(result["firstPawn"]));
+    }
+
+    [Fact]
+    public void RejectsReassigningParamsBinding()
+    {
+        var compiler = new LuaScriptCompiler();
+        var error = Assert.Throws<LuaScriptCompileException>(() => compiler.Compile("""
+            params = {}
+            """));
+
+        Assert.Equal("lua.unsupported_statement", error.Code);
+        Assert.Contains("read-only", error.Message);
     }
 
     [Fact]

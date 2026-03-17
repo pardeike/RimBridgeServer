@@ -106,11 +106,24 @@ public static class CapabilityLuaReferenceBuilder
                   })
                 end
                 """));
+        var paramsExample = Obj(
+            ("name", "params_binding"),
+            ("description", "Read runtime parameters from the injected read-only params table."),
+            ("luaSource", """
+                rb.assert(params.screenshotFileName ~= nil, "params.screenshotFileName is required.")
+                local retryLimit = params.retryLimit or 6
+
+                rb.print("screenshot", params.screenshotFileName)
+                return {
+                  screenshotFileName = params.screenshotFileName,
+                  retryLimit = retryLimit
+                }
+                """));
 
         return Obj(
             ("success", true),
             ("version", "lua-script-v1"),
-            ("summary", "Machine-readable authoring reference for rimbridge/run_lua."),
+            ("summary", "Machine-readable authoring reference for rimbridge/run_lua and rimbridge/run_lua_file."),
             ("tool", Obj(
                 ("name", "rimbridge/run_lua"),
                 ("companionTool", "rimbridge/get_lua_reference"),
@@ -118,15 +131,40 @@ public static class CapabilityLuaReferenceBuilder
                 ("description", "Compile a narrow Lua subset into the shared script runner and execute it through the normal capability registry."),
                 ("arguments", Arr(
                     Field("luaSource", "string", required: true, defaultValue: null, description: "Lua source using the supported rimbridge/run_lua subset documented here."),
+                    Field("parameters", "object", required: false, defaultValue: null, description: "Optional object-style parameters exposed to the script as the read-only global params table."),
+                    Field("includeStepResults", "bool", required: false, defaultValue: true, description: "Include result payloads for successful call steps in the returned script report."))))),
+            ("fileTool", Obj(
+                ("name", "rimbridge/run_lua_file"),
+                ("companionTool", "rimbridge/get_lua_reference"),
+                ("compileTool", "rimbridge/compile_lua_file"),
+                ("description", "Load a .lua file from disk, expose the optional read-only params table, compile it through the shared Lua frontend, and execute it through the normal capability registry."),
+                ("arguments", Arr(
+                    Field("scriptPath", "string", required: true, defaultValue: null, description: "Absolute path or current-working-directory-relative path to a .lua file."),
+                    Field("parameters", "object", required: false, defaultValue: null, description: "Optional object-style parameters exposed to the script as the read-only global params table."),
                     Field("includeStepResults", "bool", required: false, defaultValue: true, description: "Include result payloads for successful call steps in the returned script report."))))),
             ("compileTool", Obj(
                 ("name", "rimbridge/compile_lua"),
                 ("description", "Compile supported Lua source into the lowered JSON script model without executing capability calls."),
                 ("arguments", Arr(
-                    Field("luaSource", "string", required: true, defaultValue: null, description: "Lua source using the supported rimbridge/run_lua subset documented here."))),
+                    Field("luaSource", "string", required: true, defaultValue: null, description: "Lua source using the supported rimbridge/run_lua subset documented here."),
+                    Field("parameters", "object", required: false, defaultValue: null, description: "Optional object-style parameters exposed to the script as the read-only global params table."))),
                 ("returns", Arr(
                     Field("success", "bool", required: true, defaultValue: null, description: "Whether compilation succeeded."),
                     Field("message", "string", required: true, defaultValue: null, description: "Compilation summary or failure message."),
+                    Field("script", "CapabilityScriptDefinition", required: false, defaultValue: null, description: "Raw lowered script contract object when compilation succeeds."),
+                    Field("scriptJson", "string", required: false, defaultValue: null, description: "Indented JSON serialization of the lowered script."),
+                    Field("error", "compileError", required: false, defaultValue: null, description: "Compile error object when compilation fails."))))),
+            ("compileFileTool", Obj(
+                ("name", "rimbridge/compile_lua_file"),
+                ("description", "Load a .lua file from disk and compile it into the lowered JSON script model without executing capability calls."),
+                ("arguments", Arr(
+                    Field("scriptPath", "string", required: true, defaultValue: null, description: "Absolute path or current-working-directory-relative path to a .lua file."),
+                    Field("parameters", "object", required: false, defaultValue: null, description: "Optional object-style parameters exposed to the script as the read-only global params table."))),
+                ("returns", Arr(
+                    Field("success", "bool", required: true, defaultValue: null, description: "Whether compilation succeeded."),
+                    Field("message", "string", required: true, defaultValue: null, description: "Compilation summary or failure message."),
+                    Field("scriptPath", "string", required: true, defaultValue: null, description: "Requested script path."),
+                    Field("resolvedScriptPath", "string", required: true, defaultValue: null, description: "Resolved on-disk path used for compilation."),
                     Field("script", "CapabilityScriptDefinition", required: false, defaultValue: null, description: "Raw lowered script contract object when compilation succeeds."),
                     Field("scriptJson", "string", required: false, defaultValue: null, description: "Indented JSON serialization of the lowered script."),
                     Field("error", "compileError", required: false, defaultValue: null, description: "Compile error object when compilation fails."))))),
@@ -137,7 +175,16 @@ public static class CapabilityLuaReferenceBuilder
                 ("notes", Arr(
                     "Compile first, then execute the lowered script through the shared capability registry.",
                     "After successful compilation, runtime result shape and runtime failure codes follow the shared script runner model documented by rimbridge/get_script_reference.",
-                    "Use rimbridge/compile_lua to inspect the lowered JSON script when a Lua authoring attempt behaves unexpectedly.")))),
+                    "Use rimbridge/compile_lua or rimbridge/compile_lua_file to inspect the lowered JSON script when a Lua authoring attempt behaves unexpectedly.")))),
+            ("parameterBinding", Obj(
+                ("name", "params"),
+                ("type", "read-only object"),
+                ("availableInTools", Arr("rimbridge/run_lua", "rimbridge/compile_lua", "rimbridge/run_lua_file", "rimbridge/compile_lua_file")),
+                ("description", "Object-style runtime parameters injected as a top-level read-only Lua binding."),
+                ("notes", Arr(
+                    "Use params.field and static one-based indexing such as params.names[1] to read values.",
+                    "params is always present and defaults to an empty object when the caller omits parameters.",
+                    "Reassigning or shadowing params is rejected at compile time.")))),
             ("supportedSubset", Obj(
                 ("statements", Arr(
                     "local assignment",
@@ -241,6 +288,7 @@ public static class CapabilityLuaReferenceBuilder
             ("runtimeResultShape", Obj(
                 ("notes", Arr(
                     "run_lua returns the same top-level runtime shape as run_script: success, message, returned, result, error, output, and script.",
+                    "run_lua_file returns that same shape and also includes scriptPath and resolvedScriptPath.",
                     "The nested script report follows the shared script runner model documented by rimbridge/get_script_reference.")),
                 ("topLevelFields", Arr(
                     Field("success", "bool", required: true, defaultValue: null, description: "Overall Lua script success."),
@@ -248,6 +296,8 @@ public static class CapabilityLuaReferenceBuilder
                     Field("returned", "bool", required: true, defaultValue: false, description: "True when the Lua script ended with return."),
                     Field("result", "object", required: false, defaultValue: null, description: "Value returned by the Lua script."),
                     Field("error", "object", required: false, defaultValue: null, description: "Top-level compile or runtime error."),
+                    Field("scriptPath", "string", required: false, defaultValue: null, description: "Requested script path when using the file-backed tools."),
+                    Field("resolvedScriptPath", "string", required: false, defaultValue: null, description: "Resolved on-disk path when using the file-backed tools."),
                     Field("output", "output[]", required: true, defaultValue: Arr(), description: "Structured trace rows emitted by print/rb.print."),
                     Field("script", "report", required: false, defaultValue: null, description: "Shared script runner report after successful compilation."))))),
             ("pollingGuidance", Obj(
@@ -285,11 +335,12 @@ public static class CapabilityLuaReferenceBuilder
             )),
             ("authoringTips", Arr(
                 "Call rimbridge/get_script_reference as well when you need the exact runtime condition model or lowered JSON result shape.",
-                "Use rimbridge/compile_lua first when bringing up a new scenario so you can inspect the lowered JSON script.",
+                "Use rimbridge/compile_lua first when bringing up a new inline scenario so you can inspect the lowered JSON script.",
+                "Use rimbridge/run_lua_file and rimbridge/compile_lua_file for reusable script fixtures that should live on disk instead of inside a tool call string.",
                 "Prefer rb.print and rb.assert when building test-like scripts with explicit trace output and a clean failure boundary.",
                 "Assign rb.poll(...) to a local when you need both the final result and step metadata such as attempts.",
                 "Prefer state polling over event-dependent scripting in v1 unless a dedicated wait tool already exists for that lifecycle seam.")),
-            ("examples", Arr(minimalExample, pollingExample, bridgeStatePollingExample, planningExample, foreachExample)));
+            ("examples", Arr(minimalExample, pollingExample, bridgeStatePollingExample, planningExample, foreachExample, paramsExample)));
     }
 
     private static Dictionary<string, object> HostFunction(string name, string description, string signature, params object[] parameters)

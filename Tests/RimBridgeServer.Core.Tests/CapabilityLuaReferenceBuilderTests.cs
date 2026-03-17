@@ -21,6 +21,15 @@ public class CapabilityLuaReferenceBuilderTests
 
         var arguments = ReadArray(tool, "arguments");
         Assert.Equal("luaSource", ReadString(ReadObject(arguments[0]), "name"));
+        Assert.Equal("parameters", ReadString(ReadObject(arguments[1]), "name"));
+
+        var fileTool = ReadObject(document, "fileTool");
+        Assert.Equal("rimbridge/run_lua_file", ReadString(fileTool, "name"));
+        Assert.Equal("rimbridge/compile_lua_file", ReadString(fileTool, "compileTool"));
+
+        var fileArguments = ReadArray(fileTool, "arguments");
+        Assert.Equal("scriptPath", ReadString(ReadObject(fileArguments[0]), "name"));
+        Assert.Equal("parameters", ReadString(ReadObject(fileArguments[1]), "name"));
     }
 
     [Fact]
@@ -56,6 +65,7 @@ public class CapabilityLuaReferenceBuilderTests
         Assert.Contains(examples, item => ReadString(ReadObject(item), "name") == "wait_for_entry_scene");
         Assert.Contains(examples, item => ReadString(ReadObject(item), "name") == "bounded_search_and_validate");
         Assert.Contains(examples, item => ReadString(ReadObject(item), "name") == "foreach_selection");
+        Assert.Contains(examples, item => ReadString(ReadObject(item), "name") == "params_binding");
     }
 
     [Fact]
@@ -66,6 +76,22 @@ public class CapabilityLuaReferenceBuilderTests
         var runtimeModel = ReadObject(document, "runtimeModel");
         Assert.Equal("rimbridge/run_script", ReadString(runtimeModel, "loweringTargetTool"));
         Assert.Equal("rimbridge/get_script_reference", ReadString(runtimeModel, "runtimeReferenceTool"));
+    }
+
+    [Fact]
+    public void CreateDocumentIncludesReadOnlyParamsBinding()
+    {
+        var document = CapabilityLuaReferenceBuilder.CreateDocument();
+
+        var parameterBinding = ReadObject(document, "parameterBinding");
+        Assert.Equal("params", ReadString(parameterBinding, "name"));
+        Assert.Equal("read-only object", ReadString(parameterBinding, "type"));
+
+        var availableInTools = ReadArray(parameterBinding, "availableInTools");
+        Assert.Contains(availableInTools, item => Assert.IsType<string>(item) == "rimbridge/run_lua");
+        Assert.Contains(availableInTools, item => Assert.IsType<string>(item) == "rimbridge/run_lua_file");
+        Assert.Contains(availableInTools, item => Assert.IsType<string>(item) == "rimbridge/compile_lua");
+        Assert.Contains(availableInTools, item => Assert.IsType<string>(item) == "rimbridge/compile_lua_file");
     }
 
     [Fact]

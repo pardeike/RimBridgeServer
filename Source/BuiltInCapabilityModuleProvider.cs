@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -6,6 +7,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Lib.GAB.Tools;
+using Newtonsoft.Json.Linq;
 using RimBridgeServer.Contracts;
 using RimBridgeServer.Core;
 using RimBridgeServer.Extensions.Abstractions;
@@ -131,6 +133,9 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
         if (nonNullableType.IsInstanceOfType(value))
             return value;
 
+        if (TryConvertStructuredArgument(value, nonNullableType, out var structured))
+            return structured;
+
         if (nonNullableType.IsEnum)
         {
             if (value is string enumText)
@@ -140,6 +145,115 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
         }
 
         return Convert.ChangeType(value, nonNullableType, CultureInfo.InvariantCulture);
+    }
+
+    private static bool TryConvertStructuredArgument(object value, Type targetType, out object converted)
+    {
+        converted = null;
+
+        if (targetType == typeof(Dictionary<string, object>) || targetType == typeof(IDictionary<string, object>))
+        {
+            converted = NormalizeStructuredDictionary(value);
+            return true;
+        }
+
+        if (targetType == typeof(List<object>) || targetType == typeof(IList<object>) || targetType == typeof(IEnumerable<object>))
+        {
+            converted = NormalizeStructuredList(value);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static Dictionary<string, object> NormalizeStructuredDictionary(object value)
+    {
+        return value switch
+        {
+            null => new Dictionary<string, object>(StringComparer.Ordinal),
+            JObject jobject => NormalizeJObject(jobject),
+            IDictionary<string, object> dictionary => NormalizeDictionary(dictionary),
+            IDictionary legacyDictionary => NormalizeLegacyDictionary(legacyDictionary),
+            _ => throw new InvalidOperationException($"Expected an object-style argument but received '{value.GetType().FullName ?? value.GetType().Name}'.")
+        };
+    }
+
+    private static List<object> NormalizeStructuredList(object value)
+    {
+        return value switch
+        {
+            null => [],
+            JArray jarray => NormalizeJArray(jarray),
+            IEnumerable<object> items when value is not string => NormalizeEnumerable(items),
+            IEnumerable enumerable when value is not string => NormalizeEnumerable(enumerable.Cast<object>()),
+            _ => throw new InvalidOperationException($"Expected an array-style argument but received '{value.GetType().FullName ?? value.GetType().Name}'.")
+        };
+    }
+
+    private static Dictionary<string, object> NormalizeDictionary(IDictionary<string, object> dictionary)
+    {
+        var normalized = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var pair in dictionary)
+            normalized[pair.Key] = NormalizeStructuredValue(pair.Value);
+
+        return normalized;
+    }
+
+    private static Dictionary<string, object> NormalizeLegacyDictionary(IDictionary dictionary)
+    {
+        var normalized = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (DictionaryEntry entry in dictionary)
+        {
+            if (entry.Key is not string key)
+                throw new InvalidOperationException("Structured object arguments must use string keys.");
+
+            normalized[key] = NormalizeStructuredValue(entry.Value);
+        }
+
+        return normalized;
+    }
+
+    private static Dictionary<string, object> NormalizeJObject(JObject jobject)
+    {
+        var normalized = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var property in jobject.Properties())
+            normalized[property.Name] = NormalizeStructuredValue(property.Value);
+
+        return normalized;
+    }
+
+    private static List<object> NormalizeJArray(JArray jarray)
+    {
+        var normalized = new List<object>(jarray.Count);
+        foreach (var item in jarray)
+            normalized.Add(NormalizeStructuredValue(item));
+
+        return normalized;
+    }
+
+    private static List<object> NormalizeEnumerable(IEnumerable<object> items)
+    {
+        var normalized = new List<object>();
+        foreach (var item in items)
+            normalized.Add(NormalizeStructuredValue(item));
+
+        return normalized;
+    }
+
+    private static object NormalizeStructuredValue(object value)
+    {
+        return value switch
+        {
+            null => null,
+            JObject jobject => NormalizeJObject(jobject),
+            JArray jarray => NormalizeJArray(jarray),
+            JValue jvalue => jvalue.Value,
+            IDictionary<string, object> dictionary => NormalizeDictionary(dictionary),
+            IDictionary legacyDictionary => NormalizeLegacyDictionary(legacyDictionary),
+            IEnumerable<object> items when value is not string => NormalizeEnumerable(items),
+            IEnumerable enumerable when value is not string => NormalizeEnumerable(enumerable.Cast<object>()),
+            _ => value
+        };
     }
 
     private static CapabilityParameterDescriptor CreateParameterDescriptor(ParameterInfo parameter)
@@ -179,7 +293,9 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             "rimbridge/get_lua_reference" => CapabilityExecutionKind.Immediate,
             "rimbridge/run_script" => CapabilityExecutionKind.Immediate,
             "rimbridge/run_lua" => CapabilityExecutionKind.Immediate,
+            "rimbridge/run_lua_file" => CapabilityExecutionKind.Immediate,
             "rimbridge/compile_lua" => CapabilityExecutionKind.Immediate,
+            "rimbridge/compile_lua_file" => CapabilityExecutionKind.Immediate,
             "rimworld/go_to_main_menu" => CapabilityExecutionKind.LongEventBound,
             "rimworld/start_debug_game" => CapabilityExecutionKind.LongEventBound,
             "rimworld/load_game" => CapabilityExecutionKind.LongEventBound,

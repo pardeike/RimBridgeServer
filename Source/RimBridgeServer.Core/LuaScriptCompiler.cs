@@ -41,6 +41,7 @@ public sealed class LuaScriptCompiler
     private const string DefaultScriptName = "lua-script";
     private const int DefaultWhileMaxIterations = 100;
     private const int DefaultLoopMaxIterations = 1000;
+    private const string ParamsVariableName = "params";
 
     private static readonly HashSet<string> AllowedGlobalNames = ["rb", "ipairs", "print"];
     private static readonly Assembly MoonSharpAssembly = typeof(Script).Assembly;
@@ -69,17 +70,24 @@ public sealed class LuaScriptCompiler
     private static readonly MethodInfo CreateLoadingContextMethod = GetRequiredMethod(LoaderFastType, "CreateLoadingContext");
     private static readonly MethodInfo ExprListGetExpressionsMethod = GetRequiredMethod(ExprListExpressionType, "GetExpressions", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-    public CapabilityScriptDefinition Compile(string luaSource)
+    public CapabilityScriptDefinition Compile(string luaSource, IDictionary<string, object> parameters = null)
     {
         if (string.IsNullOrWhiteSpace(luaSource))
             throw new LuaScriptCompileException("lua.invalid_source", "A non-empty luaSource payload is required.");
 
         var chunk = ParseChunk(luaSource);
         var state = new CompilerState(luaSource);
+        state.DeclareReadOnly(ParamsVariableName);
         var definition = new CapabilityScriptDefinition
         {
             Name = DefaultScriptName
         };
+        definition.Steps.Add(new CapabilityScriptStep
+        {
+            Type = "let",
+            Name = ParamsVariableName,
+            Value = NormalizeParameterValue(parameters)
+        });
 
         var rootBlock = GetRequiredFieldValue(chunk, "m_Block");
         definition.Steps.AddRange(LowerCompositeStatement(rootBlock, state));
@@ -212,6 +220,8 @@ public sealed class LuaScriptCompiler
         var variableName = GetSymbolExpressionName(target);
         var symbol = ReadSymbolRef(target);
         var alreadyDeclared = state.IsDeclared(variableName);
+        if (state.IsReadOnly(variableName))
+            throw CreateUnsupportedStatementException(statement, $"Lua binding '{variableName}' is read-only in rimbridge/run_lua v1.");
 
         if (!alreadyDeclared && symbol.Type == SymbolRefType.Global)
             throw CreateUnsupportedStatementException(statement, $"Global assignment to '{variableName}' is not supported in rimbridge/run_lua v1.");
@@ -347,6 +357,7 @@ public sealed class LuaScriptCompiler
     private static List<CapabilityScriptStep> LowerNumericForStatement(object statement, CompilerState state)
     {
         var loopVariableName = ReadSymbolName(GetRequiredFieldValue(statement, "m_VarName"));
+        ValidateWritableBindingName(loopVariableName, statement, state);
         var startVariable = state.CreateTemp("for_start");
         var endVariable = state.CreateTemp("for_end");
         var stepVariable = state.CreateTemp("for_step");
@@ -480,6 +491,9 @@ public sealed class LuaScriptCompiler
             .ToList();
         if (names.Count == 0 || names.Count > 2)
             throw CreateUnsupportedStatementException(statement, "Lua ipairs loops in rimbridge/run_lua v1 support one or two loop variables.");
+
+        foreach (var name in names)
+            ValidateWritableBindingName(name, statement, state);
 
         var valuesExpression = GetRequiredFieldValue(statement, "m_RValues");
         var expressions = ReadExpressionArray(valuesExpression);
@@ -1472,6 +1486,57 @@ public sealed class LuaScriptCompiler
                ?? throw new InvalidOperationException($"MoonSharp method '{type.FullName}.{name}' could not be loaded.");
     }
 
+    private static void ValidateWritableBindingName(string name, object owner, CompilerState state)
+    {
+        if (state.IsReadOnly(name))
+            throw CreateUnsupportedStatementException(owner, $"Lua binding '{name}' is read-only in rimbridge/run_lua v1.");
+    }
+
+    private static object NormalizeParameterValue(object value)
+    {
+        return value switch
+        {
+            null => new Dictionary<string, object>(StringComparer.Ordinal),
+            IDictionary<string, object> dictionary => NormalizeParameterDictionary(dictionary),
+            IDictionary dictionary => NormalizeLegacyParameterDictionary(dictionary),
+            IEnumerable<object> items when value is not string => NormalizeParameterList(items),
+            IEnumerable enumerable when value is not string => NormalizeParameterList(enumerable.Cast<object>()),
+            _ => value
+        };
+    }
+
+    private static Dictionary<string, object> NormalizeParameterDictionary(IDictionary<string, object> dictionary)
+    {
+        var normalized = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var pair in dictionary)
+            normalized[pair.Key] = NormalizeParameterValue(pair.Value);
+
+        return normalized;
+    }
+
+    private static Dictionary<string, object> NormalizeLegacyParameterDictionary(IDictionary dictionary)
+    {
+        var normalized = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (DictionaryEntry entry in dictionary)
+        {
+            if (entry.Key is not string key)
+                throw new LuaScriptCompileException("lua.invalid_parameters", "Lua parameters must use string keys.");
+
+            normalized[key] = NormalizeParameterValue(entry.Value);
+        }
+
+        return normalized;
+    }
+
+    private static List<object> NormalizeParameterList(IEnumerable<object> items)
+    {
+        var normalized = new List<object>();
+        foreach (var item in items)
+            normalized.Add(NormalizeParameterValue(item));
+
+        return normalized;
+    }
+
     private enum HostCallKind
     {
         Call,
@@ -1524,6 +1589,7 @@ public sealed class LuaScriptCompiler
     private sealed class CompilerState
     {
         private readonly List<HashSet<string>> _scopes = [new(StringComparer.Ordinal)];
+        private readonly HashSet<string> _readOnlyBindings = new(StringComparer.Ordinal);
         private int _nextGeneratedId = 1;
         private int _nextTempId = 1;
 
@@ -1552,6 +1618,12 @@ public sealed class LuaScriptCompiler
             _scopes[_scopes.Count - 1].Add(name);
         }
 
+        public void DeclareReadOnly(string name)
+        {
+            _readOnlyBindings.Add(name);
+            Declare(name);
+        }
+
         public bool IsDeclared(string name)
         {
             for (var index = _scopes.Count - 1; index >= 0; index--)
@@ -1561,6 +1633,11 @@ public sealed class LuaScriptCompiler
             }
 
             return false;
+        }
+
+        public bool IsReadOnly(string name)
+        {
+            return _readOnlyBindings.Contains(name ?? string.Empty);
         }
 
         public string CreateGeneratedId(string prefix)

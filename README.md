@@ -72,10 +72,12 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimbridge/wait_for_game_loaded`** - Wait until RimWorld has finished loading a playable game
 - **`rimbridge/wait_for_long_event_idle`** - Wait until RimWorld reports no long event in progress
 - **`rimbridge/get_script_reference`** - Get a machine-readable authoring reference for `rimbridge/run_script`
-- **`rimbridge/get_lua_reference`** - Get a machine-readable authoring reference for `rimbridge/run_lua`
+- **`rimbridge/get_lua_reference`** - Get a machine-readable authoring reference for `rimbridge/run_lua` and `rimbridge/run_lua_file`
 - **`rimbridge/run_script`** - Execute a JSON script containing an ordered list of capability calls and return a step-by-step report
 - **`rimbridge/run_lua`** - Compile and execute a narrow Lua scripting subset through the shared script runner
+- **`rimbridge/run_lua_file`** - Load a `.lua` file from disk, inject a read-only `params` table, and execute it through the shared script runner
 - **`rimbridge/compile_lua`** - Compile supported Lua into the lowered JSON script model without executing capability calls
+- **`rimbridge/compile_lua_file`** - Load a `.lua` file from disk and compile it into the lowered JSON script model without executing capability calls
 
 ### Game control
 - **`rimworld/get_game_info`** - Get information about the current game
@@ -301,11 +303,13 @@ Those global limits complement the existing local bounds on `while.maxIterations
 
 ### Lua front-end
 
-`rimbridge/run_lua` now sits on top of that same runner instead of introducing a second execution path. It compiles a narrow Lua subset into the shared JSON script model, then executes the lowered script through the normal capability registry. The outer result shape matches `rimbridge/run_script`: `success`, `message`, `error`, `output`, `result`, and the full `script` report.
+`rimbridge/run_lua` and `rimbridge/run_lua_file` now sit on top of that same runner instead of introducing a second execution path. They compile a narrow Lua subset into the shared JSON script model, then execute the lowered script through the normal capability registry. The outer result shape matches `rimbridge/run_script`: `success`, `message`, `error`, `output`, `result`, and the full `script` report.
 
-Fresh clients do not need to infer the Lua subset from this README alone. Call `rimbridge/get_lua_reference` over GABS to retrieve a machine-readable reference covering the supported Lua subset, the `rb.*` host API, compile-error codes, inherited runtime model, and copyable examples.
+Fresh clients do not need to infer the Lua subset from this README alone. Call `rimbridge/get_lua_reference` over GABS to retrieve a machine-readable reference covering the supported Lua subset, the `rb.*` host API, the read-only `params` binding, file-backed execution, compile-error codes, inherited runtime model, and copyable examples.
 
-Use `rimbridge/compile_lua` when you want to inspect the lowered JSON without executing anything. That is the debugging seam for Lua lowering problems and the easiest way to confirm that Lua remains a front-end over the existing runner rather than a separate runtime.
+Use `rimbridge/compile_lua` when you want to inspect the lowered JSON for inline source without executing anything. Use `rimbridge/compile_lua_file` for reusable `.lua` fixtures stored on disk. Those are the debugging seams for Lua lowering problems and the easiest way to confirm that Lua remains a front-end over the existing runner rather than a separate runtime.
+
+Both inline and file-backed Lua tools can receive an object-style `parameters` argument. The bridge injects that object into the script as a top-level read-only `params` table. Use that for runtime values such as screenshot names, search radii, or scenario-specific limits instead of string templating the Lua source.
 
 For waiting and synchronization, prefer a polling-first model. In `run_lua` v1 the intended pattern is: issue a mutating action once, then use `rb.poll(...)` against a read-only capability until a bounded structured condition matches. Good polling targets include `rimbridge/get_bridge_status`, `rimworld/list_colonists`, and `rimworld/get_designator_state`. This keeps scripts state-driven instead of relying on UI timing or host-side event delivery.
 
@@ -325,6 +329,7 @@ Supported `run_lua` v1 features:
 - `return`
 - `print(...)` or `rb.print(...)`
 - `rb.call(...)`, `rb.poll(...)`, `rb.assert(...)`, and `rb.fail(...)`
+- read-only `params` table injected by `run_lua`, `compile_lua`, `run_lua_file`, and `compile_lua_file`
 
 Not supported in v1:
 
@@ -397,6 +402,18 @@ end
 rb.assert(chosen ~= nil, "Expected to find a candidate cell.")
 rb.print("planning_attempts", planningAttempts)
 return chosen.result.cell
+```
+
+File-backed fixture example:
+
+```json
+{
+  "scriptPath": "/absolute/path/to/script-colonist-prison.lua",
+  "parameters": {
+    "screenshotFileName": "rimbridge_script_colonist_prison_demo"
+  },
+  "includeStepResults": true
+}
 ```
 
 Reference example:

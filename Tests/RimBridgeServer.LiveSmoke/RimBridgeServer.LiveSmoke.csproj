@@ -10,4 +10,8 @@
 		<ProjectGuid>{8BC878FB-C88B-498A-973F-5E642AEC3C1E}</ProjectGuid>
 	</PropertyGroup>
 
+	<ItemGroup>
+		<None Include="Fixtures\Lua\**\*.lua" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+
 </Project>

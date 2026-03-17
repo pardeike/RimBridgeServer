@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RimBridgeServer.Contracts;
@@ -82,7 +84,7 @@ internal sealed class ScriptingCapabilityModule
         };
     }
 
-    public object RunLua(string luaSource, bool includeStepResults = true)
+    public object RunLua(string luaSource, Dictionary<string, object> parameters = null, bool includeStepResults = true)
     {
         if (string.IsNullOrWhiteSpace(luaSource))
         {
@@ -96,7 +98,7 @@ internal sealed class ScriptingCapabilityModule
         CapabilityScriptDefinition definition;
         try
         {
-            definition = _luaCompiler.Compile(luaSource);
+            definition = _luaCompiler.Compile(luaSource, NormalizeArguments(parameters));
         }
         catch (LuaScriptCompileException ex)
         {
@@ -141,12 +143,13 @@ internal sealed class ScriptingCapabilityModule
             returned = report.Returned,
             result = report.Result,
             error = report.Error,
+            parameterCount = parameters?.Count ?? 0,
             output = report.Output.ConvertAll(ProjectOutput),
             script = ProjectReport(report)
         };
     }
 
-    public object CompileLua(string luaSource)
+    public object CompileLua(string luaSource, Dictionary<string, object> parameters = null)
     {
         if (string.IsNullOrWhiteSpace(luaSource))
         {
@@ -160,7 +163,7 @@ internal sealed class ScriptingCapabilityModule
         CapabilityScriptDefinition definition;
         try
         {
-            definition = _luaCompiler.Compile(luaSource);
+            definition = _luaCompiler.Compile(luaSource, NormalizeArguments(parameters));
         }
         catch (LuaScriptCompileException ex)
         {
@@ -194,9 +197,28 @@ internal sealed class ScriptingCapabilityModule
         {
             success = true,
             message = $"Compiled Lua into {definition.Steps.Count} top-level script statement(s).",
+            parameterCount = parameters?.Count ?? 0,
             script = definition,
             scriptJson = JsonConvert.SerializeObject(definition, Formatting.Indented)
         };
+    }
+
+    public object RunLuaFile(string scriptPath, Dictionary<string, object> parameters = null, bool includeStepResults = true)
+    {
+        if (!TryLoadLuaFile(scriptPath, out var resolvedPath, out var luaSource, out var failure))
+            return failure;
+
+        var result = RunLua(luaSource, parameters, includeStepResults);
+        return WithFileMetadata(result, scriptPath, resolvedPath);
+    }
+
+    public object CompileLuaFile(string scriptPath, Dictionary<string, object> parameters = null)
+    {
+        if (!TryLoadLuaFile(scriptPath, out var resolvedPath, out var luaSource, out var failure))
+            return failure;
+
+        var result = CompileLua(luaSource, parameters);
+        return WithFileMetadata(result, scriptPath, resolvedPath);
     }
 
     public object GetScriptReference()
@@ -207,6 +229,106 @@ internal sealed class ScriptingCapabilityModule
     public object GetLuaReference()
     {
         return CapabilityLuaReferenceBuilder.CreateDocument();
+    }
+
+    private static bool TryLoadLuaFile(string scriptPath, out string resolvedPath, out string luaSource, out object failure)
+    {
+        resolvedPath = null;
+        luaSource = null;
+
+        if (string.IsNullOrWhiteSpace(scriptPath))
+        {
+            failure = new
+            {
+                success = false,
+                message = "A non-empty scriptPath payload is required."
+            };
+            return false;
+        }
+
+        if (!TryResolveLuaFilePath(scriptPath, out resolvedPath, out var resolutionError))
+        {
+            failure = new
+            {
+                success = false,
+                message = resolutionError
+            };
+            return false;
+        }
+
+        try
+        {
+            luaSource = File.ReadAllText(resolvedPath);
+        }
+        catch (Exception ex)
+        {
+            failure = new
+            {
+                success = false,
+                scriptPath = scriptPath,
+                resolvedScriptPath = resolvedPath,
+                message = $"The Lua script file could not be read. {ex.Message}"
+            };
+            return false;
+        }
+
+        failure = null;
+        return true;
+    }
+
+    private static bool TryResolveLuaFilePath(string scriptPath, out string resolvedPath, out string error)
+    {
+        resolvedPath = null;
+        error = null;
+
+        var trimmed = scriptPath.Trim();
+        if (!trimmed.EndsWith(".lua", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Lua script files must use the .lua extension.";
+            return false;
+        }
+
+        var candidates = Path.IsPathRooted(trimmed)
+            ? [Path.GetFullPath(trimmed)]
+            : new[]
+            {
+                Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), trimmed)),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, trimmed))
+            }
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var candidate in candidates)
+        {
+            if (!File.Exists(candidate))
+                continue;
+
+            resolvedPath = candidate;
+            return true;
+        }
+
+        error = $"The Lua script file '{trimmed}' could not be found.";
+        return false;
+    }
+
+    private static object WithFileMetadata(object result, string requestedPath, string resolvedPath)
+    {
+        if (result == null)
+        {
+            return new
+            {
+                success = false,
+                scriptPath = requestedPath,
+                resolvedScriptPath = resolvedPath,
+                message = "The Lua file tool did not produce a result object."
+            };
+        }
+
+        var metadata = JObject.FromObject(result).ToObject<Dictionary<string, object>>()
+            ?? new Dictionary<string, object>(StringComparer.Ordinal);
+        metadata["scriptPath"] = requestedPath;
+        metadata["resolvedScriptPath"] = resolvedPath;
+        return metadata;
     }
 
     private static object ProjectLuaCompileError(LuaScriptCompileException ex)

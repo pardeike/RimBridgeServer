@@ -88,7 +88,7 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
-    [Tool("rimbridge/get_lua_reference", Description = "Get a machine-readable authoring reference for rimbridge/run_lua, including the supported Lua subset, rb.* host API, polling/planning patterns, compile errors, limits, and examples")]
+    [Tool("rimbridge/get_lua_reference", Description = "Get a machine-readable authoring reference for rimbridge/run_lua and rimbridge/run_lua_file, including the supported Lua subset, params binding, polling/planning patterns, compile errors, limits, and examples")]
     public object GetLuaReference()
     {
         return InvokeAlias();
@@ -102,18 +102,38 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(scriptJson), scriptJson), (nameof(includeStepResults), includeStepResults)));
     }
 
-    [Tool("rimbridge/run_lua", Description = "Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry; call rimbridge/get_lua_reference for the machine-readable language reference")]
+    [Tool("rimbridge/run_lua", Description = "Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry; supports an injected read-only params table and points discoverers at rimbridge/get_lua_reference")]
     public object RunLua(
         [ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Call rimbridge/get_lua_reference for the full machine-readable language reference and rimbridge/compile_lua to inspect the lowered JSON script.")] string luaSource,
+        [ToolParameter(Description = "Optional object-style parameters exposed to the script as a read-only global params table. Example: {\"screenshotFileName\":\"demo_capture\",\"maxPlanningAttempts\":8}")] Dictionary<string, object> parameters = null,
         [ToolParameter(Description = "Include each successful call step's result payload in the returned script report")] bool includeStepResults = true)
     {
-        return InvokeAlias(Arguments((nameof(luaSource), luaSource), (nameof(includeStepResults), includeStepResults)));
+        return InvokeAlias(Arguments((nameof(luaSource), luaSource), (nameof(parameters), parameters), (nameof(includeStepResults), includeStepResults)));
     }
 
-    [Tool("rimbridge/compile_lua", Description = "Compile supported Lua source into the lowered JSON script model without executing capability calls")]
-    public object CompileLua([ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Call rimbridge/get_lua_reference for the full machine-readable language reference.")] string luaSource)
+    [Tool("rimbridge/run_lua_file", Description = "Load a .lua file from disk, expose an optional read-only params table, compile it through the shared Lua frontend, and execute it through the normal capability registry")]
+    public object RunLuaFile(
+        [ToolParameter(Description = "Absolute path or current-working-directory-relative path to a .lua file")] string scriptPath,
+        [ToolParameter(Description = "Optional object-style parameters exposed to the script as a read-only global params table")] Dictionary<string, object> parameters = null,
+        [ToolParameter(Description = "Include each successful call step's result payload in the returned script report")] bool includeStepResults = true)
     {
-        return InvokeAlias(Arguments((nameof(luaSource), luaSource)));
+        return InvokeAlias(Arguments((nameof(scriptPath), scriptPath), (nameof(parameters), parameters), (nameof(includeStepResults), includeStepResults)));
+    }
+
+    [Tool("rimbridge/compile_lua", Description = "Compile supported Lua source into the lowered JSON script model without executing capability calls; supports an injected read-only params table")]
+    public object CompileLua(
+        [ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Call rimbridge/get_lua_reference for the full machine-readable language reference.")] string luaSource,
+        [ToolParameter(Description = "Optional object-style parameters exposed to the script as a read-only global params table")] Dictionary<string, object> parameters = null)
+    {
+        return InvokeAlias(Arguments((nameof(luaSource), luaSource), (nameof(parameters), parameters)));
+    }
+
+    [Tool("rimbridge/compile_lua_file", Description = "Load a .lua file from disk and compile it into the lowered JSON script model without executing capability calls")]
+    public object CompileLuaFile(
+        [ToolParameter(Description = "Absolute path or current-working-directory-relative path to a .lua file")] string scriptPath,
+        [ToolParameter(Description = "Optional object-style parameters exposed to the script as a read-only global params table")] Dictionary<string, object> parameters = null)
+    {
+        return InvokeAlias(Arguments((nameof(scriptPath), scriptPath), (nameof(parameters), parameters)));
     }
 
     [Tool("rimworld/pause_game", Description = "Pause or unpause the game")]
