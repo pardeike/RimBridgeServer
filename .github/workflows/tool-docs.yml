@@ -3,6 +3,7 @@ name: Tool Reference
 on:
   pull_request:
     paths:
+      - "README.md"
       - "Source/RimBridgeTools.cs"
       - "Tools/RimBridgeServer.ToolDocGen/**"
       - "docs/tool-reference.md"
@@ -12,8 +13,10 @@ on:
     branches:
       - main
     paths:
+      - "README.md"
       - "Source/RimBridgeTools.cs"
       - "Tools/RimBridgeServer.ToolDocGen/**"
+      - "docs/tool-reference.md"
       - "scripts/generate-tool-reference.sh"
       - ".github/workflows/tool-docs.yml"
 
@@ -40,18 +43,18 @@ jobs:
 
       - name: Verify generated doc is committed
         if: github.event_name == 'pull_request'
-        run: git diff --exit-code -- docs/tool-reference.md
+        run: git diff --exit-code -- README.md docs/tool-reference.md
 
       - name: Commit generated doc
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          if git diff --quiet -- docs/tool-reference.md; then
-            echo "Generated tool reference is already up to date."
+          if git diff --quiet -- README.md docs/tool-reference.md; then
+            echo "Generated README tool surface and tool reference are already up to date."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/tool-reference.md
-          git commit -m "Update generated tool reference [skip ci]"
+          git add README.md docs/tool-reference.md
+          git commit -m "Update generated tool docs [skip ci]"
           git push

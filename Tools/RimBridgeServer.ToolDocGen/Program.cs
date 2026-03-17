@@ -7,12 +7,15 @@ var repoRoot = ResolveRepoRoot(args.Length >= 1 ? args[0] : null, args.Length >=
 var sourcePath = args.Length >= 1
     ? Path.GetFullPath(args[0], Environment.CurrentDirectory)
     : Path.Combine(repoRoot, "Source", "RimBridgeTools.cs");
-var outputPath = args.Length >= 2
+var toolReferencePath = args.Length >= 2
     ? Path.GetFullPath(args[1], Environment.CurrentDirectory)
     : Path.Combine(repoRoot, "docs", "tool-reference.md");
+var readmePath = Path.Combine(repoRoot, "README.md");
 
 if (!File.Exists(sourcePath))
     throw new FileNotFoundException($"Tool source file not found: {sourcePath}", sourcePath);
+if (!File.Exists(readmePath))
+    throw new FileNotFoundException($"README file not found: {readmePath}", readmePath);
 
 var sourceText = await File.ReadAllTextAsync(sourcePath).ConfigureAwait(false);
 var syntaxTree = CSharpSyntaxTree.ParseText(sourceText);
@@ -28,11 +31,18 @@ var toolDefinitions = compilationUnit
 if (toolDefinitions.Count == 0)
     throw new InvalidOperationException($"No [Tool(...)] methods were found in {sourcePath}.");
 
-var markdown = RenderMarkdown(toolDefinitions, sourcePath, outputPath);
-Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? repoRoot);
-await File.WriteAllTextAsync(outputPath, markdown, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)).ConfigureAwait(false);
+var markdown = RenderToolReference(toolDefinitions, sourcePath, toolReferencePath);
+Directory.CreateDirectory(Path.GetDirectoryName(toolReferencePath) ?? repoRoot);
+await File.WriteAllTextAsync(toolReferencePath, markdown, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)).ConfigureAwait(false);
 
-Console.WriteLine($"Generated {toolDefinitions.Count} tool reference entries at {outputPath}");
+var readmeMarkdown = await File.ReadAllTextAsync(readmePath).ConfigureAwait(false);
+var updatedReadmeMarkdown = ReplaceGeneratedBlock(
+    readmeMarkdown,
+    blockId: "tool-surface",
+    replacementContent: ReadmeToolSurface.Render(toolDefinitions));
+await File.WriteAllTextAsync(readmePath, updatedReadmeMarkdown, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)).ConfigureAwait(false);
+
+Console.WriteLine($"Generated {toolDefinitions.Count} tool reference entries at {toolReferencePath} and updated README tool surface.");
 
 return;
 
@@ -163,7 +173,7 @@ static string? ExtractStringValue(ExpressionSyntax? expression)
     };
 }
 
-static string RenderMarkdown(IReadOnlyList<ToolDefinition> tools, string sourcePath, string outputPath)
+static string RenderToolReference(IReadOnlyList<ToolDefinition> tools, string sourcePath, string outputPath)
 {
     var sourceLink = GetRelativeMarkdownPath(outputPath, sourcePath);
     var generatorScriptPath = GetRelativeMarkdownPath(outputPath, Path.Combine(Path.GetDirectoryName(sourcePath)!, "..", "scripts", "generate-tool-reference.sh"));
@@ -228,6 +238,28 @@ static string RenderMarkdown(IReadOnlyList<ToolDefinition> tools, string sourceP
         }
     }
 
+    return builder.ToString();
+}
+
+static string ReplaceGeneratedBlock(string markdown, string blockId, string replacementContent)
+{
+    var beginMarker = $"<!-- BEGIN GENERATED:{blockId} -->";
+    var endMarker = $"<!-- END GENERATED:{blockId} -->";
+    var beginIndex = markdown.IndexOf(beginMarker, StringComparison.Ordinal);
+    if (beginIndex < 0)
+        throw new InvalidOperationException($"Could not find README marker '{beginMarker}'.");
+
+    var endIndex = markdown.IndexOf(endMarker, beginIndex + beginMarker.Length, StringComparison.Ordinal);
+    if (endIndex < 0)
+        throw new InvalidOperationException($"Could not find README marker '{endMarker}'.");
+
+    var builder = new StringBuilder();
+    builder.Append(markdown.AsSpan(0, beginIndex + beginMarker.Length));
+    builder.AppendLine();
+    builder.AppendLine();
+    builder.AppendLine(replacementContent.TrimEnd());
+    builder.AppendLine();
+    builder.Append(markdown.AsSpan(endIndex));
     return builder.ToString();
 }
 
