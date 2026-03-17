@@ -30,6 +30,24 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
+    [Tool("rimbridge/list_capabilities", Description = "List registered bridge capabilities so an agent can discover the live bridge surface instead of relying on hardcoded tool knowledge")]
+    public object ListCapabilities(
+        [ToolParameter(Description = "Maximum number of capabilities to return")] int limit = 200,
+        [ToolParameter(Description = "Optional exact provider id filter")] string providerId = null,
+        [ToolParameter(Description = "Optional category filter")] string category = null,
+        [ToolParameter(Description = "Optional source filter: core, optional, or extension")] string source = null,
+        [ToolParameter(Description = "Optional case-insensitive free-text query across ids, aliases, titles, summaries, and parameter names")] string query = null,
+        [ToolParameter(Description = "Include parameter descriptors for each capability")] bool includeParameters = true)
+    {
+        return InvokeAlias(Arguments((nameof(limit), limit), (nameof(providerId), providerId), (nameof(category), category), (nameof(source), source), (nameof(query), query), (nameof(includeParameters), includeParameters)));
+    }
+
+    [Tool("rimbridge/get_capability", Description = "Get one registered bridge capability descriptor by capability id or alias")]
+    public object GetCapability([ToolParameter(Description = "Capability id or alias such as rimworld/select_pawn")] string capabilityIdOrAlias)
+    {
+        return InvokeAlias(Arguments((nameof(capabilityIdOrAlias), capabilityIdOrAlias)));
+    }
+
     [Tool("rimbridge/list_operations", Description = "List recent bridge operations from the in-memory operation journal, optionally expanding retained result payloads")]
     public object ListOperations(
         [ToolParameter(Description = "Maximum number of operations to return")] int limit = 20,

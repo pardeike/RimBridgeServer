@@ -254,7 +254,7 @@ internal sealed class DiagnosticsCapabilityModule
         return Enum
             .GetValues(typeof(Contracts.CapabilityExecutionMode))
             .Cast<Contracts.CapabilityExecutionMode>()
-            .Where(mode => mode != Contracts.CapabilityExecutionMode.None && supportedModes.SupportsMode(mode))
+            .Where(mode => mode != Contracts.CapabilityExecutionMode.None && (supportedModes & mode) == mode)
             .Select(mode => mode.ToString())
             .ToArray();
     }

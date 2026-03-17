@@ -22,7 +22,7 @@ internal static class RimBridgeCapabilities
         registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
             providerId: "rimbridge.core/diagnostics",
             category: "diagnostics",
-            module: new DiagnosticsCapabilityModule(journal, logJournal),
+            module: new DiagnosticsCapabilityModule(journal, logJournal, registry),
             aliasMetadataType: typeof(RimBridgeTools),
             source: CapabilitySourceKind.Core));
         registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
