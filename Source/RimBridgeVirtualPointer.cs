@@ -30,12 +30,6 @@ internal static class RimBridgeVirtualPointer
         public Vector2 ScreenPosition { get; set; }
 
         public Vector2 ScreenPositionInverted { get; set; }
-
-        public bool LeftMouseButton { get; set; }
-
-        public bool LeftMouseButtonDown { get; set; }
-
-        public bool LeftMouseButtonUp { get; set; }
     }
 
     private static readonly object Sync = new();
@@ -43,7 +37,7 @@ internal static class RimBridgeVirtualPointer
     private static PointerState _persistentPointer;
     private static int _nextToken = 1;
 
-    public static int PushTransientOverride(Vector2 screenPositionInverted, bool leftMouseButton = false, bool leftMouseButtonDown = false, bool leftMouseButtonUp = false)
+    public static int PushTransientOverride(Vector2 screenPositionInverted)
     {
         lock (Sync)
         {
@@ -52,10 +46,7 @@ internal static class RimBridgeVirtualPointer
             {
                 Token = token,
                 ScreenPosition = InvertedToBottomLeft(screenPositionInverted),
-                ScreenPositionInverted = screenPositionInverted,
-                LeftMouseButton = leftMouseButton,
-                LeftMouseButtonDown = leftMouseButtonDown,
-                LeftMouseButtonUp = leftMouseButtonUp
+                ScreenPositionInverted = screenPositionInverted
             });
             return token;
         }

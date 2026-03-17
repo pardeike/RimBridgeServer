@@ -31,7 +31,8 @@ artifacts/
 ## Node
 node_modules/
 
-## RimWorld local+Source/*.reloaded
+## RimWorld local
+Source/*.reloaded
 
 
 ## Mod assemblies

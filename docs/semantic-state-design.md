@@ -1,5 +1,9 @@
 # Semantic Inspection Design
 
+## Status
+
+As of 2026-03-17, the core slices in this document are implemented. Selection semantics, grouped gizmo discovery/execution, and structured messages/letters/alerts are now part of the live bridge surface. Treat the remainder of this file as design context for why those seams were chosen, not as an unimplemented backlog snapshot.
+
 ## Goal
 
 The next bridge layer should make RimWorld state easier for an AI to validate semantically while staying deterministic and close to real game behavior. The immediate focus is not broader generic remote control. It is:
@@ -86,8 +90,8 @@ This is better than parsing logs because many mod-relevant outcomes are user-fac
 
 - Lua-layer changes
 - richer inspect-tab introspection
-- semantic mod-settings editing
-- generalized window scraping
+- full model-aware mod-settings interaction through the native dialog path
+- richer generalized dialog semantics on top of the UI workbench
 - broader remote-control surface expansion
 
 Those can build on this layer later, but they are not required to make autonomous mod validation materially better right now.

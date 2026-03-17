@@ -648,9 +648,6 @@ internal static class RimBridgeUiWorkbench
             var currentEvent = Event.current;
             var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent);
             injectedEvent.mousePosition = rect.center;
-            var leftMouseButton = false;
-            var leftMouseButtonDown = false;
-            var leftMouseButtonUp = false;
 
             if (state.ShouldActivate && _pendingClick != null)
             {
@@ -658,14 +655,11 @@ internal static class RimBridgeUiWorkbench
                 injectedEvent.button = 0;
                 injectedEvent.clickCount = 1;
                 _pendingClick.PhaseInjectedFrame = Time.frameCount;
-                leftMouseButton = _pendingClick.Phase == ClickPhase.MouseDown;
-                leftMouseButtonDown = _pendingClick.Phase == ClickPhase.MouseDown;
-                leftMouseButtonUp = _pendingClick.Phase == ClickPhase.MouseUp;
             }
 
             state.PreviousEvent = currentEvent;
             state.EventOverridden = true;
-            state.TransientPointerToken = RimBridgeVirtualPointer.PushTransientOverride(pointerInverted, leftMouseButton, leftMouseButtonDown, leftMouseButtonUp);
+            state.TransientPointerToken = RimBridgeVirtualPointer.PushTransientOverride(pointerInverted);
             state.RegisteredActiveInteraction = true;
             _activeInteraction = new ActiveInteractionContext
             {

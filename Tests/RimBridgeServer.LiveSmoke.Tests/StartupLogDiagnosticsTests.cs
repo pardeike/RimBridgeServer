@@ -15,7 +15,7 @@ public class StartupLogDiagnosticsTests
         var playerLogPath = Path.Combine(directory, "Player.log");
         File.WriteAllText(playerLogPath, """
             RimWorld 1.6
-            [RimBridge] STARTUP_OPTIONAL_PATCH_FAILURE: RimBridgeServer.Input_GetMouseButtonDown_VirtualPointer_Patch: HarmonyLib.HarmonyException: broken patch
+            [RimBridge] STARTUP_OPTIONAL_PATCH_FAILURE: RimBridgeServer.Widgets_ButtonInvisibleDraggable_UiWorkbench_Patch: HarmonyLib.HarmonyException: broken patch
               at Some.Stack.Trace()
             """);
 

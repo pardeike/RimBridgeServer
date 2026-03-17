@@ -1,857 +1,219 @@
 # RimBridgeServer
 
-RimBridgeServer lets you control RimWorld from outside the game. This is useful for testing mods automatically or building tools that work with RimWorld.
+RimBridgeServer is a RimWorld mod that turns the running game into a bridge an external tool can use.
 
-Architecture and Lua front-end notes live in [`docs/architecture.md`](docs/architecture.md) and [`docs/lua-frontend-design.md`](docs/lua-frontend-design.md).
+In practice, that means a test harness, developer tool, or AI agent can start RimWorld, inspect live game state, drive built-in UI, manage mods and mod settings, execute debug actions, take targeted screenshots, and verify behavior against the real game instead of a simulation.
 
-## What does it do?
+This project is aimed at automated mod development and testing:
 
-This mod creates a connection point (called a "server") inside RimWorld. Other programs can connect to this server to:
+- integration testing against a real RimWorld session
+- UI and UX verification through semantic dialogs, targets, and screenshots
+- faster repro loops for debug actions, saves, settings, and load-order changes
+- AI-assisted mod development through GABS or direct bridge connections
 
-- Check if the game is running
-- Pause or unpause the game
-- Get information about the current game
-- Inspect colonists, selection, camera, saves, screenshots, screen-space UI targets, Architect designators, zones, and areas
-- Open and execute context-menu actions for debugging mods
+Architecture and design notes live in [docs/architecture.md](docs/architecture.md), [docs/lua-frontend-design.md](docs/lua-frontend-design.md), and [docs/semantic-state-design.md](docs/semantic-state-design.md).
 
-This is especially helpful for:
-- **Mod developers** who want to test their mods automatically
-- **AI tools** that need to interact with RimWorld
-- **External programs** that want to read game data
+## What It Does
 
-## Features
+RimBridgeServer runs inside RimWorld and exposes a tool surface for:
 
-- **Easy to use**: Works automatically when you start RimWorld
-- **Safe**: Only accepts connections from your own computer
-- **Simple**: Uses a standard protocol that many tools understand
-- **Compatible**: Works with RimWorld 1.6
-- **Debuggable**: Exposes debug-action, Architect, context-menu, and screenshot tools that are useful for mod repro cases
+- reading game, map, camera, selection, notification, and UI state
+- driving high-level game actions such as debug actions, main tabs, Architect designators, and selection changes
+- changing mod settings and mod load order
+- capturing screenshots, including clipped screenshots for known UI or screen targets
+- running small automation scripts through JSON or Lua front-ends
 
-## How to get started
+It is designed to stay as close as possible to RimWorld's own logical seams instead of reimplementing gameplay logic outside the game.
 
-### Installation
+## Installation
 
-1. Download the mod and put it in your RimWorld Mods folder
-2. Enable the mod in RimWorld
-3. Start the game
+### Recommended: Use GABS
 
-That's it! The server starts automatically when RimWorld loads.
+GABS is the best way to use RimBridgeServer from an AI or automation harness.
 
-### How to connect
+Why this is the recommended mode:
 
-When RimBridgeServer starts in standalone mode, it will show messages like:
+- GABS can start and stop RimWorld for you
+- GABS can discover the live bridge tool surface after the game connects
+- you do not need to manage ports or tokens manually
+- this is the cleanest setup for autonomous mod testing
 
-```
+Basic setup:
+
+1. Install RimBridgeServer into your RimWorld `Mods` folder.
+2. Enable `RimBridgeServer` in RimWorld's mod list.
+3. Install and configure [GABS](https://github.com/pardeike/GABS).
+4. Start RimWorld through GABS and connect to the running game.
+
+Once RimWorld is up, GABS exposes the game-management tools (`games.start`, `games.connect`, `games.call_tool`) and then the live RimBridgeServer tool surface behind them.
+
+### Direct Mode
+
+Direct mode still works if you do not want to use GABS.
+
+Basic setup:
+
+1. Install RimBridgeServer into your RimWorld `Mods` folder.
+2. Enable `RimBridgeServer` in RimWorld's mod list.
+3. Start RimWorld normally.
+4. Read the RimWorld log for the bridge startup lines.
+
+In direct mode, RimBridgeServer logs lines like:
+
+```text
 [RimBridge] GABP server running standalone on port 5174
 [RimBridge] Bridge token: abc123...
 ```
 
-Your external program needs:
-- **Port number**: Usually 5174 (but check the log to be sure)
-- **Token**: The random text shown in the log (for security)
-- **Address**: Always 127.0.0.1 (your own computer only)
-
-### Working with GABS
-
-If you use [GABS](https://github.com/pardeike/GABS) (an AI gaming environment), RimBridgeServer will automatically configure itself. No extra setup is needed, and the standalone token log line is omitted because GABS injects the bridge configuration through environment variables.
-
-## Available commands
-
-Your external program can send these commands to RimBridgeServer:
-
-### Basic commands
-- **`rimbridge/ping`** - Test if the connection is working (responds with `"pong"`)
-
-### Bridge diagnostics and waits
-- **`rimbridge/get_bridge_status`** - Get the current bridge state snapshot, including whether RimWorld is in the entry scene or has a loaded game
-- **`rimbridge/get_operation`** - Get the latest journal snapshot for a specific operation id
-- **`rimbridge/list_operations`** - List recent bridge operations from the in-memory operation journal
-- **`rimbridge/list_operation_events`** - List recent bridge operation lifecycle events
-- **`rimbridge/list_logs`** - List recent captured RimWorld and bridge log entries
-- **`rimbridge/wait_for_operation`** - Wait until a recorded operation reaches a terminal status
-- **`rimbridge/wait_for_game_loaded`** - Wait until RimWorld has finished loading a playable game
-- **`rimbridge/wait_for_long_event_idle`** - Wait until RimWorld reports no long event in progress
-- **`rimbridge/get_script_reference`** - Get a machine-readable authoring reference for `rimbridge/run_script`
-- **`rimbridge/get_lua_reference`** - Get a machine-readable authoring reference for `rimbridge/run_lua` and `rimbridge/run_lua_file`
-- **`rimbridge/run_script`** - Execute a JSON script containing an ordered list of capability calls and return a step-by-step report
-- **`rimbridge/run_lua`** - Compile and execute a narrow Lua scripting subset through the shared script runner
-- **`rimbridge/run_lua_file`** - Load a `.lua` file from disk, inject a read-only `params` table, and execute it through the shared script runner
-- **`rimbridge/compile_lua`** - Compile supported Lua into the lowered JSON script model without executing capability calls
-- **`rimbridge/compile_lua_file`** - Load a `.lua` file from disk and compile it into the lowered JSON script model without executing capability calls
-
-### Game control
-- **`rimworld/get_game_info`** - Get information about the current game
-- **`rimworld/pause_game`** - Pause or unpause the game
-- **`rimworld/list_debug_action_roots`** - List the top-level debug menu tabs and their stable internal paths
-- **`rimworld/list_debug_action_children`** - List direct children under one debug menu path
-- **`rimworld/get_debug_action`** - Get one debug node with metadata such as tab, toggle state, and execution mode
-- **`rimworld/execute_debug_action`** - Execute a supported debug action and return captured side effects such as logs and opened windows, including pawn-target actions when `pawnName` is provided
-- **`rimworld/set_debug_setting`** - Set a debug settings toggle to a deterministic on/off state by stable path
-- **`rimworld/list_mods`** - List installed RimWorld mods, their enabled state, and whether the current configuration matches the loaded session
-- **`rimworld/get_mod_configuration_status`** - Read semantic status for the current active mod order, including warnings, ordering issues, and restart-needed state
-- **`rimworld/set_mod_enabled`** - Enable or disable one installed mod in the current configuration and optionally persist `ModsConfig.xml`
-- **`rimworld/reorder_mod`** - Move one enabled mod to a new zero-based active load-order index and optionally persist `ModsConfig.xml`
-- **`rimworld/list_mod_settings_surfaces`** - List loaded mod handles that expose a settings dialog, a persistent `ModSettings` object, or both
-- **`rimworld/get_mod_settings`** - Read one loaded mod's semantic `ModSettings` object by stable mod id, package id, settings category, or handle type name
-- **`rimworld/update_mod_settings`** - Apply one or more field-path updates to a loaded mod's `ModSettings` object, with optional persistence through `Mod.WriteSettings()`
-- **`rimworld/reload_mod_settings`** - Reload a loaded mod's `ModSettings` object from disk, discarding unsaved in-memory changes
-- **`rimworld/open_mod_settings`** - Open RimWorld's native `Dialog_ModSettings` window for one loaded mod without foreground-dependent input
-- **`rimworld/get_designator_state`** - Get the current Architect/designator selection state, including god mode and the selected designator
-- **`rimworld/set_god_mode`** - Enable or disable RimWorld god mode deterministically
-- **`rimworld/list_architect_categories`** - List the visible Architect categories with stable ids
-- **`rimworld/list_architect_designators`** - List Architect designators for one category, flattening dropdown widgets into actionable child ids
-- **`rimworld/select_architect_designator`** - Select an Architect designator by stable id without relying on foreground input
-- **`rimworld/apply_architect_designator`** - Apply an Architect designator to one cell or rectangle, with optional dry-run validation
-- **`rimworld/list_zones`** - List current-map zones such as stockpiles and growing zones
-- **`rimworld/list_areas`** - List current-map areas such as home, roof, snow-clear, and allowed areas
-- **`rimworld/create_allowed_area`** - Create a new allowed area and optionally select it for later area-designator calls
-- **`rimworld/select_allowed_area`** - Select or clear the current allowed-area target deterministically
-- **`rimworld/set_zone_target`** - Set or clear the explicit existing-zone target on a zone-add designator
-- **`rimworld/clear_area`** - Clear all cells from a mutable area
-- **`rimworld/delete_area`** - Delete a mutable area such as a custom allowed area
-- **`rimworld/delete_zone`** - Delete an existing zone by id
-- **`rimworld/get_cell_info`** - Inspect one map cell, including blueprints, frames, solid things, designations, zones, and areas
-- **`rimworld/find_random_cell_near`** - Use RimWorld's generic nearby-cell search to find a cell or footprint that satisfies reusable map criteria
-- **`rimworld/flood_fill_cells`** - Use RimWorld's generic flood-fill algorithm to measure contiguous matching space from one root cell
-- **`rimworld/get_ui_state`** - Inspect the current RimWorld window stack and UI/input state
-- **`rimworld/list_main_tabs`** - List RimWorld main tabs such as Work, Assign, Research, and mod-provided tabs with stable target ids
-- **`rimworld/open_main_tab`** - Open one RimWorld main tab by stable target id, `defName`, label, or tab window type
-- **`rimworld/close_main_tab`** - Close the currently open RimWorld main tab, optionally asserting which tab is open first
-- **`rimworld/get_ui_layout`** - Capture a structured layout snapshot for the currently drawn dialogs, windows, or main tabs, including actionable `ui-element` target ids
-- **`rimworld/click_ui_target`** - Activate an actionable `ui-element` target returned by `rimworld/get_ui_layout` by injecting synthetic RimWorld mouse events through the live widget path
-- **`rimworld/set_hover_target`** - Set a persistent virtual hover target for an actionable UI control, map cell, pawn, or thing
-- **`rimworld/clear_hover_target`** - Clear the current virtual hover target
-- **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
-- **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
-- **`rimworld/close_window`** - Close an open RimWorld window by type name or close the topmost window
-- **`rimworld/click_screen_target`** - Semantically click a known actionable target id returned by `rimworld/get_screen_targets`
-- **`rimworld/go_to_main_menu`** - Return to the RimWorld main menu entry scene, or no-op if already there
-- **`rimworld/start_debug_game`** - Start RimWorld's built-in quick test colony from the main menu
-- **`rimworld/list_saves`** - List saved games
-- **`rimworld/spawn_thing`** - Spawn a thing on the current map at a target cell
-- **`rimworld/save_game`** - Save the current game to a named save
-- **`rimworld/load_game`** - Load a named save
-
-### Pawn inspection and control
-- **`rimworld/list_colonists`** - List player-controlled colonists with state such as selected/drafted/downed/job/position
-- **`rimworld/clear_selection`** - Clear the current selection
-- **`rimworld/select_pawn`** - Select one colonist by name
-- **`rimworld/deselect_pawn`** - Deselect one selected colonist by name
-- **`rimworld/set_draft`** - Draft or undraft a colonist by name
-
-### Camera, targeting, and screenshots
-- **`rimworld/get_camera_state`** - Report camera position, zoom, and current view rect
-- **`rimworld/get_screen_targets`** - Report current screen-space targets such as open windows, focused dialogs, and active context-menu option rects
-- **`rimworld/jump_camera_to_pawn`** - Jump the camera to a pawn and select it
-- **`rimworld/jump_camera_to_cell`** - Jump the camera to a specific map cell
-- **`rimworld/move_camera`** - Move the camera by a cell offset
-- **`rimworld/zoom_camera`** - Adjust camera zoom relative to the current root size
-- **`rimworld/set_camera_zoom`** - Set camera root size directly
-- **`rimworld/frame_pawns`** - Frame several pawns together in view
-- **`rimworld/take_screenshot`** - Save an in-game screenshot and return the file path plus optional screen-target metadata
-
-### Context-menu debugging and map interaction
-- **`rimworld/open_context_menu`** - Open a debug context menu at a pawn or cell
-- **`rimworld/right_click_cell`** - Apply RimWorld's native right-click map interaction for the current pawn selection, auto-executing the default action when possible and only opening a menu as fallback
-- **`rimworld/get_context_menu_options`** - Return the currently opened debug menu options
-- **`rimworld/execute_context_menu_option`** - Execute one menu option by index or label
-- **`rimworld/close_context_menu`** - Close the currently opened debug context menu
-
-`rimworld/start_debug_game` mirrors RimWorld's own dev quick-test flow. It only works from the main menu and returns a detailed state snapshot when the request is rejected.
-
-`rimworld/go_to_main_menu` is the matching lifecycle reset seam. It is idempotent: if RimWorld is already at the entry scene with no loaded game, the call succeeds with a no-op status. Otherwise it queues a return to the main menu so later script steps can start from a stable known state.
-
-`rimworld/open_context_menu` is vanilla-only. `mode: vanilla` is the intended value, and the older `mode: auto` alias is still accepted for backward compatibility but resolves to the same vanilla behavior.
-
-For default pawn-selected map actions such as drafted move orders, prefer `rimworld/right_click_cell`. Use the explicit context-menu tools when you need to inspect the available options or choose a non-default action.
-
-### Debug menu mapping
-
-`rimworld/list_debug_action_roots` exposes the same internal graph that powers RimWorld's debug dialog, including the three important tabs: `Actions/tools`, `Settings`, and `Output`. The bridge keeps the stable internal paths such as `Outputs\\Tick Rates` and `Settings\\Show Architect Menu Order`, while also returning normalized tab metadata so clients can stay close to the in-game UI model.
-
-`rimworld/execute_debug_action` is intentionally side-effect aware. Instead of pretending every debug action has a typed function return, the bridge captures what actually happened around the execution: new log entries, window opens/closes, and before/after game state snapshots. This makes the `Output` tab useful without bespoke wrappers for each individual output command.
-
-Pawn-target debug actions are now supported through the same surface. Discovery metadata exposes `execution.requiredTargetKind = "pawn"` for `ToolMapForPawns` leaves, and callers can execute those nodes by passing `pawnName` to `rimworld/execute_debug_action`. That makes actions such as `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details` reachable without foreground input or a second pawn-specific API.
-
-`rimworld/set_debug_setting` builds deterministic semantics on top of the same graph. Settings nodes already expose their current `on` state and a direct toggle action, so the bridge can move them to an explicit target value and report whether anything changed.
-
-### Mod configuration mapping
-
-`rimworld/list_mods` discovers the full installed mod inventory through RimWorld's own `ModLister`, not by scraping the Mods page. Each returned entry includes a stable `modId`, package metadata, enabled state, active load-order index when applicable, loaded-session index when applicable, version-compatibility flags, dependency/order metadata, and the same configuration warning text that the Mods page derives for red error icons.
-
-`rimworld/get_mod_configuration_status` then summarizes the active configuration itself. It returns the current active load order, the loaded session load order, counts for configuration issues and version warnings, and a `restartRequired` flag that is based on whether the current config differs from the mod stack actually loaded in this running RimWorld process. That makes it useful both before and after calling the mutation tools.
-
-`rimworld/set_mod_enabled` and `rimworld/reorder_mod` mutate `ModsConfig` directly instead of requiring foreground interaction with the Mods page. Both tools can persist immediately through `ModsConfig.Save()`, both return an embedded `configurationStatus` snapshot after the change, and both keep the important distinction between “configured active” and “currently loaded in this session” explicit so automation can reason about restart boundaries instead of guessing.
-
-### Mod settings mapping
-
-`rimworld/list_mod_settings_surfaces` discovers loaded `Verse.Mod` handles rather than scraping the Mods UI. Each returned surface includes a stable `modId`, package metadata, the handle type, whether a settings window exists, and whether the mod currently exposes a persistent `ModSettings` instance.
-
-`rimworld/get_mod_settings` then reflects that `ModSettings` instance into a semantic tree of field-backed values. Scalars stay typed as booleans, numbers, strings, or enums, while nested objects, arrays, and dictionaries keep their child paths so an external harness can reason about configuration state without screenshot OCR or ad hoc XML parsing.
-
-`rimworld/update_mod_settings` accepts an object whose keys are field paths from that semantic tree. The current implementation supports ordinary field-name traversal plus zero-based list segments such as `SomeList[0]`. Pass `write: false` when you want to mutate only the in-memory settings object for a transient test, then use `rimworld/reload_mod_settings` to restore the persisted on-disk state.
-
-`rimworld/open_mod_settings` opens RimWorld's real `Dialog_ModSettings` window for a chosen mod. `rimworld/get_ui_state` now annotates that window with `semanticKind: "mod_settings_dialog"` plus the resolved mod metadata, so a harness can confirm that the right settings dialog is actually on screen instead of only checking the raw window type.
-
-### Main-tab navigation
-
-`rimworld/list_main_tabs` exposes RimWorld's built-in and mod-provided main tabs through stable `main-tab:<defName>` target ids. Each entry reports the tab `defName`, label, window type, order, visibility, disabled state, and the live rect when that tab is open.
-
-`rimworld/open_main_tab` and `rimworld/close_main_tab` then make those tabs deterministic harness surfaces instead of something that must be clicked in the foreground. `rimworld/get_ui_state` now reports `mainTabOpen`, `openMainTabId`, `openMainTabType`, `openMainTabLabel`, and a `mainTab` object, while `rimworld/get_screen_targets` exposes the active main tab as a clip-capable target so screenshots can be cropped directly to built-in windows such as Work/Priorities.
-
-### Generic UI layout workbench
-
-`rimworld/get_ui_layout` adds a generic dialog and window workbench on top of RimWorld's actual draw pass. It can capture every currently drawn surface, or a specific one when `surfaceId` is provided. Use `main-tab:<defName>` for built-in or mod-provided main tabs, or pass a live `windowTargetId` from `rimworld/get_ui_state` / `rimworld/get_screen_targets` when you want to isolate one ordinary dialog window.
-
-Each captured surface reports its rect, type, label/title metadata, and a flat list of semantic UI elements such as labels, buttons, icon buttons, checkboxes, text fields, sliders, groups, and scroll views. Actionable controls receive stable `ui-element:<captureId>:<surfaceIndex>:<elementIndex>` target ids, and those same ids are also valid `clipTargetId` values for `rimworld/take_screenshot`.
-
-`rimworld/click_ui_target` is the matching activation seam. It consumes only actionable `ui-element` ids emitted by `rimworld/get_ui_layout`, redraw-matches the corresponding control on the live surface, and injects synthetic `MouseDown` / `MouseUp` events through the original RimWorld widget call instead of short-circuiting the helper. That keeps Harmony patches and vanilla widget behavior on the real control path while remaining background-safe.
-
-`rimworld/set_hover_target` and `rimworld/clear_hover_target` add a persistent virtual pointer for hover-driven UX review. UI hover targets use actionable `ui-element` ids from `rimworld/get_ui_layout`, while map hover targets can be expressed as a cell, pawn, or thing id. `rimworld/get_screen_targets` reports the active hover target, and `rimworld/take_screenshot` will capture hover-only states such as highlights, mouseover readouts, or tooltip flows that depend on RimWorld's own mouse position helpers.
-
-### Architect and god-mode mapping
-
-`rimworld/list_architect_categories` and `rimworld/list_architect_designators` expose the same build/designation surface a player sees in the Architect menu, but with stable ids that are usable from automation. The bridge keeps the category structure, flattens dropdown widgets into actionable child ids, and reports build-specific metadata such as `buildableDefName` and `stuffDefName`.
-
-The designator payload now also reports drag and targeting metadata from RimWorld itself, including `applicationKind`, `supportsRectangleApplication`, `dragDrawMeasurements`, `drawStyleCategoryDefName`, and `zoneTypeName` where applicable. That makes dropdown-heavy floor tools, zone tools, and area tools discoverable without guessing from UI text.
-
-`rimworld/set_god_mode` and `rimworld/apply_architect_designator` make the important dev workflow deterministic. With god mode disabled, build designators create blueprints; with god mode enabled, the same designator can place the finished structure directly. `rimworld/list_zones`, `rimworld/list_areas`, and `rimworld/get_cell_info` exist specifically so tests can verify zone, area, and structure outcomes without OCR or pixel heuristics.
-
-For generic map planning, the bridge now also exposes RimWorld's own search primitives instead of forcing callers to brute-force probe cells manually. `rimworld/find_random_cell_near` wraps `RCellFinder.TryFindRandomCellNearWith`, while `rimworld/flood_fill_cells` wraps `Verse.FloodFiller.FloodFill`. Both tools share the same footprint criteria surface, so the same request can ask for a single walkable cell, a centered `3x3` open area, or a placement-compatible footprint validated against an Architect designator.
-
-The stateful parts of RimWorld's Zone menu now also have explicit bridge controls instead of hidden UI context. `rimworld/create_allowed_area` and `rimworld/select_allowed_area` control the allowed-area target used by `Designator_AreaAllowedExpand`, while `rimworld/set_zone_target` pins a zone-add designator to an existing zone so later placement expands that specific zone instead of creating a new one. `rimworld/clear_area`, `rimworld/delete_area`, and `rimworld/delete_zone` provide the corresponding cleanup seam for test fixture teardown.
-
-### Batch scripting
-
-`rimbridge/run_script` is the first low-risk batch layer on top of the capability registry. It accepts a JSON payload with ordinary capability calls as steps, executes them in order, and returns a uniform per-step report with child operation ids, timings, success/failure state, and optional step results.
-
-Fresh clients do not need to infer the script language from this README alone. Call `rimbridge/get_script_reference` over GABS to retrieve a machine-readable reference document covering the root script shape, statement types, expressions, conditions, limits, failure codes, result shape, and copyable examples.
-
-That means a single in-game script can now own the full lifecycle from "connected to RimWorld" onward. A script can begin by calling `rimworld/go_to_main_menu`, wait until `rimbridge/get_bridge_status` reports the entry scene, start a fresh debug colony, wait for the map to finish loading, and then continue into normal gameplay actions and a final screenshot.
-
-Current first-shape example:
-
-```json
-{
-  "name": "wall-sequence",
-  "continueOnError": false,
-  "steps": [
-    {
-      "id": "god_on",
-      "call": "rimworld/set_god_mode",
-      "arguments": { "enabled": true }
-    },
-    {
-      "id": "place_wall",
-      "call": "rimworld/apply_architect_designator",
-      "arguments": {
-        "designatorId": "architect-designator:structure:build-wall",
-        "x": 99,
-        "z": 121,
-        "keepSelected": false
-      }
-    }
-  ]
-}
-```
-
-Lifecycle example from a connected RimWorld session:
-
-```json
-{
-  "name": "debug-colony-bootstrap",
-  "continueOnError": false,
-  "steps": [
-    {
-      "id": "main_menu",
-      "call": "rimworld/go_to_main_menu"
-    },
-    {
-      "id": "wait_entry",
-      "call": "rimbridge/get_bridge_status",
-      "continueUntil": {
-        "timeoutMs": 30000,
-        "pollIntervalMs": 100,
-        "condition": {
-          "all": [
-            { "path": "result.state.inEntryScene", "equals": true },
-            { "path": "result.state.programState", "equals": "Entry" },
-            { "path": "result.state.hasCurrentGame", "equals": false },
-            { "path": "result.state.longEventPending", "equals": false }
-          ]
-        }
-      }
-    },
-    {
-      "id": "start_debug",
-      "call": "rimworld/start_debug_game"
-    },
-    {
-      "id": "wait_start_complete",
-      "call": "rimbridge/wait_for_operation",
-      "arguments": {
-        "operationId": { "$ref": "start_debug", "path": "operationId" },
-        "timeoutMs": 60000,
-        "pollIntervalMs": 50
-      }
-    },
-    {
-      "id": "wait_loaded",
-      "call": "rimbridge/wait_for_game_loaded",
-      "arguments": {
-        "timeoutMs": 60000,
-        "pollIntervalMs": 100,
-        "waitForScreenFade": true,
-        "pauseIfNeeded": true
-      }
-    },
-    {
-      "id": "capture",
-      "call": "rimworld/take_screenshot",
-      "arguments": {
-        "fileName": "rimbridge_debug_colony_bootstrap",
-        "includeTargets": false
-      }
-    }
-  ]
-}
-```
-
-Step-to-step value passing is now available through explicit reference objects inside `arguments`. Use `{"$ref":"step_id","path":"result.someField"}` to pull a value from an earlier step. The `path` is optional and defaults to `result`, so `{"$ref":"step_id"}` reuses the earlier step's raw result object.
-
-Level 2 polling is available through optional per-step `continueUntil` blocks. A `continueUntil` policy re-runs that same step until its condition matches or the timeout expires. This is useful for read or poll steps such as `list_colonists`, `get_ui_state`, or `get_designator_state` after an earlier mutating action has already been issued.
-
-The runner now also supports a small generic control-flow layer inside the same JSON format:
-
-- `{"type":"let","name":"x","value":...}` declares a scoped variable
-- `{"type":"set","name":"x","value":...}` updates an existing variable in the active scope chain
-- `{"type":"if","condition":{...},"body":[...],"elseBody":[...]}` branches on the same bounded condition model used by `continueUntil`
-- `{"type":"foreach","itemName":"item","indexName":"i","collection":...,"body":[...]}` iterates a resolved collection
-- `{"type":"while","condition":{...},"maxIterations":100,"body":[...]}` executes a bounded loop
-- `{"type":"assert","condition":{...},"message":"..."}` fails the script immediately when an assumption is not satisfied
-- `{"type":"fail","message":"...","value":...}` stops the script immediately with an explicit failure
-- `{"type":"print","message":"...","value":...}` appends a structured trace row to the script output
-- `{"type":"return","value":...}` ends the script successfully with a final structured result
-
-Value expressions can now also read variables with `{"$var":"name"}`, do arithmetic with `{"$add":[...]}`, `{"$subtract":[left,right]}`, `{"$multiply":[...]}`, `{"$divide":[left,right]}`, and `{"$mod":[left,right]}`, and produce booleans with `{"$negate":...}`, `{"$not":...}`, `{"$and":[...]}`, `{"$or":[...]}`, `{"$equals":[left,right]}`, `{"$notEquals":[left,right]}`, `{"$greaterThan":[left,right]}`, `{"$greaterThanOrEqual":[left,right]}`, `{"$lessThan":[left,right]}`, and `{"$lessThanOrEqual":[left,right]}`.
-
-Successful control statements do not add rows to the per-step report. The report remains focused on capability calls, while failed control statements such as `assert` and `fail` surface as failed script steps.
-
-This also makes `rimbridge/run_script` usable as a test-like tool call. The outer tool response now includes:
-
-- `success`: overall script pass/fail
-- `message`: success summary or the assertion/failure message
-- `error`: the top-level script error when the run fails
-- `output`: structured rows produced by `print`
-- `result`: the value returned by `return`, if any
-- `script`: the full operational report with child step details
-
-Scripts also now have three global guardrails at the definition level:
-
-- `maxDurationMs`: whole-script wall-clock budget, default `60000`
-- `maxExecutedStatements`: total execution budget across control statements, loop iterations, and retry attempts, default `1000`
-- `maxControlDepth`: maximum nested control-body depth, default `32`
-
-Those global limits complement the existing local bounds on `while.maxIterations` and `continueUntil.timeoutMs`. When a script exceeds them, `rimbridge/run_script` fails with `script.timeout`, `script.statement_limit_exceeded`, or `script.max_depth_exceeded`.
-
-### Lua front-end
-
-`rimbridge/run_lua` and `rimbridge/run_lua_file` now sit on top of that same runner instead of introducing a second execution path. They compile a narrow Lua subset into the shared JSON script model, then execute the lowered script through the normal capability registry. The outer result shape matches `rimbridge/run_script`: `success`, `message`, `error`, `output`, `result`, and the full `script` report.
-
-Fresh clients do not need to infer the Lua subset from this README alone. Call `rimbridge/get_lua_reference` over GABS to retrieve a machine-readable reference covering the supported Lua subset, the `rb.*` host API, the read-only `params` binding, file-backed execution, compile-error codes, inherited runtime model, and copyable examples.
-
-Use `rimbridge/compile_lua` when you want to inspect the lowered JSON for inline source without executing anything. Use `rimbridge/compile_lua_file` for reusable `.lua` fixtures stored on disk. Those are the debugging seams for Lua lowering problems and the easiest way to confirm that Lua remains a front-end over the existing runner rather than a separate runtime.
-
-Both inline and file-backed Lua tools can receive an object-style `parameters` argument. The bridge injects that object into the script as a top-level read-only `params` table. Use that for runtime values such as screenshot names, search radii, or scenario-specific limits instead of string templating the Lua source.
-
-For waiting and synchronization, prefer a polling-first model. In `run_lua` v1 the intended pattern is: issue a mutating action once, then use `rb.poll(...)` against a read-only capability until a bounded structured condition matches. Good polling targets include `rimbridge/get_bridge_status`, `rimworld/list_colonists`, and `rimworld/get_designator_state`. This keeps scripts state-driven instead of relying on UI timing or host-side event delivery.
-
-Use the explicit wait tools when the bridge already exposes a bounded lifecycle seam such as `rimbridge/wait_for_game_loaded`, `rimbridge/wait_for_long_event_idle`, or `rimbridge/wait_for_operation`. Those can still be called from Lua through `rb.call(...)`, but for gameplay state the general rule is simpler: mutate once, then poll the state you actually care about.
-
-Supported `run_lua` v1 features:
-
-- `local` variables and scoped shadowing
-- table literals with array-style or object-style fields
-- static field access such as `snapshot.result.count`
-- static one-based index access such as `names[1]`
-- arithmetic, comparisons, `and` / `or`, unary `not`, and unary minus
-- `if` / `elseif` / `else`
-- bounded `while`
-- numeric `for`
-- `for ... in ipairs(...)`
-- `return`
-- `print(...)` or `rb.print(...)`
-- `rb.call(...)`, `rb.poll(...)`, `rb.assert(...)`, and `rb.fail(...)`
-- read-only `params` table injected by `run_lua`, `compile_lua`, `run_lua_file`, and `compile_lua_file`
-
-Not supported in v1:
-
-- `require`
-- metatables
-- coroutines
-- arbitrary global assignment
-- dynamic table keys
-- arbitrary dynamic indexing
-- `break`
-
-Lua example:
-
-```lua
-rb.call("rimworld/go_to_main_menu")
-
-rb.poll("rimbridge/get_bridge_status", {}, {
-  timeoutMs = 30000,
-  pollIntervalMs = 100,
-  condition = {
-    all = {
-      { path = "result.state.inEntryScene", equals = true },
-      { path = "result.state.programState", equals = "Entry" },
-      { path = "result.state.hasCurrentGame", equals = false },
-      { path = "result.state.longEventPending", equals = false }
-    }
-  }
-})
-
-local snapshot = rb.call("rimworld/list_colonists", { currentMapOnly = true })
-
-for i, colonist in ipairs(snapshot.result.colonists) do
-  rb.print("colonist", { index = i, name = colonist.name, append = i > 1 })
-end
-
-rb.assert(snapshot.result.count > 0, "Expected at least one colonist.")
-return snapshot.result.count
-```
-
-Planning example:
-
-```lua
-local searchRadius = 4
-local planningAttempts = 0
-local chosen = nil
-
-while chosen == nil and planningAttempts < 6 do
-  planningAttempts = planningAttempts + 1
-
-  local candidate = rb.call("rimworld/find_random_cell_near", {
-    x = 120,
-    z = 120,
-    startingSearchRadius = searchRadius,
-    maxSearchRadius = searchRadius + 8,
-    width = 3,
-    height = 3,
-    footprintAnchor = "center",
-    requireWalkable = true,
-    requireStandable = true,
-    requireNoImpassableThings = true
-  })
-
-  if candidate.result.success == true then
-    chosen = candidate
-  end
-
-  searchRadius = searchRadius + 2
-end
-
-rb.assert(chosen ~= nil, "Expected to find a candidate cell.")
-rb.print("planning_attempts", planningAttempts)
-return chosen.result.cell
-```
-
-File-backed fixture example:
-
-```json
-{
-  "scriptPath": "/absolute/path/to/script-colonist-prison.lua",
-  "parameters": {
-    "screenshotFileName": "rimbridge_script_colonist_prison_demo"
-  },
-  "includeStepResults": true
-}
-```
-
-Reference example:
-
-```json
-{
-  "name": "value-passing",
-  "continueOnError": false,
-  "steps": [
-    {
-      "id": "discover",
-      "call": "rimworld/list_architect_categories"
-    },
-    {
-      "id": "structure_designators",
-      "call": "rimworld/list_architect_designators",
-      "arguments": {
-        "categoryId": {
-          "$ref": "discover",
-          "path": "result.categories[0].id"
-        }
-      }
-    }
-  ]
-}
-```
-
-Control-flow example:
-
-```json
-{
-  "name": "bounded-loop",
-  "continueOnError": false,
-  "steps": [
-    {
-      "type": "let",
-      "name": "count",
-      "value": 0
-    },
-    {
-      "type": "while",
-      "maxIterations": 3,
-      "condition": {
-        "path": "vars.count",
-        "lessThan": 2
-      },
-      "body": [
-        {
-          "type": "set",
-          "name": "count",
-          "value": {
-            "$add": [
-              { "$var": "count" },
-              1
-            ]
-          }
-        },
-        {
-          "id": "ping",
-          "call": "rimbridge/ping"
-        }
-      ]
-    }
-  ]
-}
-```
-
-The reference root also exposes step metadata such as `operationId`, `success`, `status`, `attempts`, `error`, and `warnings`, so later steps can reuse either result payloads or report metadata without a separate script runtime. The model still stays intentionally constrained: every capability execution goes through the normal registry-backed path, and even the control statements remain JSON data rather than a separate direct automation runtime.
-
-`continueUntil` example:
-
-```json
-{
-  "id": "wait_until_grouped",
-  "call": "rimworld/list_colonists",
-  "arguments": {
-    "currentMapOnly": true
-  },
-  "continueUntil": {
-    "timeoutMs": 10000,
-    "pollIntervalMs": 100,
-    "condition": {
-      "all": [
-        {
-          "path": "result.colonists",
-          "countEquals": 3
-        },
-        {
-          "path": "result.colonists",
-          "allItems": {
-            "path": "position.x",
-            "greaterThanOrEqual": 143,
-            "lessThanOrEqual": 144
-          }
-        },
-        {
-          "path": "result.colonists",
-          "allItems": {
-            "path": "job",
-            "in": ["Wait_Combat", "Wait_MaintainPosture"]
-          }
-        }
-      ]
-    }
-  }
-}
-```
-
-### Example workflow for a context-menu repro
-
-1. Start or load a prepared colony.
-2. Use `rimworld/list_colonists` to find the colonists involved in the repro.
-3. Use `rimworld/select_pawn` and `rimworld/frame_pawns` to put the scene on screen.
-4. Use `rimworld/open_context_menu` with `mode: vanilla` on the target pawn or cell.
-5. Inspect the returned options or call `rimworld/take_screenshot` for visual proof.
-6. Use `rimworld/save_game` to preserve the repro state for later development cycles.
-
-## For developers
-
-### How it works
-
-RimBridgeServer uses a communication protocol called GABP (Game Agent Bridge Protocol). This is a standard way for programs to talk to games.
-
-The basic steps are:
-1. Connect to the server using TCP (a network connection type)
-2. Say "hello" with your security token
-3. Ask for a list of available commands
-4. Send commands and receive responses
-5. Optionally, listen for events from the game
-
-Most mutating tools are marshalled onto RimWorld's main thread before they touch UI or map state. This is important for selection, camera, save/load, screenshot capture, and context-menu operations.
-
-The new UI input helpers are intentionally semantic. `rimworld/press_accept`, `rimworld/press_cancel`, and `rimworld/close_window` drive RimWorld's own `WindowStack` APIs instead of foreground-dependent desktop input, which keeps them usable even when the game is running in the background during automated tests.
-
-`rimworld/get_screen_targets` and the default `includeTargets: true` behavior on `rimworld/take_screenshot` expose a structured screen-space snapshot instead of forcing clients to infer UI geometry from logs or raw pixels. The current payload includes live window rects, selection, camera state, the active virtual `hoverTarget` when one is set, active float-menu option rects, and actionable target ids such as `dismissTargetId` and context-menu option `targetId` values. Automated screenshot calls also default to `suppressMessage: true`, which hides RimWorld's upper-left screenshot toast only for the duration of that tool-driven capture.
-
-`rimworld/take_screenshot` also supports target-relative clipping through `clipTargetId` and `clipPadding`. Pass a target id returned by `rimworld/get_screen_targets` and the bridge will write a cropped screenshot artifact plus `clipRect` metadata, while still reporting the original full-frame `sourcePath` for traceability.
-
-`rimworld/click_screen_target` is the first background-safe click seam on top of that metadata. It does not simulate desktop mouse input; instead it resolves known target ids in-process and dispatches the correct direct RimWorld action. The first supported targets are dismissible windows and context-menu options.
-
-For test automation, prefer the explicit wait tools over blind sleeps. `rimbridge/wait_for_game_loaded`, `rimbridge/wait_for_long_event_idle`, and `rimbridge/wait_for_operation` provide bounded waits with state snapshots so scripts can move quickly when the game is ready and fail with useful diagnostics when it is not.
-
-`rimbridge/wait_for_game_loaded` now distinguishes between "playable" and "automation-ready". By default it waits for RimWorld's screen fade to clear, and callers can also request `pauseIfNeeded: true` so the game is reliably paused before screenshots or other deterministic assertions are taken.
-
-`rimbridge/get_bridge_status` also returns `latestLogSequence` and `latestOperationEventSequence`. Tests can snapshot those cursors before a command, execute the command, then call `rimbridge/list_logs` or `rimbridge/list_operation_events` with `afterSequence` to fetch only the new logs and events from that window.
-
-If your host supports unsolicited GABP events, RimBridgeServer also publishes filtered event channels:
-- **`rimbridge.operation`** - Terminal non-diagnostic operation events
-- **`rimbridge.log`** - Deduplicated warning/error/fatal log entries
-
-The push path is intentionally narrow to avoid context spam. Full detail remains available through the pull tools and journals.
-
-### Live smoke harness
-
-The repository now includes a reproducible live smoke runner in [`Tests/RimBridgeServer.LiveSmoke`](Tests/RimBridgeServer.LiveSmoke) and a thin wrapper script at [`scripts/live-smoke.sh`](scripts/live-smoke.sh).
-
-Example:
-
-```bash
-scripts/live-smoke.sh --scenario debug-game-load --game-id rimworld --stop-after
-```
-
-The `debug-game-load` scenario drives GABS and RimBridgeServer end-to-end:
-
-- checks the game status and starts RimWorld if needed
-- connects through GABS
-- waits for long events to go idle
-- snapshots `latestLogSequence` and `latestOperationEventSequence`
-- starts RimWorld's debug quick-test colony
-- waits for the resulting operation and automation-ready game state, including the post-load screen fade
-- pauses the game if it is still running once that ready state is reached
-- verifies that colonists are present on the map
-- collects the log and operation-event window for that action
-
-The `selection-roundtrip` scenario reuses the same harness primitives against a loaded game:
-
-- ensures a playable game exists, creating a debug colony when needed
-- starts a fresh observation window after the game is ready
-- lists current-map colonists and selects a real pawn
-- jumps the camera to that pawn, reads camera state, and clears the selection again
-- captures only the operation and log window for that interaction block
-
-The `mod-settings-discovery` scenario covers the first semantic mod-settings slice:
-
-- waits for RimWorld to finish any startup long events
-- lists loaded mod-settings surfaces through `rimworld/list_mod_settings_surfaces`
-- verifies that RimBridgeServer exposes a stable `modId`
-- reads the semantic `ModSettings` tree through `rimworld/get_mod_settings`
-- confirms the deterministic harness-owned settings fields are present in the payload
-
-The `mod-settings-roundtrip` scenario covers the richer mutation and UI slice:
-
-- reads the original RimBridgeServer settings values through `rimworld/get_mod_settings`
-- applies a transient in-memory update through `rimworld/update_mod_settings` with `write: false`
-- reloads from disk through `rimworld/reload_mod_settings` and verifies the original values return
-- applies a persisted update through `rimworld/update_mod_settings` with `write: true`
-- opens the native `Dialog_ModSettings` window through `rimworld/open_mod_settings`
-- verifies `rimworld/get_ui_state` reports `semanticKind: "mod_settings_dialog"` for the requested mod
-- restores the original persisted values before the scenario finishes
-
-The `mod-configuration-roundtrip` scenario covers the semantic mod-order slice:
-
-- waits for RimWorld startup to go idle and reads the initial mod configuration status
-- lists installed mods through `rimworld/list_mods`
-- disables one active non-core mod through `rimworld/set_mod_enabled`
-- verifies the mod becomes disabled in config while still reporting `loadedInSession: true`
-- re-enables that mod, restores its original active load-order index through `rimworld/reorder_mod` when needed, and confirms the original configuration hash returns
-
-The `main-tab-navigation` scenario covers deterministic built-in window navigation:
-
-- ensures a playable game exists
-- discovers the visible RimWorld main tabs through `rimworld/list_main_tabs`
-- opens the Work tab through `rimworld/open_main_tab`
-- verifies `rimworld/get_ui_state` and `rimworld/get_screen_targets` report the active main-tab target
-- captures a screenshot clipped directly to that main-tab target
-- closes the Work tab again through `rimworld/close_main_tab`
-
-The `ui-layout-roundtrip` scenario covers the generic UI layout workbench against a real built-in surface:
-
-- ensures a playable game exists and opens the Work tab
-- captures `rimworld/get_ui_layout` for `surfaceId: "main-tab:Work"`
-- sets and clears a UI hover target for the discovered `Manual priorities` checkbox, then clips a screenshot directly to it
-- toggles that checkbox through `rimworld/click_ui_target`
-- captures a fresh layout to verify the checkbox state changed, restores the original state, and then round-trips a pawn hover target through `rimworld/get_screen_targets`
-
-The `context-menu-cancel-roundtrip` scenario exercises the first background-safe input path:
-
-- ensures a playable game exists and normalizes away any pre-existing dialog windows
-- selects a real colonist and opens a vanilla context menu through `rimworld/open_context_menu`
-- captures `rimworld/get_screen_targets` while the menu is open and verifies the reported option geometry
-- closes that menu again with `rimworld/press_cancel`
-- verifies the float-menu and window-stack state transitions without depending on OS focus
-
-The `screen-target-click-roundtrip` scenario exercises the first background-safe click path:
-
-- ensures a playable game exists and normalizes away stray dialog windows
-- opens a real context menu and reads `rimworld/get_screen_targets`
-- clicks the float-menu dismiss target id through `rimworld/click_screen_target`
-- reopens the menu, clicks a direct option target id, and verifies the reported target/action metadata
-
-The `screen-target-clip` scenario exercises target-relative screenshot clipping:
-
-- ensures a playable game exists and opens a real context menu with an executable option
-- reads a real option `targetId` and `rect` from `rimworld/get_screen_targets`
-- captures a screenshot clipped to that option target with padding
-- verifies that the clipped PNG dimensions match the reported `clipRect`
-- keeps the original full-frame screenshot as `sourcePath` for comparison and debugging
-
-The `save-load-roundtrip` scenario covers the real save/load lifecycle:
-
-- ensures a playable game exists
-- writes a stable live-smoke save through `rimworld/save_game`
-- verifies that the save appears in `rimworld/list_saves`
-- loads the same save again and waits for playable state
-- confirms the reloaded colony still exposes current-map colonists
-
-The `screenshot-capture` scenario covers the current screenshot path:
-
-- ensures a playable game exists
-- jumps the camera to a real colonist for deterministic framing
-- captures a screenshot with a run-specific file name
-- verifies that the reported screenshot path and file size are valid
-- verifies that the screenshot response includes the current screen-target snapshot
-- captures only the screenshot action's operation and log window
-
-The `architect-wall-placement` scenario covers the first Architect/designator seam:
-
-- ensures a playable game exists
-- discovers the `Structure` category and the `Wall` build designator by stable ids
-- disables god mode and verifies that placing a wall creates a `Blueprint_Build` for `Wall`
-- enables god mode and verifies that placing the same wall creates the solid `Wall` building directly
-- restores the original god-mode state after the scenario finishes
-
-The `architect-floor-dropdown` scenario covers dropdown-heavy Architect discovery and rectangle placement:
-
-- ensures a playable game exists
-- discovers the `Floors` category and resolves a real dropdown child designator by stable id
-- proves the selected child designator and its dropdown container are both tracked correctly
-- enables god mode and applies the dropdown child floor designator over a 2x2 rectangle
-- verifies all four cells changed to the expected floor terrain through `rimworld/get_cell_info`
-
-The `architect-zone-area-drag` scenario covers rectangle drag semantics for non-build tools:
-
-- ensures a playable game exists
-- discovers the `Zone` category and resolves stockpile-zone plus home-area designators by class-backed stable ids
-- creates a new 3x2 stockpile zone and verifies it through both `rimworld/list_zones` and `rimworld/get_cell_info`
-- expands the home area over a 2x2 rectangle and verifies the change through both `rimworld/list_areas` and `rimworld/get_cell_info`
-- exports human-checkable screenshots for both overlays when `--human-verify` is enabled
-
-The `architect-stateful-targeting` scenario covers the remaining mutable Architect state:
-
-- ensures a playable game exists
-- creates a new custom allowed area and verifies `rimworld/get_designator_state` surfaces it as the selected allowed-area target
-- applies `Expand allowed area` over a 2x2 rectangle and verifies the created area id through both `rimworld/list_areas` and `rimworld/get_cell_info`
-- creates a stockpile zone, pins the stockpile designator to that zone with `rimworld/set_zone_target`, then expands the same zone into a second rectangle without increasing the zone count
-- tears the fixture back down with `rimworld/delete_zone`, `rimworld/clear_area`, and `rimworld/delete_area`
-
-The `debug-action-pawn-target` scenario covers the first targeted debug-action slice:
-
-- ensures a playable game exists
-- discovers `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details` through the same stable debug-action tree as other actions
-- verifies the discovery payload reports `requiredTargetKind: pawn`
-- executes both actions against a real colonist by `pawnName`
-- verifies `T: Log Job Details` emits a captured log row containing the pawn's current job details
-
-The `script-wall-sequence` scenario covers the first script-runner slice:
-
-- ensures a playable game exists
-- discovers the `Wall` designator through the normal Architect metadata flow
-- precomputes two accepted wall cells, then runs one JSON script that enables god mode, places both walls, and captures a screenshot
-- verifies the script report shape, child step execution order, and the on-disk screenshot artifact
-- confirms both target cells contain directly built `Wall` things instead of blueprints
-
-The `script-colonist-prison` scenario is the stronger control-flow smoke for the same runner:
-
-- ensures a playable game exists
-- runs one Lua script that resolves the `Wall` designator through the normal Architect metadata flow and finds a rally cell through generic map-analysis tools
-- uses `rimworld/find_random_cell_near`, architect dry runs, `rb.print`, `rb.assert`, `rb.poll`, `ipairs`, arithmetic, and the direct `rimworld/right_click_cell` shortcut instead of the older menu-based move path
-- verifies that the script report includes the planning calls as real executed steps rather than harness prework
-- confirms the resulting perimeter contains real `Wall` things, the starting colonists are undrafted, and they remain inside the prison interior
-- verifies the script-produced screenshot artifact
-
-The console output stays concise, while the full structured report is written to `artifacts/live-smoke/<timestamp>_<scenario>.json`. By default, `--stop-after` only stops RimWorld if the harness started that instance itself, so it does not kill a user-managed session by surprise.
-
-The runner looks for `gabs` on `PATH`, honors `GABS_BIN`, and also auto-detects a sibling checkout at `../GABS/gabs`. Use `--config-dir` or `GABS_CONFIG_DIR` if you need to point it at a non-default GABS configuration directory.
-
-The shared observation-window helper is intentionally generic: scenarios can start a bounded cursor window immediately before the action under test, choose their own event/log filters, and then collect the exact delta afterward without introducing global logging modes or ad hoc sleeps.
-
-Use `scripts/live-smoke.sh --list-scenarios` to see the current scenario matrix and descriptions.
-
-For human-checkable runs, pass `--human-verify`. The harness will copy a curated set of `.png` screenshots plus same-name `.txt` notes to the Desktop by default so you can inspect the exact state each scenario verified. Use `--human-verify-dir <path>` if you want those artifacts somewhere else.
-
-The helper script `scripts/human-verify.sh` runs the most visually useful scenarios in sequence with `--human-verify --stop-after`:
-
-```bash
-scripts/human-verify.sh
-```
-
-The current human-verification set covers:
-
-- `save-load-roundtrip` after the colony has reloaded
-- `context-menu-cancel-roundtrip` with the menu open and after semantic cancel input
-- `screen-target-click-roundtrip` before dismiss, before option click, and after the option click
-- `screen-target-clip` with a cropped image focused on one real actionable target
-- `screenshot-capture` by exporting the captured screenshot itself with a matching explanation file
-- `architect-floor-dropdown` with one screenshot showing a directly placed dropdown-selected floor patch
-- `script-colonist-prison` with the screenshot artifact produced by the script after grouping, enclosing, and undrafting the starting colonists
-- `script-wall-sequence` with the screenshot artifact produced by the script itself after placing two direct-build walls
-- `architect-stateful-targeting` with one screenshot showing a custom allowed area overlay and one showing an explicitly targeted stockpile expansion
-- `architect-wall-placement` with one screenshot showing the blueprint wall state and one showing the direct-build wall state
-- `architect-zone-area-drag` with one screenshot showing a stockpile zone overlay and one showing a home-area overlay
-
-The context-menu scenarios intentionally avoid creating empty float menus during target probing. Earlier harness revisions could emit RimWorld's red `Created FloatMenu with no options. Closing.` error while searching for a valid menu target; that probing path now checks for zero options before constructing the menu.
-
-For complete details about the protocol, see the [GABP specification](https://github.com/pardeike/GABP).
-
-### Building the mod
-
-Requirements:
-- .NET SDK
-- RimWorld installed
-
-Steps:
-1. Clone this repository
-2. Run `dotnet build` in the main folder
-3. The built mod will be in the `1.6/Assemblies/` folder
-
-**Tip**: Set the `RIMWORLD_MOD_DIR` environment variable to automatically copy the built mod to your RimWorld Mods folder.
-
-### Project structure
-
-```
-About/          - Mod information for RimWorld
-1.6/Assemblies/ - Built mod files
-Source/         - Source code
-Tests/          - Unit tests and live smoke runner
-scripts/        - Developer-facing workflow helpers
-lib/            - External libraries
-.vscode/        - Visual Studio Code settings
-```
-
-## License
-
-This project uses the MIT License. See the `LICENSE` file for details.
-
-## Dependencies
-
-This mod includes [Lib.GAB](https://github.com/pardeike/Lib.GAB), which provides the GABP protocol implementation.
+Your client then connects to:
+
+- address: `127.0.0.1`
+- port: the logged bridge port
+- token: the logged bridge token
+
+## Beginner Start
+
+If you only need the shortest possible mental model, use this:
+
+1. Install the mod and enable it in RimWorld.
+2. Prefer GABS if you want AI or harness control.
+3. Start RimWorld.
+4. Wait until the bridge is connected.
+5. Use tools like `rimbridge/get_bridge_status`, `rimworld/start_debug_game`, `rimworld/get_ui_layout`, `rimworld/take_screenshot`, `rimworld/list_mods`, and `rimworld/update_mod_settings` to drive and validate the game.
+
+## Tool Surface
+
+The current public tool surface is grouped below by function.
+
+### Bridge Diagnostics
+
+- `rimbridge/ping` - Connectivity test. Returns `'pong'`.
+- `rimworld/get_game_info` - Get basic information about the current RimWorld game.
+- `rimbridge/get_operation` - Get the latest retained journal snapshot for a specific operation id, including any bounded retained result payload.
+- `rimbridge/get_bridge_status` - Get the current bridge and RimWorld state snapshot without mutating game state.
+- `rimbridge/list_capabilities` - List registered bridge capabilities so an agent can discover the live bridge surface instead of relying on hardcoded tool knowledge.
+- `rimbridge/get_capability` - Get one registered bridge capability descriptor by capability id or alias.
+- `rimbridge/list_operations` - List recent bridge operations from the in-memory operation journal, optionally expanding retained result payloads.
+- `rimbridge/list_operation_events` - List recent bridge operation lifecycle events from the in-memory event journal.
+- `rimbridge/list_logs` - List recent captured RimWorld and bridge log entries from the in-memory log journal, including operation correlation when available.
+- `rimbridge/wait_for_operation` - Wait for an operation in the journal to reach a terminal status.
+- `rimbridge/wait_for_game_loaded` - Wait until RimWorld has finished loading a playable game and, optionally, until screen fade is complete.
+- `rimbridge/wait_for_long_event_idle` - Wait until RimWorld reports no long events in progress.
+
+### Scripting
+
+- `rimbridge/get_script_reference` - Get a machine-readable authoring reference for `rimbridge/run_script`, including statement types, expressions, conditions, limits, and examples.
+- `rimbridge/get_lua_reference` - Get a machine-readable authoring reference for `rimbridge/run_lua` and `rimbridge/run_lua_file`, including the supported Lua subset, params binding, polling/planning patterns, compile errors, limits, and examples.
+- `rimbridge/run_script` - Execute a JSON script containing ordered capability calls and generic control statements; call `rimbridge/get_script_reference` for the machine-readable language reference.
+- `rimbridge/run_lua` - Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry; supports an injected read-only `params` table and points discoverers at `rimbridge/get_lua_reference`.
+- `rimbridge/run_lua_file` - Load a `.lua` file from disk, expose an optional read-only `params` table, compile it through the shared Lua frontend, and execute it through the normal capability registry.
+- `rimbridge/compile_lua` - Compile supported Lua source into the lowered JSON script model without executing capability calls; supports an injected read-only `params` table.
+- `rimbridge/compile_lua_file` - Load a `.lua` file from disk and compile it into the lowered JSON script model without executing capability calls.
+
+### Debug Actions And Mods
+
+- `rimworld/pause_game` - Pause or unpause the game.
+- `rimworld/list_debug_action_roots` - List top-level RimWorld debug action roots using stable internal debug-action paths.
+- `rimworld/list_debug_action_children` - List direct children of a RimWorld debug action path.
+- `rimworld/get_debug_action` - Get metadata for one RimWorld debug action path and, optionally, its immediate children.
+- `rimworld/execute_debug_action` - Execute a supported RimWorld debug action leaf by stable path, including pawn-target actions when `pawnName` or `pawnId` is provided.
+- `rimworld/set_debug_setting` - Set a RimWorld debug setting toggle by stable path to a deterministic on/off state.
+- `rimworld/list_mods` - List installed RimWorld mods, whether each one is enabled in the current configuration, and whether it matches the currently loaded session.
+- `rimworld/get_mod_configuration_status` - Read semantic mod-configuration status for the current active load order, including warnings, ordering issues, and whether a restart is required to match the loaded session.
+- `rimworld/set_mod_enabled` - Enable or disable one installed mod by stable mod id, package id, name, or folder name, optionally persisting the updated `ModsConfig.xml` immediately.
+- `rimworld/reorder_mod` - Move one currently enabled mod to a new zero-based active load-order index, optionally persisting the updated `ModsConfig.xml` immediately.
+- `rimworld/list_mod_settings_surfaces` - List loaded mod handles that expose a settings dialog, a persistent `ModSettings` state object, or both.
+- `rimworld/get_mod_settings` - Read one loaded mod's semantic `ModSettings` object by stable mod id, package id, settings category, or handle type name.
+- `rimworld/update_mod_settings` - Apply one or more field-path updates to a loaded mod's `ModSettings` object, with optional immediate persistence through `Mod.WriteSettings()`.
+- `rimworld/reload_mod_settings` - Reload a loaded mod's `ModSettings` object from disk, discarding unsaved in-memory changes.
+- `rimworld/open_mod_settings` - Open RimWorld's native `Dialog_ModSettings` window for one loaded mod without foreground-dependent input.
+
+### Architect And Map State
+
+- `rimworld/get_designator_state` - Get the current Architect/designator selection state, including god mode and the selected designator.
+- `rimworld/set_god_mode` - Enable or disable RimWorld god mode deterministically.
+- `rimworld/list_architect_categories` - List RimWorld Architect categories using stable category ids.
+- `rimworld/list_architect_designators` - List Architect designators for one category, flattening dropdown widgets into actionable child designators.
+- `rimworld/select_architect_designator` - Select an Architect designator by stable id without relying on foreground UI interaction.
+- `rimworld/apply_architect_designator` - Apply an Architect designator to one cell or a rectangle, with optional dry-run validation.
+- `rimworld/list_zones` - List current-map zones such as stockpiles and growing zones.
+- `rimworld/list_areas` - List current-map areas such as home, roof, snow-clear, and allowed areas.
+- `rimworld/create_allowed_area` - Create a new allowed area and optionally make it the selected allowed-area target.
+- `rimworld/select_allowed_area` - Select an allowed area by id for area-designator flows, or clear the selection when `areaId` is omitted.
+- `rimworld/set_zone_target` - Set or clear the explicit existing-zone target on a zone-add designator.
+- `rimworld/clear_area` - Clear all cells from a mutable area such as a custom allowed area.
+- `rimworld/delete_area` - Delete a mutable area such as a custom allowed area.
+- `rimworld/delete_zone` - Delete an existing zone by id.
+- `rimworld/get_cell_info` - Inspect one map cell, including things, blueprints, frames, designations, zones, and areas.
+- `rimworld/find_random_cell_near` - Use RimWorld's expanding-radius random cell search to find a nearby cell or footprint that satisfies generic map criteria.
+- `rimworld/flood_fill_cells` - Analyze a contiguous area from one root cell using RimWorld's generic cell flood-fill algorithm and the same reusable footprint criteria as `find_random_cell_near`.
+
+### UI And Input
+
+- `rimworld/get_ui_state` - Get the current RimWorld window stack and input state for background-safe UI automation.
+- `rimworld/list_main_tabs` - List RimWorld main tabs such as Work, Assign, Research, and mod-provided tabs with stable `main-tab` target ids.
+- `rimworld/open_main_tab` - Open one RimWorld main tab by stable target id, `defName`, label, or tab window type.
+- `rimworld/close_main_tab` - Close the currently open RimWorld main tab, optionally asserting which tab is open first.
+- `rimworld/get_ui_layout` - Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable control target ids.
+- `rimworld/click_ui_target` - Activate an actionable UI control target returned by `rimworld/get_ui_layout` on the next real draw frame.
+- `rimworld/set_hover_target` - Set a persistent virtual hover target for UI review and screenshots, using either an actionable `ui-element` target id or a current-map cell, pawn, or thing.
+- `rimworld/clear_hover_target` - Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state.
+- `rimworld/press_accept` - Send semantic accept input to the active RimWorld window stack without requiring OS focus.
+- `rimworld/press_cancel` - Send semantic cancel input to the active RimWorld window stack without requiring OS focus.
+- `rimworld/close_window` - Close an open RimWorld window by type name or, if omitted, the topmost window.
+- `rimworld/click_screen_target` - Semantically click a known actionable target id returned by `rimworld/get_screen_targets` without requiring OS focus.
+- `rimworld/start_debug_game` - Start RimWorld's built-in quick test colony from the main menu.
+- `rimworld/go_to_main_menu` - Return to the RimWorld main menu entry scene, or no-op if already there.
+
+### Selection And Colony State
+
+- `rimworld/list_colonists` - List player-controlled colonists available for selection and drafting, including stable pawn ids.
+- `rimworld/clear_selection` - Clear the current map selection.
+- `rimworld/select_pawn` - Select a single colonist by name or stable pawn id.
+- `rimworld/deselect_pawn` - Deselect a single selected pawn by name or stable pawn id.
+- `rimworld/set_draft` - Draft or undraft a colonist by name or stable pawn id.
+
+### Selection Semantics And Notifications
+
+- `rimworld/get_selection_semantics` - Get structured details for the current selection, including inspect strings, inspect-tab types, and the current selection fingerprint.
+- `rimworld/list_selected_gizmos` - List the current selection's actionable grouped gizmos using deterministic selection-scoped gizmo ids.
+- `rimworld/execute_gizmo` - Execute one grouped gizmo for the current selection by gizmo id returned from `rimworld/list_selected_gizmos`.
+- `rimworld/list_messages` - List live RimWorld messages with native message ids and structured look-target metadata.
+- `rimworld/list_letters` - List current letter-stack entries with native letter ids, semantic letter content, and structured look-target metadata.
+- `rimworld/open_letter` - Open a specific letter by native letter id, mirroring a normal left-click on the letter stack entry.
+- `rimworld/dismiss_letter` - Dismiss a specific dismissible letter by native letter id, mirroring a normal right-click on the letter stack entry.
+- `rimworld/list_alerts` - List active RimWorld alerts with structured culprit targets and alert-snapshot-scoped alert ids.
+- `rimworld/activate_alert` - Activate one alert by alert id returned from `rimworld/list_alerts`, mirroring a normal left-click on the alert readout.
+
+### Camera And Screenshots
+
+- `rimworld/get_camera_state` - Get the current map camera position, zoom, and visible rect.
+- `rimworld/get_screen_targets` - Get current screen-space targets such as open windows and active context-menu geometry.
+- `rimworld/jump_camera_to_pawn` - Jump the camera to a pawn by name or stable pawn id.
+- `rimworld/jump_camera_to_cell` - Jump the camera to a map cell.
+- `rimworld/move_camera` - Move the camera by a cell offset.
+- `rimworld/zoom_camera` - Adjust the current camera zoom/root size.
+- `rimworld/set_camera_zoom` - Set the current camera root size directly.
+- `rimworld/frame_pawns` - Frame a comma-separated list of pawns by name and/or stable pawn id so they fit in view.
+- `rimworld/take_screenshot` - Take an in-game screenshot and return the saved file path plus optional target metadata.
+
+### Save/Load And Spawning
+
+- `rimworld/list_saves` - List saved RimWorld games.
+- `rimworld/spawn_thing` - Spawn a thing on the current map at a target cell.
+- `rimworld/save_game` - Save the current game to a named save.
+- `rimworld/load_game` - Load a named RimWorld save.
+
+### Context Menus And Map Interaction
+
+- `rimworld/open_context_menu` - Open a vanilla debug context menu at a target pawn or cell.
+- `rimworld/right_click_cell` - Apply RimWorld's native right-click map interaction for the current pawn selection, auto-executing the default action when possible and only opening a menu as fallback.
+- `rimworld/get_context_menu_options` - Get the currently opened debug context menu options.
+- `rimworld/execute_context_menu_option` - Execute a context menu option by index or label.
+- `rimworld/close_context_menu` - Close the currently opened debug context menu.
+
+## More Reading
+
+- [docs/architecture.md](docs/architecture.md) - implementation strategy and architectural direction
+- [docs/lua-frontend-design.md](docs/lua-frontend-design.md) - Lua front-end design and current execution model
+- [docs/semantic-state-design.md](docs/semantic-state-design.md) - rationale for the semantic inspection and notification surfaces

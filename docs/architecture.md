@@ -14,13 +14,20 @@ The immediate design goal is to turn the current proof-of-useful-tools into a pl
 
 ## Current State
 
-The repository is still small and that is an advantage. It already has a working GABP host, a main-thread queue, and a set of useful tools in [`Source/RimBridgeTools.cs`](../Source/RimBridgeTools.cs). That gives us a working vertical slice but also shows the main architectural risks:
+As of 2026-03-17, the repository has moved beyond the first vertical slice. It now has:
+
+- a working GABP host and internal capability registry
+- bridge diagnostics, journaling, and event/log surfaces
+- core and live-smoke test projects
+- lifecycle, debug-action, mod configuration, mod settings, architect, selection, notification, screenshot, and UI workbench capabilities
+- a growing scripting layer (`run_script` and the Lua front-end) built on the shared registry
+
+That progress is useful, but the architectural risks this document was written to address still matter:
 
 - the tool surface is monolithic and mixes transport, orchestration, game access, UI state, and serialization
 - async behavior is mostly implicit, with ad hoc waiting in specific tools like screenshots
-- there is no shared result envelope, operation journal, or event pipeline
-- there is no test project yet
-- capability discovery is limited to GABP tool metadata, not an internal registry
+- there is still substantial coupling between the host assembly and first-party capability modules
+- capability discovery now exists internally, but the external documentation surface is still too hand-maintained
 - optional mod integrations currently rely on reflection, even though RimWorld itself is already available through a publicized reference assembly
 
 ## Non-Negotiable Constraints
