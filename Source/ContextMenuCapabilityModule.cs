@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -8,6 +9,10 @@ namespace RimBridgeServer;
 
 internal sealed class ContextMenuCapabilityModule
 {
+    private static readonly MethodInfo SelectorHandleMultiselectGotoMethod = typeof(Selector).GetMethod(
+        "HandleMultiselectGoto",
+        BindingFlags.Instance | BindingFlags.NonPublic);
+
     private sealed class MapClickTarget
     {
         public IntVec3 Cell { get; set; } = IntVec3.Invalid;
@@ -121,10 +126,11 @@ internal sealed class ContextMenuCapabilityModule
             };
         }
 
-        if (TryExecuteMultiPawnGoto(context, selectedPawns, out var gotoResponse))
+        var selectorFallback = TryExecuteSelectorMultiselectHandler(context, options, selectedPawns, target);
+        if (selectorFallback != null)
         {
             RimBridgeContextMenus.Clear();
-            return gotoResponse;
+            return selectorFallback;
         }
 
         if (!options.NullOrEmpty())
@@ -278,63 +284,82 @@ internal sealed class ContextMenuCapabilityModule
         return true;
     }
 
-    private static bool TryExecuteMultiPawnGoto(FloatMenuContext context, List<Pawn> selectedPawns, out object response)
+    private static object TryExecuteSelectorMultiselectHandler(
+        FloatMenuContext context,
+        IReadOnlyList<FloatMenuOption> options,
+        IReadOnlyCollection<Pawn> selectedPawns,
+        MapClickTarget target)
     {
-        response = null;
+        if (!ShouldUseSelectorMultiselectHandler(context, options))
+            return null;
+
+        if (SelectorHandleMultiselectGotoMethod == null)
+        {
+            return new
+            {
+                success = false,
+                message = "RimWorld selector multiselect right-click handling is not available in this RimWorld build."
+            };
+        }
+
+        var selector = Find.Selector;
+        if (selector == null)
+        {
+            return new
+            {
+                success = false,
+                message = "RimWorld selector is not available for multiselect right-click handling."
+            };
+        }
+
+        try
+        {
+            // Delegate the drafted goto fallback to RimWorld's selector instead of replaying its internals here.
+            SelectorHandleMultiselectGotoMethod.Invoke(selector, [context]);
+            var validSelectedPawnCount = context.ValidSelectedPawns.Count();
+
+            return new
+            {
+                success = true,
+                actionKind = "selector_multiselect_goto",
+                handler = "HandleMultiselectGoto",
+                validSelectedPawnCount,
+                clickCell = new { x = target.Cell.x, z = target.Cell.z },
+                target = target.Label,
+                selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
+                message = "Delegated the right-click action to RimWorld's multiselect selector handler."
+            };
+        }
+        catch (TargetInvocationException ex)
+        {
+            var detail = ex.InnerException?.Message ?? ex.Message;
+            return new
+            {
+                success = false,
+                message = $"RimWorld selector right-click handling failed: {detail}"
+            };
+        }
+        catch (System.Exception ex)
+        {
+            return new
+            {
+                success = false,
+                message = $"RimWorld selector right-click handling failed: {ex.Message}"
+            };
+        }
+    }
+
+    private static bool ShouldUseSelectorMultiselectHandler(FloatMenuContext context, IReadOnlyList<FloatMenuOption> options)
+    {
         if (context == null || !context.IsMultiselect)
             return false;
 
-        var draftedGotoPawns = new List<Pawn>();
-        foreach (var pawn in context.allSelectedPawns)
-        {
-            if ((bool)FloatMenuMakerMap.ShouldGenerateFloatMenuForPawn(pawn) && pawn.Drafted)
-                draftedGotoPawns.Add(pawn);
-        }
-
-        if (draftedGotoPawns.Count == 0)
-            return false;
-
-        if (draftedGotoPawns.Count == 1)
-        {
-            if (!(bool)FloatMenuOptionProvider_DraftedMove.PawnCanGoto(draftedGotoPawns[0], context.ClickedCell))
-                return false;
-
-            FloatMenuOptionProvider_DraftedMove.PawnGotoAction(context.ClickedCell, draftedGotoPawns[0], context.ClickedCell);
-            response = new
-            {
-                success = true,
-                actionKind = "single_pawn_goto",
-                clickCell = new { x = context.ClickedCell.x, z = context.ClickedCell.z },
-                target = $"cell {context.ClickedCell.x},{context.ClickedCell.z}",
-                selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
-                orderedPawnCount = 1,
-                message = "Executed RimWorld's drafted single-pawn right-click goto."
-            };
+        if (options == null || options.Count == 0)
             return true;
-        }
 
-        var destination = CellFinder.StandableCellNear(context.ClickedCell, context.map, 2.9f);
-        if (!destination.IsValid)
-            return false;
-
-        var controller = Find.Selector.gotoController;
-        controller.StartInteraction(destination);
-        foreach (var pawn in draftedGotoPawns)
-            controller.AddPawn(pawn);
-        controller.FinalizeInteraction();
-
-        response = new
-        {
-            success = true,
-            actionKind = "multi_pawn_goto",
-            clickCell = new { x = context.ClickedCell.x, z = context.ClickedCell.z },
-            target = $"cell {context.ClickedCell.x},{context.ClickedCell.z}",
-            selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
-            orderedPawnCount = draftedGotoPawns.Count,
-            destinationCell = new { x = destination.x, z = destination.z },
-            message = "Executed RimWorld's grouped drafted right-click goto."
-        };
-        return true;
+        return context.ValidSelectedPawns.Count() > 1
+            && options.Count == 1
+            && options[0].isGoto;
     }
 
     private static void PositionDebugMenu(FloatMenu menu)
