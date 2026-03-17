@@ -834,20 +834,20 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(saveName), saveName)));
     }
 
-    [ReadmeTool("Context Menus And Map Interaction", "Open a vanilla debug context menu at a target pawn or cell")]
-    [Tool("rimworld/open_context_menu", Description = "Open a vanilla debug context menu at a target pawn or cell")]
+    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live right-click at a target pawn or cell and capture the resulting context menu when one remains open")]
+    [Tool("rimworld/open_context_menu", Description = "Dispatch a live right-click at a target pawn or cell and capture the resulting context menu when one remains open")]
     public object OpenContextMenu(
         [ToolParameter(Description = "Optional target pawn name on the current map.")] string targetPawnName = null,
         [ToolParameter(Description = "Optional stable target pawn id from rimworld/list_colonists.")] string targetPawnId = null,
         [ToolParameter(Description = "Target cell x coordinate when no pawn name or id is given")] int x = 0,
         [ToolParameter(Description = "Target cell z coordinate when no pawn name or id is given")] int z = 0,
-        [ToolParameter(Description = "Optional provider hint. Use vanilla; auto is accepted as a backwards-compatible alias.")] string mode = "vanilla")
+        [ToolParameter(Description = "Compatibility hint. 'vanilla', 'auto', and 'live' are accepted; the tool always routes through the live play-UI click path.")] string mode = "vanilla")
     {
         return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(targetPawnId), targetPawnId), (nameof(x), x), (nameof(z), z), (nameof(mode), mode)));
     }
 
-    [ReadmeTool("Context Menus And Map Interaction", "Apply RimWorld's native right-click map interaction for the current pawn selection, auto-executing the default action when possible and only opening a menu as fallback")]
-    [Tool("rimworld/right_click_cell", Description = "Apply RimWorld's native right-click map interaction for the current pawn selection, auto-executing the default action when possible and only opening a menu as fallback")]
+    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live right-click map interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click")]
+    [Tool("rimworld/right_click_cell", Description = "Dispatch a live right-click map interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click")]
     public object RightClickCell(
         [ToolParameter(Description = "Optional target pawn name on the current map.")] string targetPawnName = null,
         [ToolParameter(Description = "Optional stable target pawn id from rimworld/list_colonists.")] string targetPawnId = null,
@@ -894,4 +894,3 @@ public class RimBridgeTools
         return result;
     }
 }
-

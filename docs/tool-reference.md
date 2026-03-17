@@ -752,18 +752,18 @@ Parameters:
 
 ### `rimworld/open_context_menu`
 
-Open a vanilla debug context menu at a target pawn or cell
+Dispatch a live right-click at a target pawn or cell and capture the resulting context menu when one remains open
 
 Parameters:
 - `targetPawnName` (`string`, `optional`, default `null`): Optional target pawn name on the current map.
 - `targetPawnId` (`string`, `optional`, default `null`): Optional stable target pawn id from rimworld/list_colonists.
 - `x` (`int`, `optional`, default `0`): Target cell x coordinate when no pawn name or id is given
 - `z` (`int`, `optional`, default `0`): Target cell z coordinate when no pawn name or id is given
-- `mode` (`string`, `optional`, default `"vanilla"`): Optional provider hint. Use vanilla; auto is accepted as a backwards-compatible alias.
+- `mode` (`string`, `optional`, default `"vanilla"`): Compatibility hint. `vanilla`, `auto`, and `live` are accepted; the tool always routes through the live play-UI click path.
 
 ### `rimworld/right_click_cell`
 
-Apply RimWorld's native right-click map interaction for the current pawn selection, auto-executing the default action when possible and only opening a menu as fallback
+Dispatch a live right-click map interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
 
 Parameters:
 - `targetPawnName` (`string`, `optional`, default `null`): Optional target pawn name on the current map.

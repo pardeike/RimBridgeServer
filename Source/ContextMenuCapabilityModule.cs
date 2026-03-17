@@ -1,17 +1,13 @@
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using RimWorld;
-using UnityEngine;
 using Verse;
 
 namespace RimBridgeServer;
 
 internal sealed class ContextMenuCapabilityModule
 {
-    private static readonly MethodInfo SelectorHandleMultiselectGotoMethod = typeof(Selector).GetMethod(
-        "HandleMultiselectGoto",
-        BindingFlags.Instance | BindingFlags.NonPublic);
+    private const int DefaultTimeoutMs = 2000;
 
     private sealed class MapClickTarget
     {
@@ -32,64 +28,52 @@ internal sealed class ContextMenuCapabilityModule
         var map = RimWorldState.CurrentMapOrThrow();
         if (!TryResolveMapClickTarget(map, targetPawnName, targetPawnId, x, z, out var target, out var failure))
             return failure;
-        var clickCell = target.Cell;
-        var targetLabel = target.Label;
 
-        if (Find.WindowStack.FloatMenu != null)
-            Find.WindowStack.TryRemove(Find.WindowStack.FloatMenu, doCloseSound: false);
-
-        var clickPos = RimWorldState.CellCenter(clickCell);
         var normalizedMode = (mode ?? "vanilla").Trim().ToLowerInvariant();
         if (normalizedMode == "auto")
-            normalizedMode = "vanilla";
+            normalizedMode = "live";
 
-        if (normalizedMode != "vanilla")
+        if (normalizedMode != "vanilla" && normalizedMode != "live")
         {
             return new
             {
                 success = false,
-                message = $"Unsupported context menu mode '{mode}'. Only vanilla is supported."
+                message = $"Unsupported context menu mode '{mode}'. Supported values are 'vanilla', 'auto', and 'live'."
             };
         }
 
-        FloatMenu menu = null;
-        var options = FloatMenuMakerMap.GetOptions(selectedPawns, clickPos, out _).ToList();
-        const string provider = "vanilla";
+        var dispatch = RimBridgeMapClickInjector.DispatchRightClick(target.Cell, target.Label, DefaultTimeoutMs);
+        if (!dispatch.Success)
+            return new { success = false, message = dispatch.Message };
 
-        if (options.Count == 0)
+        var snapshot = dispatch.Snapshot;
+        if (snapshot == null)
         {
-            RimBridgeContextMenus.Clear();
             return new
             {
                 success = true,
                 menuId = 0,
-                provider,
-                clickCell = new { x = clickCell.x, z = clickCell.z },
-                target = targetLabel,
+                provider = "ui_event",
+                clickCell = new { x = target.Cell.x, z = target.Cell.z },
+                target = target.Label,
                 selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
                 optionCount = 0,
                 options = new List<object>(),
-                message = "No context menu options were generated for the current selection and target."
+                message = dispatch.Message
             };
         }
-
-        if (menu == null)
-            menu = new FloatMenu(options) { givesColonistOrders = true };
-
-        Find.WindowStack.Add(menu);
-        PositionDebugMenu(menu);
-        var snapshot = RimBridgeContextMenus.Store(provider, menu, options, clickCell, targetLabel);
 
         return new
         {
             success = true,
             menuId = snapshot.Id,
-            provider,
-            clickCell = new { x = clickCell.x, z = clickCell.z },
-            target = targetLabel,
+            provider = snapshot.Provider,
+            clickCell = new { x = target.Cell.x, z = target.Cell.z },
+            target = target.Label,
             selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
-            optionCount = options.Count,
-            options = DescribeOptions(snapshot.Options)
+            optionCount = snapshot.Options.Count,
+            options = DescribeOptions(snapshot.Options),
+            message = dispatch.Message
         };
     }
 
@@ -106,60 +90,13 @@ internal sealed class ContextMenuCapabilityModule
         if (!TryResolveMapClickTarget(map, targetPawnName, targetPawnId, x, z, out var target, out var failure))
             return failure;
 
-        if (Find.WindowStack.FloatMenu != null)
-            Find.WindowStack.TryRemove(Find.WindowStack.FloatMenu, doCloseSound: false);
+        var dispatch = RimBridgeMapClickInjector.DispatchRightClick(target.Cell, target.Label, DefaultTimeoutMs);
+        if (!dispatch.Success)
+            return new { success = false, message = dispatch.Message };
 
-        var clickPos = RimWorldState.CellCenter(target.Cell);
-        List<FloatMenuOption> options = null;
-        FloatMenuContext context = null;
-        try
+        if (dispatch.Snapshot != null)
         {
-            options = FloatMenuMakerMap.GetOptions(selectedPawns, clickPos, out context).ToList();
-        }
-        catch (System.Exception ex)
-        {
-            RimBridgeContextMenus.Clear();
-            return new
-            {
-                success = false,
-                message = $"RimWorld failed while generating right-click options: {ex.Message}"
-            };
-        }
-
-        var selectorFallback = TryExecuteSelectorMultiselectHandler(context, options, selectedPawns, target);
-        if (selectorFallback != null)
-        {
-            RimBridgeContextMenus.Clear();
-            return selectorFallback;
-        }
-
-        if (!options.NullOrEmpty())
-        {
-            var autoTakeOption = FloatMenuMakerMap.GetAutoTakeOption(options);
-            if (autoTakeOption != null)
-            {
-                autoTakeOption.Chosen(colonistOrdering: true, null);
-                RimBridgeContextMenus.Clear();
-                return new
-                {
-                    success = true,
-                    actionKind = "auto_take",
-                    clickCell = new { x = target.Cell.x, z = target.Cell.z },
-                    target = target.Label,
-                    selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
-                    label = autoTakeOption.Label,
-                    message = $"Executed the default right-click action '{autoTakeOption.Label}'."
-                };
-            }
-
-            var title = context != null && context.IsMultiselect == false
-                ? context.FirstSelectedPawn?.LabelCap.ToString()
-                : null;
-            var menu = new FloatMenuMap(options, title, clickPos) { givesColonistOrders = true };
-            Find.WindowStack.Add(menu);
-            PositionDebugMenu(menu);
-            var snapshot = RimBridgeContextMenus.Store("vanilla", menu, options, target.Cell, target.Label);
-
+            var snapshot = dispatch.Snapshot;
             return new
             {
                 success = true,
@@ -169,21 +106,20 @@ internal sealed class ContextMenuCapabilityModule
                 clickCell = new { x = target.Cell.x, z = target.Cell.z },
                 target = target.Label,
                 selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
-                optionCount = options.Count,
+                optionCount = snapshot.Options.Count,
                 options = DescribeOptions(snapshot.Options),
-                message = "Right-click opened a context menu because no default action was available."
+                message = dispatch.Message
             };
         }
 
-        RimBridgeContextMenus.Clear();
         return new
         {
             success = true,
-            actionKind = "no_action",
+            actionKind = "click_dispatched",
             clickCell = new { x = target.Cell.x, z = target.Cell.z },
             target = target.Label,
             selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
-            message = "No right-click action was available for the current selection and target."
+            message = dispatch.Message
         };
     }
 
@@ -283,96 +219,5 @@ internal sealed class ContextMenuCapabilityModule
             Label = $"cell {x},{z}"
         };
         return true;
-    }
-
-    private static object TryExecuteSelectorMultiselectHandler(
-        FloatMenuContext context,
-        IReadOnlyList<FloatMenuOption> options,
-        IReadOnlyCollection<Pawn> selectedPawns,
-        MapClickTarget target)
-    {
-        if (!ShouldUseSelectorMultiselectHandler(context, options))
-            return null;
-
-        if (SelectorHandleMultiselectGotoMethod == null)
-        {
-            return new
-            {
-                success = false,
-                message = "RimWorld selector multiselect right-click handling is not available in this RimWorld build."
-            };
-        }
-
-        var selector = Find.Selector;
-        if (selector == null)
-        {
-            return new
-            {
-                success = false,
-                message = "RimWorld selector is not available for multiselect right-click handling."
-            };
-        }
-
-        try
-        {
-            // Delegate the drafted goto fallback to RimWorld's selector instead of replaying its internals here.
-            SelectorHandleMultiselectGotoMethod.Invoke(selector, [context]);
-            var validSelectedPawnCount = context.ValidSelectedPawns.Count();
-
-            return new
-            {
-                success = true,
-                actionKind = "selector_multiselect_goto",
-                handler = "HandleMultiselectGoto",
-                validSelectedPawnCount,
-                clickCell = new { x = target.Cell.x, z = target.Cell.z },
-                target = target.Label,
-                selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
-                message = "Delegated the right-click action to RimWorld's multiselect selector handler."
-            };
-        }
-        catch (TargetInvocationException ex)
-        {
-            var detail = ex.InnerException?.Message ?? ex.Message;
-            return new
-            {
-                success = false,
-                message = $"RimWorld selector right-click handling failed: {detail}"
-            };
-        }
-        catch (System.Exception ex)
-        {
-            return new
-            {
-                success = false,
-                message = $"RimWorld selector right-click handling failed: {ex.Message}"
-            };
-        }
-    }
-
-    private static bool ShouldUseSelectorMultiselectHandler(FloatMenuContext context, IReadOnlyList<FloatMenuOption> options)
-    {
-        if (context == null || !context.IsMultiselect)
-            return false;
-
-        if (options == null || options.Count == 0)
-            return true;
-
-        return context.ValidSelectedPawns.Count() > 1
-            && options.Count == 1
-            && options[0].isGoto;
-    }
-
-    private static void PositionDebugMenu(FloatMenu menu)
-    {
-        menu.vanishIfMouseDistant = false;
-
-        var size = menu.InitialSize;
-        const float margin = 24f;
-        var desiredX = (float)UI.screenWidth * 0.22f;
-        var desiredY = 48f;
-        var x = Mathf.Clamp(desiredX, margin, Mathf.Max(margin, (float)UI.screenWidth - size.x - margin));
-        var y = Mathf.Clamp(desiredY, margin, Mathf.Max(margin, (float)UI.screenHeight - size.y - margin));
-        menu.windowRect = new Rect(x, y, size.x, size.y);
     }
 }

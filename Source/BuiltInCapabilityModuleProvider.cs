@@ -307,6 +307,8 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             "rimworld/click_ui_target" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/set_hover_target" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/clear_hover_target" => CapabilityExecutionKind.BackgroundObserved,
+            "rimworld/open_context_menu" => CapabilityExecutionKind.BackgroundObserved,
+            "rimworld/right_click_cell" => CapabilityExecutionKind.BackgroundObserved,
             _ => CapabilityExecutionKind.MainThread
         };
     }
