@@ -61,6 +61,42 @@ public class OperationRunnerTests
     }
 
     [Fact]
+    public void ConvertsTimeoutExceptionsIntoTimedOutOperationEnvelopes()
+    {
+        var dispatcher = new TimeoutDispatcher();
+        var runner = new OperationRunner(dispatcher);
+
+        var envelope = runner.Run(() => "never", new OperationExecutionOptions
+        {
+            CapabilityId = "rimworld/save_game",
+            MarshalToMainThread = true,
+            TimeoutCode = "capability.timed_out"
+        });
+
+        Assert.False(envelope.Success);
+        Assert.Equal(OperationStatus.TimedOut, envelope.Status);
+        Assert.Equal("capability.timed_out", envelope.Error.Code);
+    }
+
+    [Fact]
+    public void ConvertsOperationCanceledExceptionsIntoCancelledOperationEnvelopes()
+    {
+        var dispatcher = new CancelledDispatcher();
+        var runner = new OperationRunner(dispatcher);
+
+        var envelope = runner.Run(() => "never", new OperationExecutionOptions
+        {
+            CapabilityId = "rimworld/save_game",
+            MarshalToMainThread = true,
+            CancellationCode = "capability.cancelled"
+        });
+
+        Assert.False(envelope.Success);
+        Assert.Equal(OperationStatus.Cancelled, envelope.Status);
+        Assert.Equal("capability.cancelled", envelope.Error.Code);
+    }
+
+    [Fact]
     public void ReusesSuppliedOperationIdentity()
     {
         var dispatcher = new FakeDispatcher();
@@ -96,6 +132,36 @@ public class OperationRunnerTests
         {
             InvokeCalled = true;
             action();
+        }
+    }
+
+    private sealed class TimeoutDispatcher : IGameThreadDispatcher
+    {
+        public bool IsMainThread => false;
+
+        public T Invoke<T>(Func<T> func, int timeoutMs)
+        {
+            throw new TimeoutException("dispatcher timeout");
+        }
+
+        public void Invoke(Action action, int timeoutMs)
+        {
+            throw new TimeoutException("dispatcher timeout");
+        }
+    }
+
+    private sealed class CancelledDispatcher : IGameThreadDispatcher
+    {
+        public bool IsMainThread => false;
+
+        public T Invoke<T>(Func<T> func, int timeoutMs)
+        {
+            throw new OperationCanceledException("dispatcher cancelled");
+        }
+
+        public void Invoke(Action action, int timeoutMs)
+        {
+            throw new OperationCanceledException("dispatcher cancelled");
         }
     }
 }

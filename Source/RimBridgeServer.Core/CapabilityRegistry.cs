@@ -90,16 +90,21 @@ public sealed class CapabilityRegistry
             _journal?.RecordCompleted(envelope);
             return envelope;
         }
+        catch (OperationCanceledException ex)
+        {
+            var cancelled = OperationEnvelope.Cancelled(operationId, descriptor.Id, requestedAtUtc, CreateError("capability.cancelled", ex));
+            _journal?.RecordCompleted(cancelled);
+            return cancelled;
+        }
+        catch (TimeoutException ex)
+        {
+            var timedOut = OperationEnvelope.TimedOut(operationId, descriptor.Id, requestedAtUtc, CreateError("capability.timed_out", ex));
+            _journal?.RecordCompleted(timedOut);
+            return timedOut;
+        }
         catch (Exception ex)
         {
-            var root = ex.InnerException ?? ex;
-            var failed = OperationEnvelope.Failed(operationId, descriptor.Id, requestedAtUtc, new OperationError
-            {
-                Code = "capability.failed",
-                Message = root.Message,
-                ExceptionType = root.GetType().FullName ?? root.GetType().Name,
-                Details = ex.ToString()
-            });
+            var failed = OperationEnvelope.Failed(operationId, descriptor.Id, requestedAtUtc, CreateError("capability.failed", ex));
 
             _journal?.RecordCompleted(failed);
             return failed;
@@ -159,5 +164,17 @@ public sealed class CapabilityRegistry
             envelope.CompletedAtUtc ??= DateTimeOffset.UtcNow;
             envelope.DurationMs ??= (long)(envelope.CompletedAtUtc.Value - envelope.StartedAtUtc).TotalMilliseconds;
         }
+    }
+
+    private static OperationError CreateError(string code, Exception exception)
+    {
+        var root = exception.InnerException ?? exception;
+        return new OperationError
+        {
+            Code = code,
+            Message = root.Message,
+            ExceptionType = root.GetType().FullName ?? root.GetType().Name,
+            Details = exception.ToString()
+        };
     }
 }

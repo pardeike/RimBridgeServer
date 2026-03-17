@@ -89,8 +89,11 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             CapabilityId = descriptor.Id,
             StartedAtUtc = invocation.RequestedAtUtc,
             MarshalToMainThread = RequiresMainThread(descriptor.ExecutionKind),
-            TimeoutMs = 10000,
-            FailureCode = "capability.failed"
+            // Use caller-level timeouts instead of an internal hard cap that can misclassify slow frames or large saves.
+            TimeoutMs = 0,
+            FailureCode = "capability.failed",
+            TimeoutCode = "capability.timed_out",
+            CancellationCode = "capability.cancelled"
         });
 
         return Task.FromResult(envelope);

@@ -107,4 +107,38 @@ public sealed class OperationEnvelope
             Error = error
         };
     }
+
+    public static OperationEnvelope TimedOut(string operationId, string capabilityId, DateTimeOffset startedAtUtc, OperationError error, object result = null)
+    {
+        var completedAtUtc = DateTimeOffset.UtcNow;
+        return new OperationEnvelope
+        {
+            OperationId = operationId,
+            CapabilityId = capabilityId,
+            Status = OperationStatus.TimedOut,
+            Success = false,
+            StartedAtUtc = startedAtUtc,
+            CompletedAtUtc = completedAtUtc,
+            DurationMs = (long)(completedAtUtc - startedAtUtc).TotalMilliseconds,
+            Result = result,
+            Error = error
+        };
+    }
+
+    public static OperationEnvelope Cancelled(string operationId, string capabilityId, DateTimeOffset startedAtUtc, OperationError error, object result = null)
+    {
+        var completedAtUtc = DateTimeOffset.UtcNow;
+        return new OperationEnvelope
+        {
+            OperationId = operationId,
+            CapabilityId = capabilityId,
+            Status = OperationStatus.Cancelled,
+            Success = false,
+            StartedAtUtc = startedAtUtc,
+            CompletedAtUtc = completedAtUtc,
+            DurationMs = (long)(completedAtUtc - startedAtUtc).TotalMilliseconds,
+            Result = result,
+            Error = error
+        };
+    }
 }

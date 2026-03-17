@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -63,6 +64,32 @@ public class CapabilityRegistryTests
         Assert.Equal("operation.started", events[1].EventType);
     }
 
+    [Fact]
+    public void ConvertsHandlerTimeoutsIntoTimedOutOperations()
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new ThrowingProvider("timeout", () => throw new TimeoutException("too slow")));
+
+        var envelope = registry.Invoke("rimbridge/timeout");
+
+        Assert.False(envelope.Success);
+        Assert.Equal(OperationStatus.TimedOut, envelope.Status);
+        Assert.Equal("capability.timed_out", envelope.Error.Code);
+    }
+
+    [Fact]
+    public void ConvertsHandlerCancellationsIntoCancelledOperations()
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new ThrowingProvider("cancelled", () => throw new OperationCanceledException("stopped")));
+
+        var envelope = registry.Invoke("rimbridge/cancelled");
+
+        Assert.False(envelope.Success);
+        Assert.Equal(OperationStatus.Cancelled, envelope.Status);
+        Assert.Equal("capability.cancelled", envelope.Error.Code);
+    }
+
     private sealed class FakeProvider : IRimBridgeCapabilityProvider
     {
         public string ProviderId => "fake.provider";
@@ -96,6 +123,28 @@ public class CapabilityRegistryTests
                     Aliases = ["rimbridge/ping"]
                 },
                 (_, _) => Task.FromResult(OperationEnvelope.Completed("op_2", "rimbridge.core/other/ping", System.DateTimeOffset.UtcNow, new { message = "pong" })));
+        }
+    }
+
+    private sealed class ThrowingProvider(string alias, System.Action action) : IRimBridgeCapabilityProvider
+    {
+        public string ProviderId => "throwing.provider";
+
+        public IEnumerable<RimBridgeCapabilityRegistration> GetCapabilities()
+        {
+            yield return new RimBridgeCapabilityRegistration(
+                new CapabilityDescriptor
+                {
+                    Id = "throwing.provider/" + alias,
+                    ProviderId = ProviderId,
+                    Category = "diagnostics",
+                    Aliases = ["rimbridge/" + alias]
+                },
+                (_, _) =>
+                {
+                    action();
+                    return Task.FromResult(OperationEnvelope.Completed("op_throwing", "throwing.provider/" + alias, System.DateTimeOffset.UtcNow, new { }));
+                });
         }
     }
 }

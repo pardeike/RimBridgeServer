@@ -25,6 +25,10 @@ public sealed class OperationExecutionOptions
     public int TimeoutMs { get; set; } = 10000;
 
     public string FailureCode { get; set; } = "tool.failed";
+
+    public string TimeoutCode { get; set; } = "tool.timed_out";
+
+    public string CancellationCode { get; set; } = "tool.cancelled";
 }
 
 public sealed class OperationRunner
@@ -56,16 +60,29 @@ public sealed class OperationRunner
 
             return OperationEnvelope.Completed(operationId, options.CapabilityId, startedAtUtc, result);
         }
+        catch (OperationCanceledException ex)
+        {
+            return OperationEnvelope.Cancelled(operationId, options.CapabilityId, startedAtUtc, CreateError(ex, options.CancellationCode));
+        }
+        catch (TimeoutException ex)
+        {
+            return OperationEnvelope.TimedOut(operationId, options.CapabilityId, startedAtUtc, CreateError(ex, options.TimeoutCode));
+        }
         catch (Exception ex)
         {
-            var root = ex.InnerException ?? ex;
-            return OperationEnvelope.Failed(operationId, options.CapabilityId, startedAtUtc, new OperationError
-            {
-                Code = options.FailureCode,
-                Message = root.Message,
-                ExceptionType = root.GetType().FullName ?? root.GetType().Name,
-                Details = ex.ToString()
-            });
+            return OperationEnvelope.Failed(operationId, options.CapabilityId, startedAtUtc, CreateError(ex, options.FailureCode));
         }
+    }
+
+    private static OperationError CreateError(Exception exception, string code)
+    {
+        var root = exception.InnerException ?? exception;
+        return new OperationError
+        {
+            Code = code,
+            Message = root.Message,
+            ExceptionType = root.GetType().FullName ?? root.GetType().Name,
+            Details = exception.ToString()
+        };
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using HarmonyLib;
 using Verse;
 
@@ -31,7 +32,57 @@ internal static class Root_Update_Patch
 
 internal static class RimBridgeMainThread
 {
-    private static readonly Queue<Action> Pending = [];
+    private interface IMainThreadWorkItem
+    {
+        void ExecuteIfPending();
+
+        bool CancelIfPending();
+    }
+
+    private sealed class MainThreadWorkItem<T> : IMainThreadWorkItem
+    {
+        private readonly Func<T> _func;
+        private readonly TaskCompletionSource<T> _completion = new();
+        private int _state;
+
+        public MainThreadWorkItem(Func<T> func)
+        {
+            _func = func ?? throw new ArgumentNullException(nameof(func));
+        }
+
+        public Task<T> Completion => _completion.Task;
+
+        public void ExecuteIfPending()
+        {
+            if (Interlocked.CompareExchange(ref _state, 1, 0) != 0)
+                return;
+
+            try
+            {
+                var result = _func();
+                _completion.TrySetResult(result);
+            }
+            catch (Exception ex)
+            {
+                _completion.TrySetException(ex);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _state, 2);
+            }
+        }
+
+        public bool CancelIfPending()
+        {
+            if (Interlocked.CompareExchange(ref _state, 3, 0) != 0)
+                return false;
+
+            _completion.TrySetCanceled();
+            return true;
+        }
+    }
+
+    private static readonly Queue<IMainThreadWorkItem> Pending = [];
     private static readonly object Sync = new();
     private static int _mainThreadId;
 
@@ -47,18 +98,18 @@ internal static class RimBridgeMainThread
     {
         while (true)
         {
-            Action action;
+            IMainThreadWorkItem workItem;
             lock (Sync)
             {
                 if (Pending.Count == 0)
                     break;
 
-                action = Pending.Dequeue();
+                workItem = Pending.Dequeue();
             }
 
             try
             {
-                action();
+                workItem.ExecuteIfPending();
             }
             catch (Exception ex)
             {
@@ -72,36 +123,29 @@ internal static class RimBridgeMainThread
         if (IsMainThread)
             return func();
 
-        using var waitHandle = new ManualResetEventSlim(false);
-        T result = default;
-        Exception error = null;
+        var workItem = new MainThreadWorkItem<T>(func);
 
         lock (Sync)
         {
-            Pending.Enqueue(() =>
-            {
-                try
-                {
-                    result = func();
-                }
-                catch (Exception ex)
-                {
-                    error = ex;
-                }
-                finally
-                {
-                    waitHandle.Set();
-                }
-            });
+            Pending.Enqueue(workItem);
         }
 
-        if (!waitHandle.Wait(timeoutMs))
+        if (timeoutMs <= 0)
+            return workItem.Completion.GetAwaiter().GetResult();
+
+        if (workItem.Completion.Wait(timeoutMs))
+            return workItem.Completion.GetAwaiter().GetResult();
+
+        if (workItem.Completion.IsCompleted)
+            return workItem.Completion.GetAwaiter().GetResult();
+
+        if (workItem.CancelIfPending())
             throw new TimeoutException($"Timed out waiting for main-thread work after {timeoutMs}ms.");
 
-        if (error != null)
-            throw new InvalidOperationException("Main-thread work item failed.", error);
+        if (workItem.Completion.IsCompleted)
+            return workItem.Completion.GetAwaiter().GetResult();
 
-        return result;
+        throw new TimeoutException($"Timed out waiting for main-thread work after {timeoutMs}ms.");
     }
 
     public static void Invoke(Action action, int timeoutMs = 5000)
