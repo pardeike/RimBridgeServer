@@ -1115,54 +1115,36 @@ internal static class SmokeScenarioCatalog
 
         try
         {
-            var categories = await context.CallGameToolAsync("script_prison.list_categories", "rimworld/list_architect_categories", new
-            {
-                includeHidden = false,
-                includeEmpty = false
-            }, cancellationToken);
-            context.EnsureSucceeded(categories, "Listing architect categories for the script colonist prison scenario");
-
-            var categoryArray = JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories");
-            var structureCategoryId = ResolveArchitectCategoryId(categoryArray, "Structure");
-
-            var designators = await context.CallGameToolAsync("script_prison.list_structure_designators", "rimworld/list_architect_designators", new
-            {
-                categoryId = structureCategoryId,
-                includeHidden = false
-            }, cancellationToken);
-            context.EnsureSucceeded(designators, "Listing structure designators for the script colonist prison scenario");
-
-            var designatorArray = JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators");
-            var wallDesignatorId = ResolveArchitectBuildDesignatorId(designatorArray, "Wall");
-
-            var colonists = await context.CallGameToolAsync("script_prison.list_colonists", "rimworld/list_colonists", new
-            {
-                currentMapOnly = true
-            }, cancellationToken);
-            context.EnsureSucceeded(colonists, "Listing current-map colonists for the script colonist prison scenario");
-
-            var colonistArray = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists");
-            if (colonistArray.Count < 3)
-                throw new InvalidOperationException("The script colonist prison scenario requires at least three current-map colonists.");
-
-            var rally = await FindAcceptedPrisonRallyCellAsync(
-                context,
-                "script_prison.find_rally",
-                wallDesignatorId,
-                colonists.StructuredContent,
-                cancellationToken);
-
-            var northWall = new { x = rally.RallyX - 2, z = rally.RallyZ - 2, width = 5, height = 1 };
-            var southWall = new { x = rally.RallyX - 2, z = rally.RallyZ + 2, width = 5, height = 1 };
-            var westWall = new { x = rally.RallyX - 2, z = rally.RallyZ - 1, width = 1, height = 3 };
-            var eastWall = new { x = rally.RallyX + 2, z = rally.RallyZ - 1, width = 1, height = 3 };
             var screenshotFileName = "rimbridge_script_colonist_prison_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
 
             var luaSource = $$"""
-                              local rallyX = {{rally.RallyX}}
-                              local rallyZ = {{rally.RallyZ}}
-                              local wallDesignatorId = {{ToLuaStringLiteral(wallDesignatorId)}}
                               local screenshotFileName = {{ToLuaStringLiteral(screenshotFileName)}}
+
+                              local categories = rb.call("rimworld/list_architect_categories", {
+                                includeHidden = false,
+                                includeEmpty = false
+                              })
+
+                              local structureCategoryId = nil
+                              for _, category in ipairs(categories.result.categories) do
+                                if structureCategoryId == nil and category.id == "architect-category:structure" then
+                                  structureCategoryId = category.id
+                                end
+                              end
+                              rb.assert(structureCategoryId ~= nil, "Expected the Structure architect category.")
+
+                              local designators = rb.call("rimworld/list_architect_designators", {
+                                categoryId = structureCategoryId,
+                                includeHidden = false
+                              })
+
+                              local wallDesignatorId = nil
+                              for _, designator in ipairs(designators.result.designators) do
+                                if wallDesignatorId == nil and designator.buildableDefName == "Wall" then
+                                  wallDesignatorId = designator.id
+                                end
+                              end
+                              rb.assert(wallDesignatorId ~= nil, "Expected a Wall build designator in the Structure architect category.")
 
                               local colonists = rb.call("rimworld/list_colonists", { currentMapOnly = true })
                               rb.assert(colonists.result.count >= 3, "Expected at least three current-map colonists.")
@@ -1172,6 +1154,87 @@ internal static class SmokeScenarioCatalog
                                 colonists.result.colonists[2],
                                 colonists.result.colonists[3]
                               }
+
+                              local searchOriginX = selectedColonists[1].position.x
+                              local searchOriginZ = selectedColonists[1].position.z
+                              local rallyX = nil
+                              local rallyZ = nil
+                              local planningAttempts = 0
+                              local searchRadius = 4
+
+                              while rallyX == nil and planningAttempts < 12 do
+                                planningAttempts = planningAttempts + 1
+
+                                local candidate = rb.call("rimworld/find_random_cell_near", {
+                                  x = searchOriginX,
+                                  z = searchOriginZ,
+                                  startingSearchRadius = searchRadius,
+                                  maxSearchRadius = searchRadius + 8,
+                                  width = 3,
+                                  height = 3,
+                                  footprintAnchor = "center",
+                                  requireWalkable = true,
+                                  requireStandable = true,
+                                  requireNoImpassableThings = true
+                                })
+
+                                if candidate.result.success == true then
+                                  local candidateX = candidate.result.cell.x
+                                  local candidateZ = candidate.result.cell.z
+
+                                  local northDryRun = rb.call("rimworld/apply_architect_designator", {
+                                    designatorId = wallDesignatorId,
+                                    x = candidateX - 2,
+                                    z = candidateZ - 2,
+                                    width = 5,
+                                    height = 1,
+                                    dryRun = true,
+                                    keepSelected = false
+                                  })
+                                  local southDryRun = rb.call("rimworld/apply_architect_designator", {
+                                    designatorId = wallDesignatorId,
+                                    x = candidateX - 2,
+                                    z = candidateZ + 2,
+                                    width = 5,
+                                    height = 1,
+                                    dryRun = true,
+                                    keepSelected = false
+                                  })
+                                  local westDryRun = rb.call("rimworld/apply_architect_designator", {
+                                    designatorId = wallDesignatorId,
+                                    x = candidateX - 2,
+                                    z = candidateZ - 1,
+                                    width = 1,
+                                    height = 3,
+                                    dryRun = true,
+                                    keepSelected = false
+                                  })
+                                  local eastDryRun = rb.call("rimworld/apply_architect_designator", {
+                                    designatorId = wallDesignatorId,
+                                    x = candidateX + 2,
+                                    z = candidateZ - 1,
+                                    width = 1,
+                                    height = 3,
+                                    dryRun = true,
+                                    keepSelected = false
+                                  })
+
+                                  local wallsAccepted =
+                                    northDryRun.result.acceptedCellCount == 5 and
+                                    southDryRun.result.acceptedCellCount == 5 and
+                                    westDryRun.result.acceptedCellCount == 3 and
+                                    eastDryRun.result.acceptedCellCount == 3
+
+                                  if wallsAccepted then
+                                    rallyX = candidateX
+                                    rallyZ = candidateZ
+                                  end
+                                end
+
+                                searchRadius = searchRadius + 2
+                              end
+
+                              rb.assert(rallyX ~= nil and rallyZ ~= nil, "Expected to find an accepted rally cell for the prison layout.")
 
                               rb.call("rimworld/clear_selection")
 
@@ -1185,6 +1248,7 @@ internal static class SmokeScenarioCatalog
                               local interiorMinZ = rallyZ - 1
                               local interiorMaxZ = rallyZ + 1
 
+                              rb.print("planning_attempts", planningAttempts)
                               rb.print("rally", { x = rallyX, z = rallyZ })
 
                               rb.call("rimworld/right_click_cell", { x = rallyX, z = rallyZ })
@@ -1291,8 +1355,14 @@ internal static class SmokeScenarioCatalog
                               })
 
                               return {
+                                wallDesignatorId = wallDesignatorId,
                                 rallyX = rallyX,
                                 rallyZ = rallyZ,
+                                interiorMinX = interiorMinX,
+                                interiorMaxX = interiorMaxX,
+                                interiorMinZ = interiorMinZ,
+                                interiorMaxZ = interiorMaxZ,
+                                planningAttempts = planningAttempts,
                                 groupedAttempts = grouped.attempts,
                                 capturedAttempts = captured.attempts,
                                 screenshotPath = capture.result.path
@@ -1330,15 +1400,25 @@ internal static class SmokeScenarioCatalog
                 throw new InvalidOperationException("Expected the Lua colonist prison script report to include repeated loop or poll step ids.");
 
             var scriptOutput = JsonNodeHelpers.ReadArray(runLua.StructuredContent, "output");
-            if (scriptOutput.Count < 2)
-                throw new InvalidOperationException("Expected the Lua colonist prison script to emit structured output rows.");
+            if (scriptOutput.Count < 3)
+                throw new InvalidOperationException("Expected the Lua colonist prison script to emit structured output rows for planning and execution.");
 
             var outputMessages = scriptOutput
                 .Select(entry => JsonNodeHelpers.ReadString(entry, "message"))
                 .Where(message => !string.IsNullOrWhiteSpace(message))
                 .ToHashSet(StringComparer.Ordinal);
-            if (!outputMessages.Contains("rally") || !outputMessages.Contains("grouped_attempts"))
-                throw new InvalidOperationException("Expected the Lua colonist prison script output to include 'rally' and 'grouped_attempts' trace rows.");
+            if (!outputMessages.Contains("planning_attempts")
+                || !outputMessages.Contains("rally")
+                || !outputMessages.Contains("grouped_attempts"))
+            {
+                throw new InvalidOperationException("Expected the Lua colonist prison script output to include 'planning_attempts', 'rally', and 'grouped_attempts' trace rows.");
+            }
+
+            if (!scriptSteps.Any(step => string.Equals(JsonNodeHelpers.ReadString(step, "call"), "rimworld/find_random_cell_near", StringComparison.Ordinal)))
+                throw new InvalidOperationException("Expected the Lua colonist prison script to resolve the rally cell inside the script through rimworld/find_random_cell_near.");
+
+            if (!scriptSteps.Any(step => string.Equals(JsonNodeHelpers.ReadString(step, "call"), "rimworld/list_architect_designators", StringComparison.Ordinal)))
+                throw new InvalidOperationException("Expected the Lua colonist prison script to resolve the wall designator inside the script.");
 
             var captureStep = scriptSteps.FirstOrDefault(step =>
                 string.Equals(JsonNodeHelpers.ReadString(step, "call"), "rimworld/take_screenshot", StringComparison.Ordinal));
@@ -1348,6 +1428,19 @@ internal static class SmokeScenarioCatalog
                 throw new InvalidOperationException("Expected the capture step to produce a valid screenshot artifact.");
             if (!string.Equals(scriptScreenshotPath, captureScreenshotPath, StringComparison.Ordinal))
                 throw new InvalidOperationException("Expected the Lua script return value to surface the same screenshot path returned by the capture step.");
+            var wallDesignatorId = JsonNodeHelpers.ReadString(scriptResult, "wallDesignatorId");
+            var rallyX = JsonNodeHelpers.ReadInt32(scriptResult, "rallyX");
+            var rallyZ = JsonNodeHelpers.ReadInt32(scriptResult, "rallyZ");
+            var interiorMinX = JsonNodeHelpers.ReadInt32(scriptResult, "interiorMinX");
+            var interiorMaxX = JsonNodeHelpers.ReadInt32(scriptResult, "interiorMaxX");
+            var interiorMinZ = JsonNodeHelpers.ReadInt32(scriptResult, "interiorMinZ");
+            var interiorMaxZ = JsonNodeHelpers.ReadInt32(scriptResult, "interiorMaxZ");
+            if (string.IsNullOrWhiteSpace(wallDesignatorId))
+                throw new InvalidOperationException("Expected the Lua script to return the resolved wall designator id.");
+            if (!rallyX.HasValue || !rallyZ.HasValue || !interiorMinX.HasValue || !interiorMaxX.HasValue || !interiorMinZ.HasValue || !interiorMaxZ.HasValue)
+                throw new InvalidOperationException("Expected the Lua script to return rally and interior bounds.");
+            if (JsonNodeHelpers.ReadInt32(scriptResult, "planningAttempts").GetValueOrDefault() < 1)
+                throw new InvalidOperationException("Expected the Lua script return value to include planningAttempts >= 1.");
             if (JsonNodeHelpers.ReadInt32(scriptResult, "groupedAttempts").GetValueOrDefault() < 1)
                 throw new InvalidOperationException("Expected the Lua script return value to include groupedAttempts >= 1.");
             if (JsonNodeHelpers.ReadInt32(scriptResult, "capturedAttempts").GetValueOrDefault() < 1)
@@ -1355,10 +1448,10 @@ internal static class SmokeScenarioCatalog
 
             foreach (var perimeterCell in new[]
                      {
-                         (northWall.x + 1, northWall.z),
-                         (southWall.x + 1, southWall.z),
-                         (westWall.x, westWall.z + 1),
-                         (eastWall.x, eastWall.z + 1)
+                         (rallyX.Value, interiorMinZ.Value - 1),
+                         (rallyX.Value, interiorMaxZ.Value + 1),
+                         (interiorMinX.Value - 1, rallyZ.Value),
+                         (interiorMaxX.Value + 1, rallyZ.Value)
                      })
             {
                 var cellInfo = await context.CallGameToolAsync($"script_prison.verify_wall_{perimeterCell.Item1}_{perimeterCell.Item2}", "rimworld/get_cell_info", new
@@ -1388,14 +1481,14 @@ internal static class SmokeScenarioCatalog
 
                 var x = JsonNodeHelpers.ReadInt32(colonist, "position", "x");
                 var z = JsonNodeHelpers.ReadInt32(colonist, "position", "z");
-                if (!x.HasValue || !z.HasValue || x.Value < rally.InteriorMinX || x.Value > rally.InteriorMaxX || z.Value < rally.InteriorMinZ || z.Value > rally.InteriorMaxZ)
+                if (!x.HasValue || !z.HasValue || x.Value < interiorMinX.Value || x.Value > interiorMaxX.Value || z.Value < interiorMinZ.Value || z.Value > interiorMaxZ.Value)
                     throw new InvalidOperationException($"Colonist '{JsonNodeHelpers.ReadString(colonist, "name")}' was not inside the prison interior after the script.");
             }
 
             var interiorFlood = await context.CallGameToolAsync("script_prison.verify_interior_flood", "rimworld/flood_fill_cells", new
             {
-                x = rally.RallyX,
-                z = rally.RallyZ,
+                x = rallyX.Value,
+                z = rallyZ.Value,
                 maxCellsToProcess = 16,
                 minimumCellCount = 9,
                 maxReturnedCells = 16,
@@ -1423,14 +1516,13 @@ internal static class SmokeScenarioCatalog
             }
 
             context.SetSummaryValue("wallDesignatorId", wallDesignatorId);
-            context.SetSummaryValue("rallyCell", $"{rally.RallyX},{rally.RallyZ}");
-            context.SetSummaryValue("interiorRect", $"{rally.InteriorMinX},{rally.InteriorMinZ}..{rally.InteriorMaxX},{rally.InteriorMaxZ}");
+            context.SetSummaryValue("rallyCell", $"{rallyX.Value},{rallyZ.Value}");
+            context.SetSummaryValue("interiorRect", $"{interiorMinX.Value},{interiorMinZ.Value}..{interiorMaxX.Value},{interiorMaxZ.Value}");
             context.SetSummaryValue("scriptScreenshotPath", scriptScreenshotPath);
             context.SetScenarioData("compileLua", compileLua.StructuredContent);
             context.SetScenarioData("runLua", runLua.StructuredContent);
             context.SetScenarioData("finalColonists", finalColonists.StructuredContent);
             context.SetScenarioData("interiorFlood", interiorFlood.StructuredContent);
-            context.SetScenarioData("structureDesignators", new JsonArray(designatorArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
         }
         catch (Exception ex)
         {
@@ -2791,102 +2883,6 @@ internal static class SmokeScenarioCatalog
             ["dryRun"] = false,
             ["keepSelected"] = true
         };
-    }
-
-    private static async Task<(int RallyX, int RallyZ, int InteriorMinX, int InteriorMaxX, int InteriorMinZ, int InteriorMaxZ)> FindAcceptedPrisonRallyCellAsync(
-        SmokeScenarioContext context,
-        string stepPrefix,
-        string wallDesignatorId,
-        JsonNode? colonistsStructuredContent,
-        CancellationToken cancellationToken)
-    {
-        var origin = ResolveColonistSearchOrigin(colonistsStructuredContent);
-        var attempt = 0;
-        var fastCandidate = await context.CallGameToolAsync($"{stepPrefix}.fast_candidate", "rimworld/find_random_cell_near", new
-        {
-            x = origin.X,
-            z = origin.Z,
-            startingSearchRadius = 4,
-            maxSearchRadius = 24,
-            width = 3,
-            height = 3,
-            footprintAnchor = "center",
-            requireWalkable = true,
-            requireNoImpassableThings = true
-        }, cancellationToken);
-        if (fastCandidate.Success)
-        {
-            var rallyX = JsonNodeHelpers.ReadInt32(fastCandidate.StructuredContent, "cell", "x");
-            var rallyZ = JsonNodeHelpers.ReadInt32(fastCandidate.StructuredContent, "cell", "z");
-            if (rallyX.HasValue
-                && rallyZ.HasValue
-                && await PrisonLayoutIsAcceptedAsync(context, $"{stepPrefix}_fast", wallDesignatorId, rallyX.Value, rallyZ.Value, cancellationToken))
-            {
-                return (rallyX.Value, rallyZ.Value, rallyX.Value - 1, rallyX.Value + 1, rallyZ.Value - 1, rallyZ.Value + 1);
-            }
-        }
-
-        foreach (var candidate in BuildArchitectProbeCells(origin, minRadius: 4, maxRadius: 24))
-        {
-            attempt++;
-            if (!await PrisonLayoutIsAcceptedAsync(context, $"{stepPrefix}_{attempt}", wallDesignatorId, candidate.X, candidate.Z, cancellationToken))
-                continue;
-
-            return (candidate.X, candidate.Z, candidate.X - 1, candidate.X + 1, candidate.Z - 1, candidate.Z + 1);
-        }
-
-        throw new InvalidOperationException("Could not find an accepted rally cell for the scripted colonist prison layout.");
-    }
-
-    private static async Task<bool> PrisonLayoutIsAcceptedAsync(
-        SmokeScenarioContext context,
-        string stepPrefix,
-        string wallDesignatorId,
-        int rallyX,
-        int rallyZ,
-        CancellationToken cancellationToken)
-    {
-        foreach (var interiorCell in EnumerateRectangleCells(rallyX - 1, rallyZ - 1, width: 3, height: 3))
-        {
-            var interiorInfo = await context.CallGameToolAsync($"{stepPrefix}.interior_{interiorCell.X}_{interiorCell.Z}", "rimworld/get_cell_info", new
-            {
-                x = interiorCell.X,
-                z = interiorCell.Z
-            }, cancellationToken);
-            context.EnsureSucceeded(interiorInfo, $"Reading prison-layout interior cell info for ({interiorCell.X}, {interiorCell.Z})");
-
-            if (JsonNodeHelpers.ReadBoolean(interiorInfo.StructuredContent, "cell", "walkable") != true)
-                return false;
-            if (JsonNodeHelpers.ReadArray(interiorInfo.StructuredContent, "cell", "solidThingDefs").Count > 0)
-                return false;
-        }
-
-        foreach (var segment in new[]
-                 {
-                     (x: rallyX - 2, z: rallyZ - 2, width: 5, height: 1),
-                     (x: rallyX - 2, z: rallyZ + 2, width: 5, height: 1),
-                     (x: rallyX - 2, z: rallyZ - 1, width: 1, height: 3),
-                     (x: rallyX + 2, z: rallyZ - 1, width: 1, height: 3)
-                 })
-        {
-            var dryRun = await context.CallGameToolAsync($"{stepPrefix}.dry_run_{segment.x}_{segment.z}", "rimworld/apply_architect_designator", new
-            {
-                designatorId = wallDesignatorId,
-                x = segment.x,
-                z = segment.z,
-                width = segment.width,
-                height = segment.height,
-                dryRun = true,
-                keepSelected = false
-            }, cancellationToken);
-            if (JsonNodeHelpers.ReadBoolean(dryRun.StructuredContent, "operation", "Success") != true)
-                throw new InvalidOperationException($"Prison-layout architect probe failed for cell ({segment.x}, {segment.z}). {dryRun.Message}".Trim());
-
-            if (JsonNodeHelpers.ReadInt32(dryRun.StructuredContent, "acceptedCellCount").GetValueOrDefault() < segment.width * segment.height)
-                return false;
-        }
-
-        return true;
     }
 
     private static async Task<(int X, int Z)> FindAcceptedArchitectPlacementCellAsync(

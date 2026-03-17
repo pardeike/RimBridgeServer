@@ -631,9 +631,9 @@ The `script-wall-sequence` scenario covers the first script-runner slice:
 The `script-colonist-prison` scenario is the stronger control-flow smoke for the same runner:
 
 - ensures a playable game exists
-- discovers the `Wall` designator and precomputes one accepted rally layout
-- runs one JSON script that uses references, variables, `foreach`, arithmetic, and `continueUntil`
-- verifies loop-generated report ids such as `select_pawn#2` and `build_wall#4`
+- runs one Lua script that resolves the `Wall` designator through the normal Architect metadata flow and finds a rally cell through generic map-analysis tools
+- uses `rimworld/find_random_cell_near`, architect dry runs, `rb.print`, `rb.assert`, `rb.poll`, `ipairs`, arithmetic, and the direct `rimworld/right_click_cell` shortcut instead of the older menu-based move path
+- verifies that the script report includes the planning calls as real executed steps rather than harness prework
 - confirms the resulting perimeter contains real `Wall` things, the starting colonists are undrafted, and they remain inside the prison interior
 - verifies the script-produced screenshot artifact
 
