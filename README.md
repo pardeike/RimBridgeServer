@@ -110,6 +110,9 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/find_random_cell_near`** - Use RimWorld's generic nearby-cell search to find a cell or footprint that satisfies reusable map criteria
 - **`rimworld/flood_fill_cells`** - Use RimWorld's generic flood-fill algorithm to measure contiguous matching space from one root cell
 - **`rimworld/get_ui_state`** - Inspect the current RimWorld window stack and UI/input state
+- **`rimworld/list_main_tabs`** - List RimWorld main tabs such as Work, Assign, Research, and mod-provided tabs with stable target ids
+- **`rimworld/open_main_tab`** - Open one RimWorld main tab by stable target id, `defName`, label, or tab window type
+- **`rimworld/close_main_tab`** - Close the currently open RimWorld main tab, optionally asserting which tab is open first
 - **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
 - **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
 - **`rimworld/close_window`** - Close an open RimWorld window by type name or close the topmost window
@@ -173,6 +176,12 @@ Pawn-target debug actions are now supported through the same surface. Discovery 
 `rimworld/update_mod_settings` accepts an object whose keys are field paths from that semantic tree. The current implementation supports ordinary field-name traversal plus zero-based list segments such as `SomeList[0]`. Pass `write: false` when you want to mutate only the in-memory settings object for a transient test, then use `rimworld/reload_mod_settings` to restore the persisted on-disk state.
 
 `rimworld/open_mod_settings` opens RimWorld's real `Dialog_ModSettings` window for a chosen mod. `rimworld/get_ui_state` now annotates that window with `semanticKind: "mod_settings_dialog"` plus the resolved mod metadata, so a harness can confirm that the right settings dialog is actually on screen instead of only checking the raw window type.
+
+### Main-tab navigation
+
+`rimworld/list_main_tabs` exposes RimWorld's built-in and mod-provided main tabs through stable `main-tab:<defName>` target ids. Each entry reports the tab `defName`, label, window type, order, visibility, disabled state, and the live rect when that tab is open.
+
+`rimworld/open_main_tab` and `rimworld/close_main_tab` then make those tabs deterministic harness surfaces instead of something that must be clicked in the foreground. `rimworld/get_ui_state` now reports `mainTabOpen`, `openMainTabId`, `openMainTabType`, `openMainTabLabel`, and a `mainTab` object, while `rimworld/get_screen_targets` exposes the active main tab as a clip-capable target so screenshots can be cropped directly to built-in windows such as Work/Priorities.
 
 ### Architect and god-mode mapping
 
@@ -631,6 +640,15 @@ The `mod-settings-roundtrip` scenario covers the richer mutation and UI slice:
 - opens the native `Dialog_ModSettings` window through `rimworld/open_mod_settings`
 - verifies `rimworld/get_ui_state` reports `semanticKind: "mod_settings_dialog"` for the requested mod
 - restores the original persisted values before the scenario finishes
+
+The `main-tab-navigation` scenario covers deterministic built-in window navigation:
+
+- ensures a playable game exists
+- discovers the visible RimWorld main tabs through `rimworld/list_main_tabs`
+- opens the Work tab through `rimworld/open_main_tab`
+- verifies `rimworld/get_ui_state` and `rimworld/get_screen_targets` report the active main-tab target
+- captures a screenshot clipped directly to that main-tab target
+- closes the Work tab again through `rimworld/close_main_tab`
 
 The `context-menu-cancel-roundtrip` scenario exercises the first background-safe input path:
 

@@ -45,11 +45,15 @@ internal static class RimWorldTargeting
                 windowCount = uiState.WindowCount,
                 floatMenuOpen = uiState.FloatMenuOpen,
                 nonImmediateDialogWindowOpen = uiState.NonImmediateDialogWindowOpen,
+                mainTabOpen = uiState.MainTabOpen,
+                openMainTabId = uiState.OpenMainTabId,
+                openMainTabType = uiState.OpenMainTabType,
                 focusedWindowType = focusedWindowType,
                 topWindowType = topWindowType
             },
             camera = TryDescribeCamera(),
             selectedPawns = Find.Selector.SelectedPawns.Select(RimWorldState.DescribePawn).ToList(),
+            mainTab = CreateMainTabPayload(uiState.MainTab),
             windows = uiState.Windows.Select(window => CreateWindowPayload(window, topWindowType, focusedWindowType)).ToList(),
             contextMenu = CreateContextMenuPayload()
         };
@@ -73,6 +77,8 @@ internal static class RimWorldTargeting
                 return TryResolveWindowClipArea(target, out clipArea, out error);
             case ScreenTargetKind.ContextMenuOption:
                 return TryResolveContextMenuOptionClipArea(target, out clipArea, out error);
+            case ScreenTargetKind.MainTab:
+                return TryResolveMainTabClipArea(target, out clipArea, out error);
             default:
                 error = $"Target id '{targetId}' is not clip-capable.";
                 return false;
@@ -166,6 +172,25 @@ internal static class RimWorldTargeting
             windowTargetId = windowTargetId,
             dismissTargetId = dismissTargetId,
             rect = CreateRectPayload(window.Rect)
+        };
+    }
+
+    private static object CreateMainTabPayload(UiMainTabSnapshot mainTab)
+    {
+        if (mainTab == null || mainTab.IsOpen == false)
+            return null;
+
+        return new
+        {
+            kind = "main_tab",
+            targetId = mainTab.Id,
+            defName = mainTab.DefName,
+            label = mainTab.Label,
+            type = mainTab.Type,
+            order = mainTab.Order,
+            visible = mainTab.Visible,
+            disabled = mainTab.Disabled,
+            rect = CreateRectPayload(mainTab.Rect)
         };
     }
 
@@ -278,6 +303,40 @@ internal static class RimWorldTargeting
                 Y = rect.Y,
                 Width = rect.Width,
                 Height = rect.Height
+            }
+        };
+        return true;
+    }
+
+    private static bool TryResolveMainTabClipArea(ScreenTargetReference target, out ScreenTargetClipArea clipArea, out string error)
+    {
+        clipArea = null;
+        error = string.Empty;
+
+        var mainTab = RimWorldMainTabs.GetOpenMainTabSnapshot();
+        if (mainTab == null || mainTab.IsOpen == false)
+        {
+            error = $"Could not find an open main tab matching target id '{target.TargetId}'.";
+            return false;
+        }
+
+        if (!string.Equals(mainTab.DefName, target.MainTabDefName, StringComparison.Ordinal))
+        {
+            error = $"The active main tab '{mainTab.DefName}' does not match target id '{target.TargetId}'.";
+            return false;
+        }
+
+        clipArea = new ScreenTargetClipArea
+        {
+            TargetId = target.TargetId,
+            TargetKind = "main_tab",
+            Label = string.IsNullOrWhiteSpace(mainTab.Label) ? mainTab.DefName : mainTab.Label,
+            Rect = new UiRectSnapshot
+            {
+                X = mainTab.Rect.X,
+                Y = mainTab.Rect.Y,
+                Width = mainTab.Rect.Width,
+                Height = mainTab.Rect.Height
             }
         };
         return true;

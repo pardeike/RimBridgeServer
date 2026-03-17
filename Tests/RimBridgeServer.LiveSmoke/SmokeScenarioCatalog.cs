@@ -32,6 +32,7 @@ internal static class SmokeScenarioCatalog
     public const string SemanticDiagnosticsRoundTripScenarioName = "semantic-diagnostics-roundtrip";
     public const string ModSettingsDiscoveryScenarioName = "mod-settings-discovery";
     public const string ModSettingsRoundTripScenarioName = "mod-settings-roundtrip";
+    public const string MainTabNavigationScenarioName = "main-tab-navigation";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
@@ -134,6 +135,12 @@ internal static class SmokeScenarioCatalog
                 Name = ModSettingsRoundTripScenarioName,
                 Description = "Round-trip transient and persisted mod-settings updates, reload from disk, and verify semantic Dialog_ModSettings UI state.",
                 RunAsync = RunModSettingsRoundTripAsync
+            },
+            [MainTabNavigationScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = MainTabNavigationScenarioName,
+                Description = "Ensure a playable game exists, then open the Work main tab, verify it through UI state and screen targets, capture a clipped screenshot, and close it again.",
+                RunAsync = RunMainTabNavigationAsync
             },
             [SaveLoadRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -570,6 +577,110 @@ internal static class SmokeScenarioCatalog
             "mod_settings_roundtrip.final_bridge_status",
             "mod_settings_roundtrip.collect_operation_events",
             "mod_settings_roundtrip.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunMainTabNavigationAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("main_tab.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("main_tab.snapshot_bridge_status", cancellationToken);
+
+        var listMainTabs = await context.CallGameToolAsync("main_tab.list_main_tabs", "rimworld/list_main_tabs", new
+        {
+            includeHidden = false
+        }, cancellationToken);
+        context.EnsureSucceeded(listMainTabs, "Listing visible RimWorld main tabs");
+
+        var tabs = JsonNodeHelpers.ReadArray(listMainTabs.StructuredContent, "tabs");
+        if (tabs.Count == 0)
+            throw new InvalidOperationException("Main-tab discovery returned no visible tabs.");
+
+        var workTab = ResolveMainTabNode(tabs, "Work", "RimWorld.MainTabWindow_Work");
+        var mainTabId = ReadRequiredString(workTab, "targetId");
+
+        var openMainTab = await context.CallGameToolAsync("main_tab.open", "rimworld/open_main_tab", new
+        {
+            mainTabId
+        }, cancellationToken);
+        context.EnsureSucceeded(openMainTab, $"Opening main tab '{mainTabId}'");
+
+        var uiState = await context.CallGameToolAsync("main_tab.get_ui_state", "rimworld/get_ui_state", new { }, cancellationToken);
+        context.EnsureSucceeded(uiState, "Reading UI state after opening the Work main tab");
+
+        if (JsonNodeHelpers.ReadBoolean(uiState.StructuredContent, "mainTabOpen") != true)
+            throw new InvalidOperationException("UI state did not report an open main tab after opening Work.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(uiState.StructuredContent, "openMainTabId"), mainTabId, StringComparison.Ordinal))
+            throw new InvalidOperationException("UI state did not report the expected main-tab target id after opening Work.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(uiState.StructuredContent, "openMainTabType"), "RimWorld.MainTabWindow_Work", StringComparison.Ordinal))
+            throw new InvalidOperationException("UI state did not report the Work main-tab window type.");
+
+        var screenTargets = await context.CallGameToolAsync("main_tab.get_screen_targets", "rimworld/get_screen_targets", new { }, cancellationToken);
+        context.EnsureSucceeded(screenTargets, "Reading screen targets after opening the Work main tab");
+
+        var mainTabTarget = JsonNodeHelpers.GetPath(screenTargets.StructuredContent, "targets", "mainTab");
+        if (mainTabTarget == null)
+            throw new InvalidOperationException("Screen targets did not expose the open main tab.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(mainTabTarget, "targetId"), mainTabId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Screen targets did not return the expected Work main-tab target id.");
+
+        var screenshotFileName = BuildScreenshotFileName(context.Report.StartedAtUtc) + "_work_tab";
+        var screenshot = await context.CallGameToolAsync("main_tab.take_screenshot", "rimworld/take_screenshot", new
+        {
+            fileName = screenshotFileName,
+            includeTargets = true,
+            clipTargetId = mainTabId
+        }, cancellationToken);
+        context.EnsureSucceeded(screenshot, $"Capturing clipped screenshot for main tab '{mainTabId}'");
+
+        if (JsonNodeHelpers.ReadBoolean(screenshot.StructuredContent, "clipped") != true)
+            throw new InvalidOperationException("The main-tab screenshot was not reported as clipped.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(screenshot.StructuredContent, "clipTargetId"), mainTabId, StringComparison.Ordinal))
+            throw new InvalidOperationException("The main-tab screenshot did not preserve the expected clip target id.");
+        if (JsonNodeHelpers.ReadInt64(screenshot.StructuredContent, "sizeBytes").GetValueOrDefault() <= 0)
+            throw new InvalidOperationException("The main-tab screenshot did not report a valid file artifact.");
+
+        if (context.HumanVerificationEnabled)
+        {
+            var screenshotPath = ReadRequiredString(screenshot.StructuredContent, "path");
+            await context.ExportHumanVerificationArtifactAsync(
+                "work_tab_screenshot",
+                screenshotPath,
+                "Clipped screenshot of the open RimWorld Work main tab.",
+                [
+                    "The screenshot should show the Work/Priorities tab clipped to the tab window area.",
+                    "This verifies that built-in main tabs can be opened and clipped just like modal windows."
+                ],
+                cancellationToken);
+        }
+
+        var closeMainTab = await context.CallGameToolAsync("main_tab.close", "rimworld/close_main_tab", new
+        {
+            mainTabId
+        }, cancellationToken);
+        context.EnsureSucceeded(closeMainTab, $"Closing main tab '{mainTabId}'");
+
+        var closedUiState = await context.CallGameToolAsync("main_tab.get_ui_state_closed", "rimworld/get_ui_state", new { }, cancellationToken);
+        context.EnsureSucceeded(closedUiState, "Reading UI state after closing the Work main tab");
+
+        if (JsonNodeHelpers.ReadBoolean(closedUiState.StructuredContent, "mainTabOpen") == true)
+            throw new InvalidOperationException("UI state still reported an open main tab after closing Work.");
+
+        context.SetSummaryValue("mainTabId", mainTabId);
+        context.SetSummaryValue("mainTabType", ReadRequiredString(mainTabTarget, "type"));
+        context.SetScenarioData("mainTabs", new JsonArray(tabs.Select(JsonNodeHelpers.CloneNode).ToArray()));
+        context.SetScenarioData("openMainTab", openMainTab.StructuredContent);
+        context.SetScenarioData("uiState", uiState.StructuredContent);
+        context.SetScenarioData("screenTargets", JsonNodeHelpers.GetPath(screenTargets.StructuredContent, "targets"));
+        context.SetScenarioData("screenshot", screenshot.StructuredContent);
+        context.SetScenarioData("closeMainTab", closeMainTab.StructuredContent);
+
+        var observation = await observationWindow.CaptureAsync(
+            "main_tab.final_bridge_status",
+            "main_tab.collect_operation_events",
+            "main_tab.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }
@@ -3351,6 +3462,32 @@ internal static class SmokeScenarioCatalog
         }
 
         throw new InvalidOperationException($"Could not find Architect category '{preferredDefName}'.");
+    }
+
+    private static JsonNode? ResolveMainTabNode(IReadOnlyList<JsonNode?> tabs, string preferredDefName, string preferredWindowType)
+    {
+        foreach (var tab in tabs)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(tab, "defName"), preferredDefName, StringComparison.Ordinal)
+                && string.Equals(JsonNodeHelpers.ReadString(tab, "type"), preferredWindowType, StringComparison.Ordinal))
+            {
+                return tab;
+            }
+        }
+
+        foreach (var tab in tabs)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(tab, "defName"), preferredDefName, StringComparison.Ordinal))
+                return tab;
+        }
+
+        foreach (var tab in tabs)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(tab, "type"), preferredWindowType, StringComparison.Ordinal))
+                return tab;
+        }
+
+        throw new InvalidOperationException($"Could not find the expected main tab '{preferredDefName}' / '{preferredWindowType}'.");
     }
 
     private static string ResolveArchitectBuildDesignatorId(IReadOnlyList<JsonNode?> designators, string buildableDefName, bool requireDropdownChild = false)

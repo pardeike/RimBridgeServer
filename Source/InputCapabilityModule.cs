@@ -26,4 +26,19 @@ internal sealed class InputCapabilityModule
     {
         return RimWorldInput.ClickScreenTargetResponse(targetId);
     }
+
+    public object ListMainTabs(bool includeHidden = false)
+    {
+        return RimWorldMainTabs.ListMainTabsResponse(includeHidden);
+    }
+
+    public object OpenMainTab(string mainTabId)
+    {
+        return RimWorldMainTabs.OpenMainTabResponse(mainTabId);
+    }
+
+    public object CloseMainTab(string mainTabId = null)
+    {
+        return RimWorldMainTabs.CloseMainTabResponse(mainTabId);
+    }
 }

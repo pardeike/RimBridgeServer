@@ -7,7 +7,8 @@ public enum ScreenTargetKind
     Unknown = 0,
     Window = 1,
     WindowDismiss = 2,
-    ContextMenuOption = 3
+    ContextMenuOption = 3,
+    MainTab = 4
 }
 
 public sealed class ScreenTargetReference
@@ -23,6 +24,8 @@ public sealed class ScreenTargetReference
     public int MenuId { get; set; }
 
     public int OptionIndex { get; set; }
+
+    public string MainTabDefName { get; set; } = string.Empty;
 }
 
 public static class ScreenTargetIds
@@ -47,6 +50,14 @@ public static class ScreenTargetIds
         return "context-menu-option:" + menuId + ":" + optionIndex;
     }
 
+    public static string CreateMainTabTargetId(string mainTabDefName)
+    {
+        if (string.IsNullOrWhiteSpace(mainTabDefName))
+            throw new ArgumentException("Main tab defName is required.", nameof(mainTabDefName));
+
+        return "main-tab:" + mainTabDefName.Trim();
+    }
+
     public static bool TryParse(string targetId, out ScreenTargetReference target)
     {
         target = null;
@@ -54,6 +65,19 @@ public static class ScreenTargetIds
             return false;
 
         var segments = targetId.Split(':');
+        if (string.Equals(segments[0], "main-tab", StringComparison.Ordinal)
+            && segments.Length == 2
+            && string.IsNullOrWhiteSpace(segments[1]) == false)
+        {
+            target = new ScreenTargetReference
+            {
+                TargetId = targetId,
+                Kind = ScreenTargetKind.MainTab,
+                MainTabDefName = segments[1]
+            };
+            return true;
+        }
+
         if (segments.Length < 3)
             return false;
 

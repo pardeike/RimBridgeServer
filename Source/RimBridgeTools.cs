@@ -436,6 +436,24 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
+    [Tool("rimworld/list_main_tabs", Description = "List RimWorld main tabs such as Work, Assign, Research, and mod-provided tabs with stable main-tab target ids")]
+    public object ListMainTabs([ToolParameter(Description = "Include tabs whose worker currently reports them as hidden or unavailable")] bool includeHidden = false)
+    {
+        return InvokeAlias(Arguments((nameof(includeHidden), includeHidden)));
+    }
+
+    [Tool("rimworld/open_main_tab", Description = "Open one RimWorld main tab by stable target id, defName, label, or tab window type")]
+    public object OpenMainTab([ToolParameter(Description = "Stable main-tab target id from rimworld/list_main_tabs, or an exact defName / label / tab window type match")] string mainTabId)
+    {
+        return InvokeAlias(Arguments((nameof(mainTabId), mainTabId)));
+    }
+
+    [Tool("rimworld/close_main_tab", Description = "Close the currently open RimWorld main tab, optionally asserting which tab is open first")]
+    public object CloseMainTab([ToolParameter(Description = "Optional stable main-tab target id or exact defName / label / tab window type expected to be open")] string mainTabId = null)
+    {
+        return InvokeAlias(Arguments((nameof(mainTabId), mainTabId)));
+    }
+
     [Tool("rimworld/press_accept", Description = "Send semantic accept input to the active RimWorld window stack without requiring OS focus")]
     public object PressAccept()
     {

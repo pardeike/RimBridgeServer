@@ -91,6 +91,16 @@ internal sealed class UiStateSnapshot
 
     public string TopWindowTitle { get; set; }
 
+    public bool MainTabOpen { get; set; }
+
+    public string OpenMainTabId { get; set; }
+
+    public string OpenMainTabType { get; set; }
+
+    public string OpenMainTabLabel { get; set; }
+
+    public UiMainTabSnapshot MainTab { get; set; }
+
     public List<UiWindowSnapshot> Windows { get; set; } = [];
 }
 
@@ -162,6 +172,7 @@ internal static class RimWorldInput
             .OfType<Window>()
             .Select((window, index) => DescribeWindow(windowStack, window, index))
             .ToList() ?? [];
+        var mainTab = RimWorldMainTabs.GetOpenMainTabSnapshot();
 
         var focusedWindow = windowStack?.focusedWindow;
         var topWindow = windows.LastOrDefault();
@@ -186,6 +197,11 @@ internal static class RimWorldInput
             FocusedWindowTitle = GetWindowTitle(focusedWindow),
             TopWindowType = topWindow?.Type,
             TopWindowTitle = topWindow?.Title,
+            MainTabOpen = mainTab != null,
+            OpenMainTabId = mainTab?.Id,
+            OpenMainTabType = mainTab?.Type,
+            OpenMainTabLabel = mainTab?.Label,
+            MainTab = mainTab,
             Windows = windows
         };
     }
@@ -263,6 +279,13 @@ internal static class RimWorldInput
                     "window",
                     string.Empty,
                     "Window body targets are descriptive only. Use a dismissTargetId or another actionable target id.");
+            case ScreenTargetKind.MainTab:
+                return BuildFailedScreenTargetResult(
+                    before,
+                    targetId,
+                    "main_tab",
+                    string.Empty,
+                    "Main-tab targets are descriptive only. Use rimworld/open_main_tab or rimworld/close_main_tab for navigation.");
             default:
                 return BuildFailedScreenTargetResult(
                     before,
@@ -378,6 +401,8 @@ internal static class RimWorldInput
             || before.NonImmediateDialogWindowOpen != after.NonImmediateDialogWindowOpen
             || before.CurrentWindowGetsInput != after.CurrentWindowGetsInput
             || before.FocusedWindowType != after.FocusedWindowType
+            || before.MainTabOpen != after.MainTabOpen
+            || before.OpenMainTabId != after.OpenMainTabId
             || openedWindowTypes.Count > 0
             || closedWindowTypes.Count > 0;
 
@@ -541,6 +566,11 @@ internal static class RimWorldInput
             focusedWindowTitle = state.FocusedWindowTitle,
             topWindowType = state.TopWindowType,
             topWindowTitle = state.TopWindowTitle,
+            mainTabOpen = state.MainTabOpen,
+            openMainTabId = state.OpenMainTabId,
+            openMainTabType = state.OpenMainTabType,
+            openMainTabLabel = state.OpenMainTabLabel,
+            mainTab = state.MainTab == null ? null : ToToolResponse(state.MainTab),
             windows = state.Windows.Select(ToToolResponse).ToList()
         };
     }
@@ -576,6 +606,24 @@ internal static class RimWorldInput
             y = rect.Y,
             width = rect.Width,
             height = rect.Height
+        };
+    }
+
+    private static object ToToolResponse(UiMainTabSnapshot tab)
+    {
+        return new
+        {
+            targetId = tab.Id,
+            defName = tab.DefName,
+            label = tab.Label,
+            type = tab.Type,
+            order = tab.Order,
+            isOpen = tab.IsOpen,
+            visible = tab.Visible,
+            disabled = tab.Disabled,
+            validWithoutMap = tab.ValidWithoutMap,
+            minimized = tab.Minimized,
+            rect = ToToolResponse(tab.Rect)
         };
     }
 
