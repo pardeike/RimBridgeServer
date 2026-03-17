@@ -2,7 +2,7 @@
 
 RimBridgeServer lets you control RimWorld from outside the game. This is useful for testing mods automatically or building tools that work with RimWorld.
 
-Project planning and the implementation roadmap live in [`docs/architecture.md`](docs/architecture.md) and [`docs/progress-log.md`](docs/progress-log.md).
+Architecture and Lua front-end notes live in [`docs/architecture.md`](docs/architecture.md) and [`docs/lua-frontend-design.md`](docs/lua-frontend-design.md).
 
 ## What does it do?
 
@@ -134,8 +134,9 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/frame_pawns`** - Frame several pawns together in view
 - **`rimworld/take_screenshot`** - Save an in-game screenshot and return the file path plus optional screen-target metadata
 
-### Context-menu debugging
+### Context-menu debugging and map interaction
 - **`rimworld/open_context_menu`** - Open a debug context menu at a pawn or cell
+- **`rimworld/right_click_cell`** - Apply RimWorld's native right-click map interaction for the current pawn selection, auto-executing the default action when possible and only opening a menu as fallback
 - **`rimworld/get_context_menu_options`** - Return the currently opened debug menu options
 - **`rimworld/execute_context_menu_option`** - Execute one menu option by index or label
 - **`rimworld/close_context_menu`** - Close the currently opened debug context menu
@@ -145,6 +146,8 @@ Your external program can send these commands to RimBridgeServer:
 `rimworld/go_to_main_menu` is the matching lifecycle reset seam. It is idempotent: if RimWorld is already at the entry scene with no loaded game, the call succeeds with a no-op status. Otherwise it queues a return to the main menu so later script steps can start from a stable known state.
 
 `rimworld/open_context_menu` is vanilla-only. `mode: vanilla` is the intended value, and the older `mode: auto` alias is still accepted for backward compatibility but resolves to the same vanilla behavior.
+
+For default pawn-selected map actions such as drafted move orders, prefer `rimworld/right_click_cell`. Use the explicit context-menu tools when you need to inspect the available options or choose a non-default action.
 
 ### Debug menu mapping
 

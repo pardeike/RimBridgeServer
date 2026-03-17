@@ -12,7 +12,7 @@ The important constraint is architectural: Lua should not become a second direct
 
 ## Status
 
-As of 2026-03-17, slices 3, 4, and the first discoverability follow-up are implemented. [`rimbridge/run_lua`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) and [`rimbridge/compile_lua`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) now compile a narrow Lua v1 subset into the shared script runner instead of introducing a second automation runtime, and [`rimbridge/get_lua_reference`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) exposes that supported subset in machine-readable form for fresh agents. The remaining work is around richer scenario self-planning, not around the core Lua execution path itself.
+As of 2026-03-17, the core Lua front-end and its discoverability slices are implemented. [`rimbridge/run_lua`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs), [`rimbridge/compile_lua`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs), [`rimbridge/run_lua_file`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs), and [`rimbridge/compile_lua_file`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) now compile a narrow Lua v1 subset into the shared script runner instead of introducing a second automation runtime. [`rimbridge/get_lua_reference`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) exposes that supported subset, including the read-only `params` binding and file-backed execution, in machine-readable form for fresh agents. The remaining work is around richer reusable examples and broader scenario self-planning, not around the core Lua execution path itself.
 
 ## Why Lua
 
@@ -97,25 +97,40 @@ Add a sibling tool rather than overloading `rimbridge/run_script`:
 
 - `rimbridge/run_lua`
 - `rimbridge/compile_lua`
+- `rimbridge/run_lua_file`
+- `rimbridge/compile_lua_file`
 
 Suggested first signature:
 
 ```text
 rimbridge/run_lua(
   luaSource: string,
+  parameters?: object,
   includeStepResults: bool = true
 )
 ```
 
-Optional compile-only/debug tool:
+File-backed runtime/debug tools:
 
 ```text
+rimbridge/run_lua_file(
+  scriptPath: string,
+  parameters?: object,
+  includeStepResults: bool = true
+)
+
 rimbridge/compile_lua(
-  luaSource: string
+  luaSource: string,
+  parameters?: object
+)
+
+rimbridge/compile_lua_file(
+  scriptPath: string,
+  parameters?: object
 )
 ```
 
-`compile_lua` is useful for debugging lowering errors and for verifying that Lua remains a front-end over the shared script model.
+The `parameters` object is injected into Lua as a top-level read-only `params` table. `compile_lua` and `compile_lua_file` are useful for debugging lowering errors and for verifying that Lua remains a front-end over the shared script model.
 
 ## Internal Changes Needed Before Lua Is Useful
 

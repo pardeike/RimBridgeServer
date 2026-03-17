@@ -304,7 +304,7 @@ public static class CapabilityScriptReferenceBuilder
                 "Give stable ids to call steps you plan to reference later with $ref.",
                 "Prefer explicit wait tools and continueUntil instead of blind sleeps.",
                 "Use assert, fail, print, and return so scripts behave like higher-level testable tool calls.",
-                "Use vanilla context-menu flow for generic move orders: open_context_menu followed by execute_context_menu_option.")),
+                "For default pawn-selected map actions such as drafted goto, prefer rimworld/right_click_cell. Use open_context_menu plus execute_context_menu_option when you need to inspect or choose a non-default menu option.")),
             ("examples", Arr(
                 Obj(
                     ("name", "minimal"),

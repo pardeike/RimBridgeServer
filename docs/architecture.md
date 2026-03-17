@@ -171,7 +171,7 @@ Tests/
 
 docs/
   architecture.md
-  progress-log.md
+  lua-frontend-design.md
 ```
 
 This can be introduced incrementally. There is no need for a single risky big bang move. The important part is that feature packages, including first-party ones, plug into the same registry and execution model.
@@ -635,7 +635,7 @@ Each incremental step should follow the same discipline:
 3. run focused tests locally
 4. run a build of the mod
 5. if the step touches game integration, run the relevant GABS-driven smoke case
-6. update `docs/progress-log.md`
+6. update the relevant design or usage docs when the public surface changes
 7. commit
 8. push
 
@@ -837,4 +837,4 @@ Tests:
 
 ## Immediate Next Step
 
-The next highest-value addition should be a structured pawn-event journal on top of the now-verified pawn-target debug-action seam. Generic targeted debug actions such as `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details` are useful as manual diagnostics and bootstrap tooling, but autonomous workflows still need bounded structured events instead of ad hoc text logs. The low-risk first slice is `job_changed`, `draft_changed`, and `mental_state_changed` with cursor-based pull as the correctness path and host-level push as an optional acceleration path.
+The next concrete slice is no longer fixed in this document. The current scripting track is functional through JSON, inline Lua, and file-backed Lua fixtures, so the near-term choice is between broadening reusable Lua examples/reference around planning patterns or switching tracks to the structured pawn-event journal backlog. If we switch tracks, the lowest-risk event slice is still `job_changed`, `draft_changed`, and `mental_state_changed` with cursor-based pull as the correctness path and host-level push as an optional acceleration path.
