@@ -165,12 +165,13 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(path), path), (nameof(includeChildren), includeChildren), (nameof(includeHiddenChildren), includeHiddenChildren)));
     }
 
-    [Tool("rimworld/execute_debug_action", Description = "Execute a supported RimWorld debug action leaf by stable path, including pawn-target actions when pawnName is provided")]
+    [Tool("rimworld/execute_debug_action", Description = "Execute a supported RimWorld debug action leaf by stable path, including pawn-target actions when pawnName or pawnId is provided")]
     public object ExecuteDebugAction(
         [ToolParameter(Description = "Stable debug action path returned by the discovery tools")] string path,
-        [ToolParameter(Description = "Current-map pawn name for ToolMapForPawns debug actions such as T: Toggle Job Logging")] string pawnName = null)
+        [ToolParameter(Description = "Optional current-map pawn name for ToolMapForPawns debug actions")] string pawnName = null,
+        [ToolParameter(Description = "Optional stable current-map pawn id from rimworld/list_colonists for ToolMapForPawns debug actions")] string pawnId = null)
     {
-        return InvokeAlias(Arguments((nameof(path), path), (nameof(pawnName), pawnName)));
+        return InvokeAlias(Arguments((nameof(path), path), (nameof(pawnName), pawnName), (nameof(pawnId), pawnId)));
     }
 
     [Tool("rimworld/set_debug_setting", Description = "Set a RimWorld debug setting toggle by stable path to a deterministic on/off state")]
@@ -306,6 +307,7 @@ public class RimBridgeTools
         [ToolParameter(Description = "Require every footprint cell to be unfogged")] bool requireNotFogged = false,
         [ToolParameter(Description = "Reject footprint cells containing impassable things such as walls or solid rocks")] bool requireNoImpassableThings = false,
         [ToolParameter(Description = "Optional current-map pawn name; when provided, the returned anchor cell must be reachable by that pawn")] string reachablePawnName = null,
+        [ToolParameter(Description = "Optional stable current-map pawn id from rimworld/list_colonists; when provided, the returned anchor cell must be reachable by that pawn")] string reachablePawnId = null,
         [ToolParameter(Description = "Optional architect designator id; when provided, every footprint cell must pass that designator's CanDesignateCell validation")] string designatorId = null)
     {
         return InvokeAlias(Arguments(
@@ -321,6 +323,7 @@ public class RimBridgeTools
             (nameof(requireNotFogged), requireNotFogged),
             (nameof(requireNoImpassableThings), requireNoImpassableThings),
             (nameof(reachablePawnName), reachablePawnName),
+            (nameof(reachablePawnId), reachablePawnId),
             (nameof(designatorId), designatorId)));
     }
 
@@ -339,6 +342,7 @@ public class RimBridgeTools
         [ToolParameter(Description = "Require every footprint cell to be unfogged")] bool requireNotFogged = false,
         [ToolParameter(Description = "Reject footprint cells containing impassable things such as walls or solid rocks")] bool requireNoImpassableThings = false,
         [ToolParameter(Description = "Optional current-map pawn name; when provided, each visited anchor cell must be reachable by that pawn")] string reachablePawnName = null,
+        [ToolParameter(Description = "Optional stable current-map pawn id from rimworld/list_colonists; when provided, each visited anchor cell must be reachable by that pawn")] string reachablePawnId = null,
         [ToolParameter(Description = "Optional architect designator id; when provided, every footprint cell must pass that designator's CanDesignateCell validation")] string designatorId = null)
     {
         return InvokeAlias(Arguments(
@@ -355,6 +359,7 @@ public class RimBridgeTools
             (nameof(requireNotFogged), requireNotFogged),
             (nameof(requireNoImpassableThings), requireNoImpassableThings),
             (nameof(reachablePawnName), reachablePawnName),
+            (nameof(reachablePawnId), reachablePawnId),
             (nameof(designatorId), designatorId)));
     }
 
@@ -400,7 +405,7 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
-    [Tool("rimworld/list_colonists", Description = "List player-controlled colonists available for selection and drafting")]
+    [Tool("rimworld/list_colonists", Description = "List player-controlled colonists available for selection and drafting, including stable pawn ids")]
     public object ListColonists([ToolParameter(Description = "True to only include the current map")] bool currentMapOnly = false)
     {
         return InvokeAlias(Arguments((nameof(currentMapOnly), currentMapOnly)));
@@ -412,26 +417,30 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
-    [Tool("rimworld/select_pawn", Description = "Select a single colonist by name")]
+    [Tool("rimworld/select_pawn", Description = "Select a single colonist by name or stable pawn id")]
     public object SelectPawn(
-        [ToolParameter(Description = "Colonist name, short name, or full name")] string pawnName,
+        [ToolParameter(Description = "Optional colonist name, short name, or full name")] string pawnName = null,
+        [ToolParameter(Description = "Optional stable colonist pawn id from rimworld/list_colonists")] string pawnId = null,
         [ToolParameter(Description = "True to append to the current selection instead of replacing it")] bool append = false)
     {
-        return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(append), append)));
+        return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(pawnId), pawnId), (nameof(append), append)));
     }
 
-    [Tool("rimworld/deselect_pawn", Description = "Deselect a single selected pawn by name")]
-    public object DeselectPawn([ToolParameter(Description = "Selected pawn name")] string pawnName)
+    [Tool("rimworld/deselect_pawn", Description = "Deselect a single selected pawn by name or stable pawn id")]
+    public object DeselectPawn(
+        [ToolParameter(Description = "Optional selected pawn name")] string pawnName = null,
+        [ToolParameter(Description = "Optional stable selected pawn id from rimworld/list_colonists")] string pawnId = null)
     {
-        return InvokeAlias(Arguments((nameof(pawnName), pawnName)));
+        return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(pawnId), pawnId)));
     }
 
-    [Tool("rimworld/set_draft", Description = "Draft or undraft a colonist by name")]
+    [Tool("rimworld/set_draft", Description = "Draft or undraft a colonist by name or stable pawn id")]
     public object SetDraft(
-        [ToolParameter(Description = "Colonist name")] string pawnName,
+        [ToolParameter(Description = "Optional colonist name")] string pawnName = null,
+        [ToolParameter(Description = "Optional stable colonist pawn id from rimworld/list_colonists")] string pawnId = null,
         [ToolParameter(Description = "True to draft, false to undraft")] bool drafted = true)
     {
-        return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(drafted), drafted)));
+        return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(pawnId), pawnId), (nameof(drafted), drafted)));
     }
 
     [Tool("rimworld/get_camera_state", Description = "Get the current map camera position, zoom, and visible rect")]
@@ -446,10 +455,12 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
-    [Tool("rimworld/jump_camera_to_pawn", Description = "Jump the camera to a pawn by name")]
-    public object JumpCameraToPawn([ToolParameter(Description = "Pawn name on the current map")] string pawnName)
+    [Tool("rimworld/jump_camera_to_pawn", Description = "Jump the camera to a pawn by name or stable pawn id")]
+    public object JumpCameraToPawn(
+        [ToolParameter(Description = "Optional pawn name on the current map")] string pawnName = null,
+        [ToolParameter(Description = "Optional stable current-map pawn id from rimworld/list_colonists")] string pawnId = null)
     {
-        return InvokeAlias(Arguments((nameof(pawnName), pawnName)));
+        return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(pawnId), pawnId)));
     }
 
     [Tool("rimworld/jump_camera_to_cell", Description = "Jump the camera to a map cell")]
@@ -480,10 +491,12 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(rootSize), rootSize)));
     }
 
-    [Tool("rimworld/frame_pawns", Description = "Frame a comma-separated list of pawns so they fit in view")]
-    public object FramePawns([ToolParameter(Description = "Comma-separated pawn names. If omitted, uses the current selection.")] string pawnNamesCsv = null)
+    [Tool("rimworld/frame_pawns", Description = "Frame a comma-separated list of pawns by name and/or stable pawn id so they fit in view")]
+    public object FramePawns(
+        [ToolParameter(Description = "Comma-separated pawn names. If omitted together with pawnIdsCsv, uses the current selection.")] string pawnNamesCsv = null,
+        [ToolParameter(Description = "Comma-separated stable pawn ids from rimworld/list_colonists. If omitted together with pawnNamesCsv, uses the current selection.")] string pawnIdsCsv = null)
     {
-        return InvokeAlias(Arguments((nameof(pawnNamesCsv), pawnNamesCsv)));
+        return InvokeAlias(Arguments((nameof(pawnNamesCsv), pawnNamesCsv), (nameof(pawnIdsCsv), pawnIdsCsv)));
     }
 
     [Tool("rimworld/take_screenshot", Description = "Take an in-game screenshot and return the saved file path plus optional target metadata")]
@@ -527,21 +540,23 @@ public class RimBridgeTools
 
     [Tool("rimworld/open_context_menu", Description = "Open a vanilla debug context menu at a target pawn or cell")]
     public object OpenContextMenu(
-        [ToolParameter(Description = "Target pawn name on the current map. Optional if x/z are provided.")] string targetPawnName = null,
-        [ToolParameter(Description = "Target cell x coordinate when no pawn name is given")] int x = 0,
-        [ToolParameter(Description = "Target cell z coordinate when no pawn name is given")] int z = 0,
+        [ToolParameter(Description = "Optional target pawn name on the current map.")] string targetPawnName = null,
+        [ToolParameter(Description = "Optional stable target pawn id from rimworld/list_colonists.")] string targetPawnId = null,
+        [ToolParameter(Description = "Target cell x coordinate when no pawn name or id is given")] int x = 0,
+        [ToolParameter(Description = "Target cell z coordinate when no pawn name or id is given")] int z = 0,
         [ToolParameter(Description = "Optional provider hint. Use vanilla; auto is accepted as a backwards-compatible alias.")] string mode = "vanilla")
     {
-        return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(x), x), (nameof(z), z), (nameof(mode), mode)));
+        return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(targetPawnId), targetPawnId), (nameof(x), x), (nameof(z), z), (nameof(mode), mode)));
     }
 
     [Tool("rimworld/right_click_cell", Description = "Apply RimWorld's native right-click map interaction for the current pawn selection, auto-executing the default action when possible and only opening a menu as fallback")]
     public object RightClickCell(
-        [ToolParameter(Description = "Target pawn name on the current map. Optional if x/z are provided.")] string targetPawnName = null,
-        [ToolParameter(Description = "Target cell x coordinate when no pawn name is given")] int x = 0,
-        [ToolParameter(Description = "Target cell z coordinate when no pawn name is given")] int z = 0)
+        [ToolParameter(Description = "Optional target pawn name on the current map.")] string targetPawnName = null,
+        [ToolParameter(Description = "Optional stable target pawn id from rimworld/list_colonists.")] string targetPawnId = null,
+        [ToolParameter(Description = "Target cell x coordinate when no pawn name or id is given")] int x = 0,
+        [ToolParameter(Description = "Target cell z coordinate when no pawn name or id is given")] int z = 0)
     {
-        return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(x), x), (nameof(z), z)));
+        return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(targetPawnId), targetPawnId), (nameof(x), x), (nameof(z), z)));
     }
 
     [Tool("rimworld/get_context_menu_options", Description = "Get the currently opened debug context menu options")]

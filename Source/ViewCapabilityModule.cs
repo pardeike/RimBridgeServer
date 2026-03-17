@@ -55,9 +55,9 @@ internal sealed class ViewCapabilityModule
         return RimWorldTargeting.GetScreenTargetsResponse();
     }
 
-    public object JumpCameraToPawn(string pawnName)
+    public object JumpCameraToPawn(string pawnName = null, string pawnId = null)
     {
-        var pawn = RimWorldState.ResolveCurrentMapPawn(pawnName);
+        var pawn = RimWorldState.ResolveCurrentMapPawn(pawnName, pawnId);
         Find.CameraDriver.JumpToCurrentMapLoc(pawn.Position);
         Find.Selector.ClearSelection();
         Find.Selector.Select(pawn, playSound: false, forceDesignatorDeselect: false);
@@ -65,6 +65,7 @@ internal sealed class ViewCapabilityModule
         {
             success = true,
             target = pawn.Name?.ToStringShort ?? pawn.LabelShort,
+            targetPawn = RimWorldState.DescribePawn(pawn),
             camera = RimWorldState.DescribeCamera()
         };
     }
@@ -114,17 +115,19 @@ internal sealed class ViewCapabilityModule
         return new { success = true, rootSize = driver.RootSize, camera = RimWorldState.DescribeCamera() };
     }
 
-    public object FramePawns(string pawnNamesCsv = null)
+    public object FramePawns(string pawnNamesCsv = null, string pawnIdsCsv = null)
     {
         List<Pawn> pawns;
-        if (string.IsNullOrWhiteSpace(pawnNamesCsv))
+        if (string.IsNullOrWhiteSpace(pawnNamesCsv) && string.IsNullOrWhiteSpace(pawnIdsCsv))
         {
             pawns = Find.Selector.SelectedPawns.Where(pawn => pawn.Spawned).ToList();
         }
         else
         {
             pawns = RimWorldState.ParseNames(pawnNamesCsv)
-                .Select(RimWorldState.ResolveCurrentMapPawn)
+                .Select(name => RimWorldState.ResolveCurrentMapPawn(name))
+                .Concat(RimWorldState.ParseNames(pawnIdsCsv)
+                    .Select(id => RimWorldState.ResolveCurrentMapPawn(pawnId: id)))
                 .Where(pawn => pawn.Spawned)
                 .Distinct()
                 .ToList();
@@ -145,6 +148,7 @@ internal sealed class ViewCapabilityModule
         {
             success = true,
             framedPawns = pawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
+            framedPawnDetails = pawns.Select(RimWorldState.DescribePawn).ToList(),
             rootSize = Find.CameraDriver.RootSize,
             camera = RimWorldState.DescribeCamera()
         };

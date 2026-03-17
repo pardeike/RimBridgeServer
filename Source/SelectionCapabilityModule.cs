@@ -28,9 +28,9 @@ internal sealed class SelectionCapabilityModule
         return new { success = true, selectedCount = Find.Selector.NumSelected };
     }
 
-    public object SelectPawn(string pawnName, bool append = false)
+    public object SelectPawn(string pawnName = null, string pawnId = null, bool append = false)
     {
-        var pawn = RimWorldState.ResolveColonist(pawnName);
+        var pawn = RimWorldState.ResolveColonist(pawnName, pawnId);
         if (!append)
             Find.Selector.ClearSelection();
 
@@ -44,24 +44,25 @@ internal sealed class SelectionCapabilityModule
         };
     }
 
-    public object DeselectPawn(string pawnName)
+    public object DeselectPawn(string pawnName = null, string pawnId = null)
     {
-        var pawn = RimWorldState.ResolveSelectedPawn(pawnName);
+        var pawn = RimWorldState.ResolveSelectedPawn(pawnName, pawnId);
         Find.Selector.Deselect(pawn);
 
         return new
         {
             success = true,
             deselected = pawn.Name?.ToStringShort ?? pawn.LabelShort,
+            deselectedPawn = RimWorldState.DescribePawn(pawn),
             selectedCount = Find.Selector.NumSelected
         };
     }
 
-    public object SetDraft(string pawnName, bool drafted = true)
+    public object SetDraft(string pawnName = null, string pawnId = null, bool drafted = true)
     {
-        var pawn = RimWorldState.ResolveColonist(pawnName);
+        var pawn = RimWorldState.ResolveColonist(pawnName, pawnId);
         if (pawn.drafter == null)
-            return new { success = false, message = $"Pawn '{pawnName}' cannot be drafted." };
+            return new { success = false, message = $"Pawn '{(string.IsNullOrWhiteSpace(pawnId) ? pawnName : pawnId)}' cannot be drafted." };
 
         pawn.drafter.Drafted = drafted;
 
@@ -69,6 +70,7 @@ internal sealed class SelectionCapabilityModule
         {
             success = true,
             pawn = pawn.Name?.ToStringShort ?? pawn.LabelShort,
+            pawnInfo = RimWorldState.DescribePawn(pawn),
             drafted = pawn.drafter.Drafted
         };
     }

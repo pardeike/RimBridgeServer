@@ -90,6 +90,7 @@ internal sealed class ArchitectCapabilityModule
         bool requireNotFogged = false,
         bool requireNoImpassableThings = false,
         string reachablePawnName = null,
+        string reachablePawnId = null,
         string designatorId = null)
     {
         return RimWorldArchitect.FindRandomCellNearResponse(
@@ -105,6 +106,7 @@ internal sealed class ArchitectCapabilityModule
             requireNotFogged,
             requireNoImpassableThings,
             reachablePawnName,
+            reachablePawnId,
             designatorId);
     }
 
@@ -122,6 +124,7 @@ internal sealed class ArchitectCapabilityModule
         bool requireNotFogged = false,
         bool requireNoImpassableThings = false,
         string reachablePawnName = null,
+        string reachablePawnId = null,
         string designatorId = null)
     {
         return RimWorldArchitect.FloodFillCellsResponse(
@@ -138,6 +141,7 @@ internal sealed class ArchitectCapabilityModule
             requireNotFogged,
             requireNoImpassableThings,
             reachablePawnName,
+            reachablePawnId,
             designatorId);
     }
 }

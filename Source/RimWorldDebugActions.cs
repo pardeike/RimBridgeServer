@@ -81,7 +81,7 @@ internal static class RimWorldDebugActions
         };
     }
 
-    public static object ExecuteDebugActionResponse(string path, string pawnName = null)
+    public static object ExecuteDebugActionResponse(string path, string pawnName = null, string pawnId = null)
     {
         if (!TryResolveNode(path, out var node, out var normalizedPath, out var error))
             return Failure(error);
@@ -107,12 +107,12 @@ internal static class RimWorldDebugActions
         Pawn targetPawn = null;
         if (assessment.Kind == DebugActionExecutionKind.PawnTarget)
         {
-            if (string.IsNullOrWhiteSpace(pawnName))
+            if (string.IsNullOrWhiteSpace(pawnName) && string.IsNullOrWhiteSpace(pawnId))
             {
                 return new
                 {
                     success = false,
-                    message = $"Debug action '{normalizedPath}' requires a current-map pawn target. Provide pawnName.",
+                    message = $"Debug action '{normalizedPath}' requires a current-map pawn target. Provide pawnName or pawnId.",
                     path = normalizedPath,
                     node = DescribeNode(node),
                     requiredTargetKind = "pawn",
@@ -122,7 +122,7 @@ internal static class RimWorldDebugActions
 
             try
             {
-                targetPawn = RimWorldState.ResolveCurrentMapPawn(pawnName);
+                targetPawn = RimWorldState.ResolveCurrentMapPawn(pawnName, pawnId);
             }
             catch (Exception ex)
             {

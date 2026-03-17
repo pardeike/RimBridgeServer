@@ -20,7 +20,7 @@ internal sealed class ContextMenuCapabilityModule
         public string Label { get; set; } = string.Empty;
     }
 
-    public object OpenContextMenu(string targetPawnName = null, int x = 0, int z = 0, string mode = "vanilla")
+    public object OpenContextMenu(string targetPawnName = null, string targetPawnId = null, int x = 0, int z = 0, string mode = "vanilla")
     {
         if (Current.Game == null)
             return new { success = false, message = "No game is currently loaded." };
@@ -30,7 +30,7 @@ internal sealed class ContextMenuCapabilityModule
             return new { success = false, message = "No pawns are currently selected." };
 
         var map = RimWorldState.CurrentMapOrThrow();
-        if (!TryResolveMapClickTarget(map, targetPawnName, x, z, out var target, out var failure))
+        if (!TryResolveMapClickTarget(map, targetPawnName, targetPawnId, x, z, out var target, out var failure))
             return failure;
         var clickCell = target.Cell;
         var targetLabel = target.Label;
@@ -93,7 +93,7 @@ internal sealed class ContextMenuCapabilityModule
         };
     }
 
-    public object RightClickCell(string targetPawnName = null, int x = 0, int z = 0)
+    public object RightClickCell(string targetPawnName = null, string targetPawnId = null, int x = 0, int z = 0)
     {
         if (Current.Game == null)
             return new { success = false, message = "No game is currently loaded." };
@@ -103,7 +103,7 @@ internal sealed class ContextMenuCapabilityModule
             return new { success = false, message = "No pawns are currently selected." };
 
         var map = RimWorldState.CurrentMapOrThrow();
-        if (!TryResolveMapClickTarget(map, targetPawnName, x, z, out var target, out var failure))
+        if (!TryResolveMapClickTarget(map, targetPawnName, targetPawnId, x, z, out var target, out var failure))
             return failure;
 
         if (Find.WindowStack.FloatMenu != null)
@@ -247,17 +247,18 @@ internal sealed class ContextMenuCapabilityModule
         }).ToList();
     }
 
-    private static bool TryResolveMapClickTarget(Map map, string targetPawnName, int x, int z, out MapClickTarget target, out object failure)
+    private static bool TryResolveMapClickTarget(Map map, string targetPawnName, string targetPawnId, int x, int z, out MapClickTarget target, out object failure)
     {
         target = null;
         failure = null;
 
-        if (!string.IsNullOrWhiteSpace(targetPawnName))
+        if (!string.IsNullOrWhiteSpace(targetPawnName) || !string.IsNullOrWhiteSpace(targetPawnId))
         {
-            var targetPawn = RimWorldState.ResolveCurrentMapPawn(targetPawnName);
+            var targetPawn = RimWorldState.ResolveCurrentMapPawn(targetPawnName, targetPawnId);
             if (!targetPawn.Spawned || targetPawn.Map != map)
             {
-                failure = new { success = false, message = $"Pawn '{targetPawnName}' is not spawned on the current map." };
+                var identifier = string.IsNullOrWhiteSpace(targetPawnId) ? targetPawnName : targetPawnId;
+                failure = new { success = false, message = $"Pawn '{identifier}' is not spawned on the current map." };
                 return false;
             }
 

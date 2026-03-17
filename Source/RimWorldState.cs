@@ -75,12 +75,15 @@ internal static class RimWorldState
     public static object ToolStateSnapshot(RuntimeStatus status)
     {
         var readiness = status.Readiness;
+        var currentMap = Find.CurrentMap;
 
         return new
         {
             programState = status.ProgramState,
             inEntryScene = status.InEntryScene,
             hasCurrentGame = status.HasCurrentGame,
+            currentMapId = GetMapId(currentMap),
+            currentMapIndex = currentMap?.Index,
             longEventPending = status.LongEventPending,
             paused = status.Paused,
             screenFading = status.ScreenFading,
@@ -127,19 +130,19 @@ internal static class RimWorldState
             .ToList();
     }
 
-    public static Pawn ResolveColonist(string pawnName)
+    public static Pawn ResolveColonist(string pawnName = null, string pawnId = null)
     {
-        return ResolvePawn(pawnName, AllPlayerColonists(), "player-controlled colonist");
+        return ResolvePawn(pawnName, pawnId, AllPlayerColonists(), "player-controlled colonist");
     }
 
-    public static Pawn ResolveCurrentMapPawn(string pawnName)
+    public static Pawn ResolveCurrentMapPawn(string pawnName = null, string pawnId = null)
     {
-        return ResolvePawn(pawnName, AllCurrentMapPawns(CurrentMapOrThrow()), "current-map pawn");
+        return ResolvePawn(pawnName, pawnId, AllCurrentMapPawns(CurrentMapOrThrow()), "current-map pawn");
     }
 
-    public static Pawn ResolveSelectedPawn(string pawnName)
+    public static Pawn ResolveSelectedPawn(string pawnName = null, string pawnId = null)
     {
-        return ResolvePawn(pawnName, Find.Selector.SelectedPawns, "selected pawn");
+        return ResolvePawn(pawnName, pawnId, Find.Selector.SelectedPawns, "selected pawn");
     }
 
     public static Vector3 CellCenter(IntVec3 cell)
@@ -161,6 +164,16 @@ internal static class RimWorldState
         }
     }
 
+    public static string GetThingId(Thing thing)
+    {
+        return thing?.GetUniqueLoadID();
+    }
+
+    public static string GetMapId(Map map)
+    {
+        return map?.GetUniqueLoadID();
+    }
+
     public static string SanitizeName(string name, string fallbackPrefix)
     {
         var raw = string.IsNullOrWhiteSpace(name)
@@ -176,6 +189,8 @@ internal static class RimWorldState
     {
         return new
         {
+            pawnId = GetThingId(pawn),
+            thingIdNumber = pawn.thingIDNumber,
             name = pawn.Name?.ToStringShort ?? pawn.LabelShort,
             fullName = pawn.Name?.ToStringFull ?? pawn.LabelCap,
             label = pawn.LabelCap,
@@ -185,6 +200,8 @@ internal static class RimWorldState
             dead = pawn.Dead,
             spawned = pawn.Spawned,
             map = pawn.Map?.Index.ToString(CultureInfo.InvariantCulture),
+            mapId = GetMapId(pawn.Map),
+            mapIndex = pawn.Map?.Index,
             position = pawn.Position.IsValid ? new { x = pawn.Position.x, z = pawn.Position.z } : null,
             job = pawn.CurJob?.def?.defName,
             mentalState = pawn.MentalStateDef?.defName,
@@ -201,6 +218,8 @@ internal static class RimWorldState
         {
             success = true,
             map = currentMap?.Index.ToString(CultureInfo.InvariantCulture),
+            mapId = GetMapId(currentMap),
+            mapIndex = currentMap?.Index,
             rootSize = driver.RootSize,
             zoomRootSize = driver.ZoomRootSize,
             zoomRange = driver.CurrentZoom.ToString(),
@@ -232,16 +251,31 @@ internal static class RimWorldState
         return Mathf.Clamp(span * 0.9f + 12f, 8f, 140f);
     }
 
-    private static Pawn ResolvePawn(string pawnName, IEnumerable<Pawn> source, string description)
+    private static Pawn ResolvePawn(string pawnName, string pawnId, IEnumerable<Pawn> source, string description)
     {
-        if (string.IsNullOrWhiteSpace(pawnName))
-            throw new ArgumentException($"A {description} name is required.", nameof(pawnName));
-
-        var normalized = pawnName.Trim();
         var pawns = source
             .Where(pawn => pawn != null)
             .Distinct()
             .ToList();
+
+        if (string.IsNullOrWhiteSpace(pawnId) == false)
+        {
+            var normalizedId = pawnId.Trim();
+            var idMatches = pawns
+                .Where(pawn => string.Equals(GetThingId(pawn), normalizedId, StringComparison.Ordinal))
+                .ToList();
+            if (idMatches.Count == 1)
+                return idMatches[0];
+            if (idMatches.Count > 1)
+                throw new InvalidOperationException($"Ambiguous {description} id '{pawnId}'.");
+
+            throw new InvalidOperationException($"Could not find {description} id '{pawnId}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(pawnName))
+            throw new ArgumentException($"A {description} name or id is required.");
+
+        var normalized = pawnName.Trim();
 
         var exactMatches = pawns.Where(pawn => MatchesPawnName(pawn, normalized, exact: true)).ToList();
         if (exactMatches.Count == 1)

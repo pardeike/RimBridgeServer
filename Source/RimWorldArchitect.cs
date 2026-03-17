@@ -31,6 +31,8 @@ internal static class RimWorldArchitect
 
         public string ReachablePawnName { get; set; }
 
+        public string ReachablePawnId { get; set; }
+
         public ArchitectDesignatorDescriptor DesignatorDescriptor { get; set; }
     }
 
@@ -329,6 +331,7 @@ internal static class RimWorldArchitect
         bool requireNotFogged = false,
         bool requireNoImpassableThings = false,
         string reachablePawnName = null,
+        string reachablePawnId = null,
         string designatorId = null)
     {
         if (!TryGetMapContext(out var map, out var error))
@@ -347,6 +350,7 @@ internal static class RimWorldArchitect
                 requireNotFogged,
                 requireNoImpassableThings,
                 reachablePawnName,
+                reachablePawnId,
                 designatorId,
                 out var criteria,
                 out error))
@@ -410,6 +414,7 @@ internal static class RimWorldArchitect
         bool requireNotFogged = false,
         bool requireNoImpassableThings = false,
         string reachablePawnName = null,
+        string reachablePawnId = null,
         string designatorId = null)
     {
         if (!TryGetMapContext(out var map, out var error))
@@ -430,6 +435,7 @@ internal static class RimWorldArchitect
                 requireNotFogged,
                 requireNoImpassableThings,
                 reachablePawnName,
+                reachablePawnId,
                 designatorId,
                 out var criteria,
                 out error))
@@ -1309,6 +1315,7 @@ internal static class RimWorldArchitect
         bool requireNotFogged,
         bool requireNoImpassableThings,
         string reachablePawnName,
+        string reachablePawnId,
         string designatorId,
         out CellSearchCriteria criteria,
         out string error)
@@ -1326,11 +1333,11 @@ internal static class RimWorldArchitect
             return false;
 
         Pawn reachablePawn = null;
-        if (!string.IsNullOrWhiteSpace(reachablePawnName))
+        if (!string.IsNullOrWhiteSpace(reachablePawnName) || !string.IsNullOrWhiteSpace(reachablePawnId))
         {
             try
             {
-                reachablePawn = RimWorldState.ResolveCurrentMapPawn(reachablePawnName);
+                reachablePawn = RimWorldState.ResolveCurrentMapPawn(reachablePawnName, reachablePawnId);
             }
             catch (Exception ex)
             {
@@ -1362,6 +1369,7 @@ internal static class RimWorldArchitect
             RequireNoImpassableThings = requireNoImpassableThings,
             ReachablePawn = reachablePawn,
             ReachablePawnName = reachablePawnName,
+            ReachablePawnId = reachablePawnId,
             DesignatorDescriptor = designatorDescriptor
         };
         return true;
@@ -1472,6 +1480,7 @@ internal static class RimWorldArchitect
             requireNotFogged = criteria.RequireNotFogged,
             requireNoImpassableThings = criteria.RequireNoImpassableThings,
             reachablePawnName = criteria.ReachablePawnName,
+            reachablePawnId = criteria.ReachablePawnId,
             designator = criteria.DesignatorDescriptor == null
                 ? null
                 : new
