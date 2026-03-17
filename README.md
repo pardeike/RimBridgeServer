@@ -84,6 +84,7 @@ If you only need the shortest possible mental model, use this:
 ## Tool Surface
 
 The current public tool surface is grouped below by function.
+For the generated parameter-level reference pulled straight from the annotated source and kept fresh by CI, see [docs/tool-reference.md](docs/tool-reference.md).
 
 ### Bridge Diagnostics
 
@@ -217,3 +218,4 @@ The current public tool surface is grouped below by function.
 - [docs/architecture.md](docs/architecture.md) - implementation strategy and architectural direction
 - [docs/lua-frontend-design.md](docs/lua-frontend-design.md) - Lua front-end design and current execution model
 - [docs/semantic-state-design.md](docs/semantic-state-design.md) - rationale for the semantic inspection and notification surfaces
+- [docs/tool-reference.md](docs/tool-reference.md) - generated per-tool reference derived from the `[Tool]` and `[ToolParameter]` annotations in source
