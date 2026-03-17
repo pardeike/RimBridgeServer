@@ -18,9 +18,9 @@ public class RimBridgeServerMod : Mod
         {
             _settings = GetSettings<RimBridgeServerSettings>();
             RimBridgeMainThread.Initialize();
-            RimBridgePatches.Apply();
             RimBridgeCapabilities.Initialize();
             RimBridgeLogs.Initialize(RimBridgeCapabilities.LogJournal);
+            RimBridgePatches.Apply();
 
             var tools = new RimBridgeTools();
             var version = typeof(RimBridgeServerMod).Assembly.GetName().Version?.ToString() ?? "0.1.0.0";
@@ -48,6 +48,7 @@ public class RimBridgeServerMod : Mod
         }
         catch (Exception ex)
         {
+            Log.Error($"[RimBridge] STARTUP_INIT_FAILURE: {ex}");
             Log.Error($"[RimBridge] Failed to initialize server: {ex}");
         }
     }

@@ -145,6 +145,25 @@ internal static class RimWorldState
         return ResolvePawn(pawnName, pawnId, Find.Selector.SelectedPawns, "selected pawn");
     }
 
+    public static Thing ResolveCurrentMapThing(string thingId)
+    {
+        if (string.IsNullOrWhiteSpace(thingId))
+            throw new ArgumentException("A current-map thing id is required.", nameof(thingId));
+
+        var normalizedId = thingId.Trim();
+        var matches = CurrentMapOrThrow().listerThings.AllThings
+            .Where(thing => thing != null)
+            .Where(thing => string.Equals(GetThingId(thing), normalizedId, StringComparison.Ordinal))
+            .ToList();
+
+        if (matches.Count == 1)
+            return matches[0];
+        if (matches.Count > 1)
+            throw new InvalidOperationException($"Ambiguous current-map thing id '{thingId}'.");
+
+        throw new InvalidOperationException($"Could not find current-map thing id '{thingId}'.");
+    }
+
     public static Vector3 CellCenter(IntVec3 cell)
     {
         return new Vector3(cell.x + 0.5f, 0f, cell.z + 0.5f);
@@ -206,6 +225,22 @@ internal static class RimWorldState
             job = pawn.CurJob?.def?.defName,
             mentalState = pawn.MentalStateDef?.defName,
             faction = pawn.Faction?.Name
+        };
+    }
+
+    public static object DescribeThing(Thing thing)
+    {
+        return new
+        {
+            thingId = GetThingId(thing),
+            thingIdNumber = thing?.thingIDNumber,
+            defName = thing?.def?.defName,
+            label = thing?.LabelCap.ToString(),
+            className = thing?.GetType().FullName ?? thing?.GetType().Name,
+            spawned = thing?.Spawned ?? false,
+            mapId = GetMapId(thing?.MapHeld),
+            mapIndex = thing?.MapHeld?.Index,
+            position = thing != null && thing.Position.IsValid ? new { x = thing.Position.x, z = thing.Position.z } : null
         };
     }
 

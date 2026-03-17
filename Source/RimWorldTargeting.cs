@@ -52,6 +52,7 @@ internal static class RimWorldTargeting
                 topWindowType = topWindowType
             },
             camera = TryDescribeCamera(),
+            hoverTarget = RimWorldHover.DescribeHoverTarget(),
             selectedPawns = TryDescribeSelectedPawns(),
             mainTab = CreateMainTabPayload(uiState.MainTab),
             windows = uiState.Windows.Select(window => CreateWindowPayload(window, topWindowType, focusedWindowType)).ToList(),

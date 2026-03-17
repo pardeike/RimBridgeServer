@@ -16,6 +16,7 @@ internal static class RimWorldWaits
         {
             success = true,
             state,
+            patches = RimBridgePatches.DescribeStatus(),
             recentOperationCount = journal.OperationCount,
             trackedOperationCount = journal.OperationCount,
             operationJournalCapacity = journal.MaxOperations,

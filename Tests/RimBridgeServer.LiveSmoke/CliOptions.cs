@@ -14,6 +14,8 @@ internal sealed class CliOptions
 
     public required string ReportDirectory { get; init; }
 
+    public string? PlayerLogPath { get; init; }
+
     public bool HumanVerify { get; init; }
 
     public required string HumanVerifyDirectory { get; init; }
@@ -38,6 +40,7 @@ internal sealed class CliOptions
         var gameId = "rimworld";
         string? gabsBinaryPath = null;
         string? gabsConfigDir = Environment.GetEnvironmentVariable("GABS_CONFIG_DIR");
+        string? playerLogPath = Environment.GetEnvironmentVariable("RIMWORLD_PLAYER_LOG");
         var reportDirectory = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "artifacts", "live-smoke"));
         var humanVerify = false;
         var humanVerifyDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -88,6 +91,9 @@ internal sealed class CliOptions
                 case "--report-dir":
                     reportDirectory = Path.GetFullPath(ReadValue(args, ref index, arg));
                     break;
+                case "--player-log-path":
+                    playerLogPath = Path.GetFullPath(ReadValue(args, ref index, arg));
+                    break;
                 case "--total-timeout-ms":
                     totalTimeoutMs = ParsePositiveInt(ReadValue(args, ref index, arg), arg);
                     break;
@@ -115,6 +121,7 @@ internal sealed class CliOptions
                 GabsBinaryPath = ResolveGabsBinaryPath(gabsBinaryPath),
                 GabsConfigDir = gabsConfigDir,
                 ReportDirectory = reportDirectory,
+                PlayerLogPath = ResolvePlayerLogPath(gameId, playerLogPath),
                 HumanVerify = humanVerify,
                 HumanVerifyDirectory = humanVerifyDirectory,
                 StopAfter = stopAfter,
@@ -137,6 +144,7 @@ internal sealed class CliOptions
             GabsBinaryPath = ResolveGabsBinaryPath(gabsBinaryPath),
             GabsConfigDir = gabsConfigDir,
             ReportDirectory = reportDirectory,
+            PlayerLogPath = ResolvePlayerLogPath(gameId, playerLogPath),
             HumanVerify = humanVerify,
             HumanVerifyDirectory = humanVerifyDirectory,
             StopAfter = stopAfter,
@@ -162,6 +170,7 @@ internal sealed class CliOptions
         writer.WriteLine("  --gabs-bin <path>                 Path to the GABS executable");
         writer.WriteLine("  --config-dir <path>               Optional GABS config directory override");
         writer.WriteLine("  --report-dir <path>               Directory for JSON run reports (default: artifacts/live-smoke)");
+        writer.WriteLine("  --player-log-path <path>          Override the RimWorld Player.log path used for startup diagnostics");
         writer.WriteLine("  --human-verify                    Copy curated verification screenshots and text notes to the Desktop");
         writer.WriteLine("  --human-verify-dir <path>         Override the output directory for human verification screenshots");
         writer.WriteLine("  --wait-timeout-ms <ms>            RimBridge wait tool timeout (default: 60000)");
@@ -213,5 +222,47 @@ internal sealed class CliOptions
 
         var existing = candidates.FirstOrDefault(File.Exists);
         return existing ?? "gabs";
+    }
+
+    private static string? ResolvePlayerLogPath(string gameId, string? explicitPath)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitPath))
+            return explicitPath;
+
+        if (!string.Equals(gameId, "rimworld", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var candidates = new List<string>();
+        if (OperatingSystem.IsMacOS())
+        {
+            candidates.Add(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library",
+                "Logs",
+                "Ludeon Studios",
+                "RimWorld by Ludeon Studios",
+                "Player.log"));
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            var localLow = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+                .Replace("Local", "LocalLow", StringComparison.Ordinal);
+            candidates.Add(Path.Combine(localLow, "Ludeon Studios", "RimWorld by Ludeon Studios", "Player.log"));
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            candidates.Add(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".config",
+                "unity3d",
+                "Ludeon Studios",
+                "RimWorld by Ludeon Studios",
+                "Player.log"));
+        }
+
+        var existing = candidates.FirstOrDefault(File.Exists);
+        return existing ?? candidates.FirstOrDefault();
     }
 }

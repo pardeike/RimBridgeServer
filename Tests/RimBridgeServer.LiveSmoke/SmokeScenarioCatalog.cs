@@ -902,6 +902,25 @@ internal static class SmokeScenarioCatalog
         if (!initialChecked.HasValue)
             throw new InvalidOperationException("The captured Work-tab checkbox did not expose a boolean checked state.");
 
+        var setUiHover = await context.CallGameToolAsync("ui_layout.set_ui_hover", "rimworld/set_hover_target", new
+        {
+            targetId = initialTargetId
+        }, cancellationToken);
+        context.EnsureSucceeded(setUiHover, $"Setting UI hover target '{initialTargetId}'");
+
+        var hoveredTargets = await context.CallGameToolAsync("ui_layout.capture_hover_targets", "rimworld/get_screen_targets", new
+        {
+        }, cancellationToken);
+        context.EnsureSucceeded(hoveredTargets, "Capturing screen targets after setting the UI hover target");
+
+        var uiHoverTarget = JsonNodeHelpers.GetPath(hoveredTargets.StructuredContent, "targets", "hoverTarget");
+        if (uiHoverTarget == null)
+            throw new InvalidOperationException("Screen targets did not report an active UI hover target.");
+        if (!string.Equals(ReadRequiredString(uiHoverTarget, "kind"), "ui_element", StringComparison.Ordinal))
+            throw new InvalidOperationException("Screen targets reported the wrong hover target kind for the UI hover check.");
+        if (!string.Equals(ReadRequiredString(uiHoverTarget, "targetId"), initialTargetId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Screen targets reported a different UI hover target id than the one requested.");
+
         var clippedScreenshot = await context.CallGameToolAsync("ui_layout.clip_checkbox", "rimworld/take_screenshot", new
         {
             fileName = BuildScreenshotFileName(context.Report.StartedAtUtc) + "_ui_checkbox",
@@ -911,6 +930,18 @@ internal static class SmokeScenarioCatalog
         context.EnsureSucceeded(clippedScreenshot, $"Capturing a screenshot clipped to UI target '{initialTargetId}'");
         if (JsonNodeHelpers.ReadBoolean(clippedScreenshot.StructuredContent, "clipped") != true)
             throw new InvalidOperationException("The UI control screenshot was not reported as clipped.");
+
+        var clearUiHover = await context.CallGameToolAsync("ui_layout.clear_ui_hover", "rimworld/clear_hover_target", new
+        {
+        }, cancellationToken);
+        context.EnsureSucceeded(clearUiHover, "Clearing the UI hover target after the screenshot capture");
+
+        var clearedHoverTargets = await context.CallGameToolAsync("ui_layout.capture_cleared_hover_targets", "rimworld/get_screen_targets", new
+        {
+        }, cancellationToken);
+        context.EnsureSucceeded(clearedHoverTargets, "Capturing screen targets after clearing the UI hover target");
+        if (JsonNodeHelpers.GetPath(clearedHoverTargets.StructuredContent, "targets", "hoverTarget") != null)
+            throw new InvalidOperationException("Screen targets still reported a hover target after the UI hover target was cleared.");
 
         var clickCheckbox = await context.CallGameToolAsync("ui_layout.click_checkbox", "rimworld/click_ui_target", new
         {
@@ -961,14 +992,53 @@ internal static class SmokeScenarioCatalog
         }, cancellationToken);
         context.EnsureSucceeded(closeMainTab, "Closing the Work main tab after the UI layout roundtrip");
 
+        var colonists = await context.CallGameToolAsync("ui_layout.list_colonists_for_hover", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists for the hover roundtrip check");
+
+        var firstColonist = ResolveFirstColonist(colonists.StructuredContent);
+        var firstColonistId = ReadRequiredString(firstColonist, "pawnId");
+        var setPawnHover = await context.CallGameToolAsync("ui_layout.set_pawn_hover", "rimworld/set_hover_target", new
+        {
+            pawnId = firstColonistId
+        }, cancellationToken);
+        context.EnsureSucceeded(setPawnHover, $"Setting a pawn hover target for '{firstColonistId}'");
+
+        var mapHoverTargets = await context.CallGameToolAsync("ui_layout.capture_map_hover_targets", "rimworld/get_screen_targets", new
+        {
+        }, cancellationToken);
+        context.EnsureSucceeded(mapHoverTargets, "Capturing screen targets after setting the pawn hover target");
+
+        var pawnHoverTarget = JsonNodeHelpers.GetPath(mapHoverTargets.StructuredContent, "targets", "hoverTarget");
+        if (pawnHoverTarget == null)
+            throw new InvalidOperationException("Screen targets did not report an active pawn hover target.");
+        if (!string.Equals(ReadRequiredString(pawnHoverTarget, "kind"), "pawn", StringComparison.Ordinal))
+            throw new InvalidOperationException("Screen targets reported the wrong hover target kind for the pawn hover check.");
+        if (!string.Equals(ReadRequiredString(pawnHoverTarget, "targetId"), firstColonistId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Screen targets reported a different pawn hover target id than the one requested.");
+
+        var clearPawnHover = await context.CallGameToolAsync("ui_layout.clear_pawn_hover", "rimworld/clear_hover_target", new
+        {
+        }, cancellationToken);
+        context.EnsureSucceeded(clearPawnHover, "Clearing the pawn hover target after the map hover roundtrip");
+
         context.SetSummaryValue("uiTargetId", initialTargetId);
         context.SetSummaryValue("checkboxSource", ReadRequiredString(checkbox, "source"));
         context.SetScenarioData("initialLayout", initialLayout.StructuredContent);
+        context.SetScenarioData("setUiHover", setUiHover.StructuredContent);
+        context.SetScenarioData("hoveredTargets", hoveredTargets.StructuredContent);
         context.SetScenarioData("clippedScreenshot", clippedScreenshot.StructuredContent);
+        context.SetScenarioData("clearUiHover", clearUiHover.StructuredContent);
+        context.SetScenarioData("clearedHoverTargets", clearedHoverTargets.StructuredContent);
         context.SetScenarioData("clickCheckbox", clickCheckbox.StructuredContent);
         context.SetScenarioData("toggledLayout", toggledLayout.StructuredContent);
         context.SetScenarioData("restoreCheckbox", restoreCheckbox.StructuredContent);
         context.SetScenarioData("restoredLayout", restoredLayout.StructuredContent);
+        context.SetScenarioData("setPawnHover", setPawnHover.StructuredContent);
+        context.SetScenarioData("mapHoverTargets", mapHoverTargets.StructuredContent);
+        context.SetScenarioData("clearPawnHover", clearPawnHover.StructuredContent);
 
         var observation = await observationWindow.CaptureAsync(
             "ui_layout.final_bridge_status",

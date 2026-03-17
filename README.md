@@ -118,7 +118,9 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/open_main_tab`** - Open one RimWorld main tab by stable target id, `defName`, label, or tab window type
 - **`rimworld/close_main_tab`** - Close the currently open RimWorld main tab, optionally asserting which tab is open first
 - **`rimworld/get_ui_layout`** - Capture a structured layout snapshot for the currently drawn dialogs, windows, or main tabs, including actionable `ui-element` target ids
-- **`rimworld/click_ui_target`** - Activate an actionable `ui-element` target returned by `rimworld/get_ui_layout` without foreground mouse input
+- **`rimworld/click_ui_target`** - Activate an actionable `ui-element` target returned by `rimworld/get_ui_layout` by injecting synthetic RimWorld mouse events through the live widget path
+- **`rimworld/set_hover_target`** - Set a persistent virtual hover target for an actionable UI control, map cell, pawn, or thing
+- **`rimworld/clear_hover_target`** - Clear the current virtual hover target
 - **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
 - **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
 - **`rimworld/close_window`** - Close an open RimWorld window by type name or close the topmost window
@@ -203,7 +205,9 @@ Pawn-target debug actions are now supported through the same surface. Discovery 
 
 Each captured surface reports its rect, type, label/title metadata, and a flat list of semantic UI elements such as labels, buttons, icon buttons, checkboxes, text fields, sliders, groups, and scroll views. Actionable controls receive stable `ui-element:<captureId>:<surfaceIndex>:<elementIndex>` target ids, and those same ids are also valid `clipTargetId` values for `rimworld/take_screenshot`.
 
-`rimworld/click_ui_target` is the matching activation seam. It consumes only actionable `ui-element` ids emitted by `rimworld/get_ui_layout`, redraw-matches the corresponding control on the real surface, and invokes the underlying RimWorld widget directly instead of simulating OS-level mouse movement. That makes built-in windows, mod settings dialogs, and sub-dialog drilldowns background-safe for automated UX checks.
+`rimworld/click_ui_target` is the matching activation seam. It consumes only actionable `ui-element` ids emitted by `rimworld/get_ui_layout`, redraw-matches the corresponding control on the live surface, and injects synthetic `MouseDown` / `MouseUp` events through the original RimWorld widget call instead of short-circuiting the helper. That keeps Harmony patches and vanilla widget behavior on the real control path while remaining background-safe.
+
+`rimworld/set_hover_target` and `rimworld/clear_hover_target` add a persistent virtual pointer for hover-driven UX review. UI hover targets use actionable `ui-element` ids from `rimworld/get_ui_layout`, while map hover targets can be expressed as a cell, pawn, or thing id. `rimworld/get_screen_targets` reports the active hover target, and `rimworld/take_screenshot` will capture hover-only states such as highlights, mouseover readouts, or tooltip flows that depend on RimWorld's own mouse position helpers.
 
 ### Architect and god-mode mapping
 
@@ -597,7 +601,7 @@ Most mutating tools are marshalled onto RimWorld's main thread before they touch
 
 The new UI input helpers are intentionally semantic. `rimworld/press_accept`, `rimworld/press_cancel`, and `rimworld/close_window` drive RimWorld's own `WindowStack` APIs instead of foreground-dependent desktop input, which keeps them usable even when the game is running in the background during automated tests.
 
-`rimworld/get_screen_targets` and the default `includeTargets: true` behavior on `rimworld/take_screenshot` expose a structured screen-space snapshot instead of forcing clients to infer UI geometry from logs or raw pixels. The current payload includes live window rects, selection, camera state, active float-menu option rects, and actionable target ids such as `dismissTargetId` and context-menu option `targetId` values. Automated screenshot calls also default to `suppressMessage: true`, which hides RimWorld's upper-left screenshot toast only for the duration of that tool-driven capture.
+`rimworld/get_screen_targets` and the default `includeTargets: true` behavior on `rimworld/take_screenshot` expose a structured screen-space snapshot instead of forcing clients to infer UI geometry from logs or raw pixels. The current payload includes live window rects, selection, camera state, the active virtual `hoverTarget` when one is set, active float-menu option rects, and actionable target ids such as `dismissTargetId` and context-menu option `targetId` values. Automated screenshot calls also default to `suppressMessage: true`, which hides RimWorld's upper-left screenshot toast only for the duration of that tool-driven capture.
 
 `rimworld/take_screenshot` also supports target-relative clipping through `clipTargetId` and `clipPadding`. Pass a target id returned by `rimworld/get_screen_targets` and the bridge will write a cropped screenshot artifact plus `clipRect` metadata, while still reporting the original full-frame `sourcePath` for traceability.
 
@@ -684,9 +688,9 @@ The `ui-layout-roundtrip` scenario covers the generic UI layout workbench agains
 
 - ensures a playable game exists and opens the Work tab
 - captures `rimworld/get_ui_layout` for `surfaceId: "main-tab:Work"`
-- clips a screenshot directly to the discovered `Manual priorities` checkbox target
+- sets and clears a UI hover target for the discovered `Manual priorities` checkbox, then clips a screenshot directly to it
 - toggles that checkbox through `rimworld/click_ui_target`
-- captures a fresh layout to verify the checkbox state changed, then restores the original state
+- captures a fresh layout to verify the checkbox state changed, restores the original state, and then round-trips a pawn hover target through `rimworld/get_screen_targets`
 
 The `context-menu-cancel-roundtrip` scenario exercises the first background-safe input path:
 

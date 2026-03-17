@@ -58,6 +58,12 @@ internal sealed class SmokeRunReport
 
     public string ReportPath { get; set; } = string.Empty;
 
+    public string PlayerLogPath { get; set; } = string.Empty;
+
+    public bool StartupFailureDetected { get; set; }
+
+    public List<StartupDiagnosticReport> StartupDiagnostics { get; set; } = [];
+
     public List<SmokeStepReport> Steps { get; set; } = [];
 
     public List<string> Notes { get; set; } = [];
@@ -79,6 +85,15 @@ internal sealed class SmokeRunReport
     public List<JsonNode?> OperationEvents { get; set; } = [];
 
     public List<JsonNode?> LogEntries { get; set; } = [];
+}
+
+internal sealed class StartupDiagnosticReport
+{
+    public string Marker { get; set; } = string.Empty;
+
+    public string Summary { get; set; } = string.Empty;
+
+    public string Excerpt { get; set; } = string.Empty;
 }
 
 internal sealed class HumanVerificationArtifact

@@ -71,7 +71,8 @@ internal static class SmokeHarness
             ScenarioDescription = scenario.Description,
             GameId = options.GameId,
             GabsBinaryPath = options.GabsBinaryPath,
-            StartedAtUtc = DateTimeOffset.UtcNow
+            StartedAtUtc = DateTimeOffset.UtcNow,
+            PlayerLogPath = options.PlayerLogPath ?? string.Empty
         };
 
         var stopwatch = Stopwatch.StartNew();
@@ -102,7 +103,7 @@ internal static class SmokeHarness
                 context.Note("Reused an already running RimWorld instance.");
             }
 
-            await ConnectGameAsync(context, options.GameId, cancellationToken);
+            await ConnectGameAsync(context, options.GameId, options.PlayerLogPath, cancellationToken);
 
             await scenario.RunAsync(context, cancellationToken);
             report.Success = true;
@@ -148,6 +149,8 @@ internal static class SmokeHarness
         writer.WriteLine($"Result: {(report.Success ? "PASS" : "FAIL")} ({report.DurationMs}ms)");
         writer.WriteLine($"Game: {report.GameId}");
         writer.WriteLine($"Report: {report.ReportPath}");
+        if (string.IsNullOrWhiteSpace(report.PlayerLogPath) == false)
+            writer.WriteLine($"Player.log: {report.PlayerLogPath}");
 
         foreach (var step in report.Steps)
         {
@@ -182,6 +185,13 @@ internal static class SmokeHarness
             var warningCount = CountLogs(report.LogEntries, "warning");
             var errorCount = CountLogs(report.LogEntries, "error") + CountLogs(report.LogEntries, "fatal");
             writer.WriteLine($"Captured log entries: {report.LogEntries.Count} (warning: {warningCount}, error/fatal: {errorCount})");
+        }
+
+        if (report.StartupDiagnostics.Count > 0)
+        {
+            writer.WriteLine($"Startup diagnostics: {report.StartupDiagnostics.Count} failure marker(s)");
+            foreach (var diagnostic in report.StartupDiagnostics.Take(verbose ? int.MaxValue : 3))
+                writer.WriteLine($"  [{diagnostic.Marker}] {diagnostic.Summary}");
         }
 
         var notableLogs = report.LogEntries
@@ -225,21 +235,26 @@ internal static class SmokeHarness
         return text.Contains(": stopped", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static async Task ConnectGameAsync(SmokeScenarioContext context, string gameId, CancellationToken cancellationToken)
+    private static async Task ConnectGameAsync(SmokeScenarioContext context, string gameId, string? playerLogPath, CancellationToken cancellationToken)
     {
         var connectDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30);
         var attempt = 0;
 
         while (true)
         {
+            CaptureStartupDiagnostics(context, playerLogPath);
             attempt++;
             var stepName = attempt == 1 ? "connect_game" : $"connect_game_retry_{attempt}";
             var connect = await context.CallServerToolAsync(stepName, "games.connect", new { gameId }, cancellationToken);
             if (connect.Success)
+            {
+                CaptureStartupDiagnostics(context, playerLogPath);
                 return;
+            }
 
             if (!ShouldRetryConnect(connect.Text, connect.Message) || DateTimeOffset.UtcNow >= connectDeadlineUtc)
             {
+                CaptureStartupDiagnostics(context, playerLogPath);
                 context.EnsureSucceeded(connect, "Connecting to GABP");
                 return;
             }
@@ -255,6 +270,35 @@ internal static class SmokeHarness
         return combined.Contains("Failed to connect to GABP server", StringComparison.OrdinalIgnoreCase)
             || combined.Contains("connection refused", StringComparison.OrdinalIgnoreCase)
             || combined.Contains("timed out", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void CaptureStartupDiagnostics(SmokeScenarioContext context, string? playerLogPath)
+    {
+        var startupCheck = StartupLogDiagnostics.Inspect(playerLogPath);
+        if (startupCheck.FailureDetected == false)
+            return;
+
+        context.Report.StartupFailureDetected = true;
+        context.Report.PlayerLogPath = startupCheck.PlayerLogPath;
+        context.Report.StartupDiagnostics = startupCheck.Diagnostics
+            .Select(diagnostic => new StartupDiagnosticReport
+            {
+                Marker = diagnostic.Marker,
+                Summary = diagnostic.Summary,
+                Excerpt = diagnostic.Excerpt
+            })
+            .ToList();
+
+        var fatalDiagnostic = startupCheck.Diagnostics.FirstOrDefault(diagnostic => IsFatalStartupMarker(diagnostic.Marker));
+        if (fatalDiagnostic != null)
+            throw new InvalidOperationException($"RimWorld startup reported a bridge initialization failure before the harness could connect. {fatalDiagnostic.Summary}");
+    }
+
+    private static bool IsFatalStartupMarker(string marker)
+    {
+        return string.Equals(marker, "[RimBridge] STARTUP_ESSENTIAL_PATCH_FAILURE:", StringComparison.Ordinal)
+            || string.Equals(marker, "[RimBridge] STARTUP_INIT_FAILURE:", StringComparison.Ordinal)
+            || string.Equals(marker, "[RimBridge] Failed to initialize server:", StringComparison.Ordinal);
     }
 
     private static async Task<string> SaveReportAsync(SmokeRunReport report, string reportDirectory, CancellationToken cancellationToken)

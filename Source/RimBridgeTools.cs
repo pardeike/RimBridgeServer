@@ -501,6 +501,24 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(timeoutMs), timeoutMs)));
     }
 
+    [Tool("rimworld/set_hover_target", Description = "Set a persistent virtual hover target for UI review and screenshots, using either an actionable ui-element target id or a current-map cell, pawn, or thing")]
+    public object SetHoverTarget(
+        [ToolParameter(Description = "Optional actionable ui-element target id returned by rimworld/get_ui_layout")] string targetId = null,
+        [ToolParameter(Description = "Current-map cell x coordinate when hovering a map cell")] int? x = null,
+        [ToolParameter(Description = "Current-map cell z coordinate when hovering a map cell")] int? z = null,
+        [ToolParameter(Description = "Stable current-map thing id when hovering a spawned thing")] string thingId = null,
+        [ToolParameter(Description = "Optional current-map pawn name when hovering a pawn")] string pawnName = null,
+        [ToolParameter(Description = "Optional stable current-map pawn id when hovering a pawn")] string pawnId = null)
+    {
+        return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(x), x), (nameof(z), z), (nameof(thingId), thingId), (nameof(pawnName), pawnName), (nameof(pawnId), pawnId)));
+    }
+
+    [Tool("rimworld/clear_hover_target", Description = "Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state")]
+    public object ClearHoverTarget()
+    {
+        return InvokeAlias();
+    }
+
     [Tool("rimworld/press_accept", Description = "Send semantic accept input to the active RimWorld window stack without requiring OS focus")]
     public object PressAccept()
     {

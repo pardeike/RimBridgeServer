@@ -79,6 +79,12 @@ internal sealed class UiLayoutElementSnapshot
 
 internal static class RimBridgeUiWorkbench
 {
+    private enum ClickPhase
+    {
+        MouseDown = 0,
+        MouseUp = 1
+    }
+
     private sealed class CaptureRequest
     {
         public int CaptureId { get; set; }
@@ -118,7 +124,30 @@ internal static class RimBridgeUiWorkbench
 
         public int ActivatedFrame { get; set; } = -1;
 
+        public ClickPhase Phase { get; set; } = ClickPhase.MouseDown;
+
+        public int PhaseInjectedFrame { get; set; } = -1;
+
         public string Message { get; set; } = string.Empty;
+    }
+
+    private sealed class HoverRequest
+    {
+        public string TargetId { get; set; } = string.Empty;
+
+        public string SurfaceTargetId { get; set; } = string.Empty;
+
+        public int ElementIndex { get; set; }
+
+        public string Kind { get; set; } = string.Empty;
+
+        public string Source { get; set; } = string.Empty;
+
+        public string Label { get; set; } = string.Empty;
+
+        public UiRectSnapshot Rect { get; set; } = new();
+
+        public int Depth { get; set; }
     }
 
     private sealed class RegisteredElementFingerprint
@@ -161,6 +190,13 @@ internal static class RimBridgeUiWorkbench
         public RegisteredElementFingerprint LastRegisteredElement { get; set; }
     }
 
+    private sealed class ActiveInteractionContext
+    {
+        public UiRectSnapshot Rect { get; set; } = new();
+
+        public bool ShouldActivate { get; set; }
+    }
+
     internal sealed class UiPatchControlState
     {
         public bool TrackingEnabled { get; set; }
@@ -168,6 +204,18 @@ internal static class RimBridgeUiWorkbench
         public bool SuppressNested { get; set; }
 
         public bool ShouldActivate { get; set; }
+
+        public bool ShouldHover { get; set; }
+
+        public Event PreviousEvent { get; set; }
+
+        public bool EventOverridden { get; set; }
+
+        public int TransientPointerToken { get; set; }
+
+        public bool? InitialCheckedState { get; set; }
+
+        public bool RegisteredActiveInteraction { get; set; }
     }
 
     private static readonly object Sync = new();
@@ -176,6 +224,8 @@ internal static class RimBridgeUiWorkbench
     private static readonly Queue<int> CaptureOrder = [];
     private static CaptureRequest _pendingCapture;
     private static ClickRequest _pendingClick;
+    private static HoverRequest _hoveredElement;
+    private static ActiveInteractionContext _activeInteraction;
     private static int _nextCaptureId = 1;
     private const int MaxRetainedCaptures = 8;
 
@@ -250,9 +300,75 @@ internal static class RimBridgeUiWorkbench
             };
         }
 
-        request.Completion.Task.GetAwaiter().GetResult();
+        var activated = request.Completion.Task.GetAwaiter().GetResult();
         var after = RimBridgeMainThread.Invoke(RimWorldInput.GetUiState, timeoutMs: 5000);
+        if (!activated)
+        {
+            return new
+            {
+                success = false,
+                command = "click_ui_target",
+                changed = false,
+                message = request.Message,
+                targetId,
+                before = RimWorldInput.DescribeUiState(before),
+                after = RimWorldInput.DescribeUiState(after)
+            };
+        }
+
         return CreateClickResponse(targetId, before, after, request.Message);
+    }
+
+    public static object SetHoverTargetResponse(string targetId)
+    {
+        try
+        {
+            var description = RimBridgeMainThread.Invoke(() => SetHoveredElement(targetId), timeoutMs: 5000);
+            return new
+            {
+                success = true,
+                command = "set_hover_target",
+                message = $"Hover target '{targetId}' is active.",
+                hoverTarget = description
+            };
+        }
+        catch (Exception ex)
+        {
+            return new
+            {
+                success = false,
+                command = "set_hover_target",
+                message = ex.Message
+            };
+        }
+    }
+
+    public static void ClearHoveredElement()
+    {
+        lock (Sync)
+        {
+            _hoveredElement = null;
+        }
+    }
+
+    public static object DescribeHoveredElement()
+    {
+        lock (Sync)
+        {
+            if (_hoveredElement == null)
+                return null;
+
+            return new
+            {
+                kind = "ui_element",
+                targetId = _hoveredElement.TargetId,
+                surfaceTargetId = _hoveredElement.SurfaceTargetId,
+                elementIndex = _hoveredElement.ElementIndex,
+                elementKind = _hoveredElement.Kind,
+                source = _hoveredElement.Source,
+                label = string.IsNullOrWhiteSpace(_hoveredElement.Label) ? null : _hoveredElement.Label
+            };
+        }
     }
 
     public static bool TryResolveClipArea(string targetId, out RimWorldTargeting.ScreenTargetClipArea clipArea, out string error)
@@ -296,6 +412,7 @@ internal static class RimBridgeUiWorkbench
     public static void AdvanceFrame(int frameCount)
     {
         CaptureRequest completedCapture = null;
+        ClickRequest completedClick = null;
 
         lock (Sync)
         {
@@ -310,9 +427,28 @@ internal static class RimBridgeUiWorkbench
                 RetainCapture(completedCapture.Snapshot);
                 _pendingCapture = null;
             }
+
+            if (_pendingClick != null
+                && !_pendingClick.Activated
+                && _pendingClick.PhaseInjectedFrame >= 0
+                && frameCount > _pendingClick.PhaseInjectedFrame)
+            {
+                if (_pendingClick.Phase == ClickPhase.MouseDown)
+                {
+                    _pendingClick.Phase = ClickPhase.MouseUp;
+                    _pendingClick.PhaseInjectedFrame = -1;
+                }
+                else
+                {
+                    completedClick = _pendingClick;
+                    completedClick.Message = $"UI target '{_pendingClick.TargetId}' did not react to a synthetic click through the live RimWorld widget path.";
+                    _pendingClick = null;
+                }
+            }
         }
 
         completedCapture?.Completion.TrySetResult(completedCapture.Snapshot);
+        completedClick?.Completion.TrySetResult(false);
     }
 
     public static void BeginSurface(Window window)
@@ -331,7 +467,8 @@ internal static class RimBridgeUiWorkbench
         {
             var capture = _pendingCapture;
             var click = _pendingClick;
-            if (capture == null && click == null)
+            var hover = _hoveredElement;
+            if (capture == null && click == null && hover == null)
             {
                 SurfaceStack.Push(null);
                 return;
@@ -340,7 +477,8 @@ internal static class RimBridgeUiWorkbench
             var descriptor = DescribeSurface(window);
             var shouldCapture = capture != null && SurfaceMatches(capture.SurfaceTargetId, descriptor.SurfaceTargetId);
             var shouldTrackForClick = click != null && string.Equals(click.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
-            if (!shouldCapture && !shouldTrackForClick)
+            var shouldTrackForHover = hover != null && string.Equals(hover.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
+            if (!shouldCapture && !shouldTrackForClick && !shouldTrackForHover)
             {
                 SurfaceStack.Push(null);
                 return;
@@ -422,7 +560,8 @@ internal static class RimBridgeUiWorkbench
             {
                 TrackingEnabled = true,
                 SuppressNested = true,
-                ShouldActivate = ShouldActivateCurrentElement(surface, kind, source, rect, label, actionable)
+                ShouldActivate = ShouldActivateCurrentElement(surface, kind, source, rect, label, actionable, disabled),
+                ShouldHover = ShouldHoverCurrentElement(surface, kind, source, rect, label)
             };
         }
     }
@@ -434,6 +573,8 @@ internal static class RimBridgeUiWorkbench
 
         lock (Sync)
         {
+            RestorePatchedEvent(state);
+
             var surface = GetCurrentSurface();
             if (surface == null || surface.CompoundDepth <= 0)
                 return;
@@ -491,9 +632,56 @@ internal static class RimBridgeUiWorkbench
         }
     }
 
-    public static void TryActivateCurrentControl(UiPatchControlState state, string message)
+    public static void PrepareControlInteraction(UiPatchControlState state, Rect rect)
     {
-        if (state == null || !state.ShouldActivate)
+        if (state == null || (!state.ShouldActivate && !state.ShouldHover))
+            return;
+
+        lock (Sync)
+        {
+            if (state.EventOverridden)
+                return;
+            if (state.ShouldActivate && _pendingClick != null && _pendingClick.PhaseInjectedFrame == Time.frameCount)
+                return;
+
+            var pointerInverted = UI.GUIToScreenPoint(rect.center);
+            var currentEvent = Event.current;
+            var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent);
+            injectedEvent.mousePosition = rect.center;
+            var leftMouseButton = false;
+            var leftMouseButtonDown = false;
+            var leftMouseButtonUp = false;
+
+            if (state.ShouldActivate && _pendingClick != null)
+            {
+                injectedEvent.type = _pendingClick.Phase == ClickPhase.MouseDown ? EventType.MouseDown : EventType.MouseUp;
+                injectedEvent.button = 0;
+                injectedEvent.clickCount = 1;
+                _pendingClick.PhaseInjectedFrame = Time.frameCount;
+                leftMouseButton = _pendingClick.Phase == ClickPhase.MouseDown;
+                leftMouseButtonDown = _pendingClick.Phase == ClickPhase.MouseDown;
+                leftMouseButtonUp = _pendingClick.Phase == ClickPhase.MouseUp;
+            }
+
+            state.PreviousEvent = currentEvent;
+            state.EventOverridden = true;
+            state.TransientPointerToken = RimBridgeVirtualPointer.PushTransientOverride(pointerInverted, leftMouseButton, leftMouseButtonDown, leftMouseButtonUp);
+            state.RegisteredActiveInteraction = true;
+            _activeInteraction = new ActiveInteractionContext
+            {
+                Rect = ToSnapshot(rect),
+                ShouldActivate = state.ShouldActivate
+            };
+            Event.current = injectedEvent;
+
+            if (state.ShouldHover)
+                RimBridgeVirtualPointer.UpdatePersistentPointerPosition(pointerInverted);
+        }
+    }
+
+    public static void ObserveControlResult(UiPatchControlState state, bool activated, string message)
+    {
+        if (state == null || !state.ShouldActivate || !activated)
             return;
 
         ClickRequest completedClick = null;
@@ -510,6 +698,23 @@ internal static class RimBridgeUiWorkbench
         }
 
         completedClick?.Completion.TrySetResult(true);
+    }
+
+    public static void OverrideDraggableResultIfPending(Rect rect, ref Widgets.DraggableResult result)
+    {
+        lock (Sync)
+        {
+            if (_pendingClick == null || _pendingClick.Activated)
+                return;
+            if (_activeInteraction == null || !_activeInteraction.ShouldActivate)
+                return;
+            if (_pendingClick.Phase != ClickPhase.MouseUp || _pendingClick.PhaseInjectedFrame != Time.frameCount)
+                return;
+            if (!RectApproximatelyEquals(_activeInteraction.Rect, rect, 1f))
+                return;
+
+            result = Widgets.DraggableResult.Pressed;
+        }
     }
 
     private static string RegisterElement(
@@ -592,9 +797,9 @@ internal static class RimBridgeUiWorkbench
         return targetId;
     }
 
-    private static bool ShouldActivateCurrentElement(LiveSurfaceState surface, string kind, string source, Rect rect, string label, bool actionable)
+    private static bool ShouldActivateCurrentElement(LiveSurfaceState surface, string kind, string source, Rect rect, string label, bool actionable, bool? disabled)
     {
-        if (!actionable || _pendingClick == null || _pendingClick.Activated)
+        if (!actionable || disabled == true || _pendingClick == null || _pendingClick.Activated)
             return false;
         if (!string.Equals(_pendingClick.SurfaceTargetId, surface.SurfaceTargetId, StringComparison.Ordinal))
             return false;
@@ -613,6 +818,29 @@ internal static class RimBridgeUiWorkbench
 
         return _pendingClick.Depth == surface.ContainerTargetIds.Count
             && RectApproximatelyEquals(_pendingClick.Rect, rect, 1f);
+    }
+
+    private static bool ShouldHoverCurrentElement(LiveSurfaceState surface, string kind, string source, Rect rect, string label)
+    {
+        if (_hoveredElement == null)
+            return false;
+        if (!string.Equals(_hoveredElement.SurfaceTargetId, surface.SurfaceTargetId, StringComparison.Ordinal))
+            return false;
+        if (!string.Equals(_hoveredElement.Kind, kind, StringComparison.Ordinal))
+            return false;
+        if (!string.Equals(_hoveredElement.Source, source, StringComparison.Ordinal))
+            return false;
+
+        var expectedLabel = NormalizeText(_hoveredElement.Label);
+        var actualLabel = NormalizeText(label);
+        if (!string.Equals(expectedLabel, actualLabel, StringComparison.Ordinal))
+            return false;
+
+        if (_hoveredElement.ElementIndex == surface.ElementIndex)
+            return true;
+
+        return _hoveredElement.Depth == surface.ContainerTargetIds.Count
+            && RectApproximatelyEquals(_hoveredElement.Rect, rect, 1f);
     }
 
     private static CaptureRequest QueueCapture(string surfaceId)
@@ -666,6 +894,8 @@ internal static class RimBridgeUiWorkbench
                 throw new InvalidOperationException($"UI layout target '{targetId}' is no longer available. Capture a fresh layout snapshot.");
             if (element == null || !element.Actionable)
                 throw new InvalidOperationException($"UI layout target '{targetId}' is not actionable.");
+            if (element.Disabled == true)
+                throw new InvalidOperationException($"UI layout target '{targetId}' is currently disabled and cannot be clicked.");
 
             var request = new ClickRequest
             {
@@ -681,6 +911,47 @@ internal static class RimBridgeUiWorkbench
             };
             _pendingClick = request;
             return request;
+        }
+    }
+
+    private static object SetHoveredElement(string targetId)
+    {
+        lock (Sync)
+        {
+            if (!UiLayoutTargetIds.TryParse(targetId, out var target) || target.Kind != UiLayoutTargetKind.Element)
+                throw new InvalidOperationException($"Target id '{targetId}' is not a UI element target id returned by rimworld/get_ui_layout.");
+
+            if (!TryResolveTarget(target, out var surface, out var element))
+                throw new InvalidOperationException($"UI layout target '{targetId}' is no longer available. Capture a fresh layout snapshot.");
+            if (element == null || !element.Actionable)
+                throw new InvalidOperationException($"UI layout target '{targetId}' is not hoverable through the interactive widget seam. Use an actionable UI element target.");
+
+            _hoveredElement = new HoverRequest
+            {
+                TargetId = targetId,
+                SurfaceTargetId = surface.SurfaceTargetId,
+                ElementIndex = element.ElementIndex,
+                Kind = element.Kind,
+                Source = element.Source,
+                Label = element.Label ?? string.Empty,
+                Rect = element.Rect,
+                Depth = element.Depth
+            };
+
+            var center = new Vector2(element.Rect.X + element.Rect.Width / 2f, element.Rect.Y + element.Rect.Height / 2f);
+            RimBridgeVirtualPointer.SetPersistentPointer(
+                kind: "ui_element",
+                targetId,
+                label: string.IsNullOrWhiteSpace(element.Label) ? element.Kind : element.Label,
+                screenPositionInverted: center,
+                details: new
+                {
+                    surfaceTargetId = surface.SurfaceTargetId,
+                    elementKind = element.Kind,
+                    source = element.Source
+                });
+
+            return DescribeHoveredElement();
         }
     }
 
@@ -740,6 +1011,24 @@ internal static class RimBridgeUiWorkbench
     private static LiveSurfaceState GetCurrentSurface()
     {
         return SurfaceStack.Count == 0 ? null : SurfaceStack.Peek();
+    }
+
+    private static void RestorePatchedEvent(UiPatchControlState state)
+    {
+        if (state == null || !state.EventOverridden)
+            return;
+
+        if (state.TransientPointerToken != 0)
+            RimBridgeVirtualPointer.PopTransientOverride(state.TransientPointerToken);
+
+        if (state.RegisteredActiveInteraction)
+            _activeInteraction = null;
+
+        Event.current = state.PreviousEvent;
+        state.EventOverridden = false;
+        state.TransientPointerToken = 0;
+        state.PreviousEvent = null;
+        state.RegisteredActiveInteraction = false;
     }
 
     private static bool SurfaceMatches(string requestedSurfaceId, string actualSurfaceId)
@@ -1156,19 +1445,16 @@ internal static class Gui_TextField_Limited_UiWorkbench_Patch
 [HarmonyPatch(typeof(GUI), nameof(GUI.Button), new[] { typeof(Rect), typeof(string) })]
 internal static class Gui_Button_String_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect position, string text, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect position, string text, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "gui.button", position, text, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{text}' on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string text, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "button" : text)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1176,19 +1462,16 @@ internal static class Gui_Button_String_UiWorkbench_Patch
 [HarmonyPatch(typeof(GUI), nameof(GUI.Button), new[] { typeof(Rect), typeof(string), typeof(GUIStyle) })]
 internal static class Gui_Button_StringStyle_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect position, string text, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect position, string text, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "gui.button", position, text, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{text}' on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string text, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "button" : text)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1196,20 +1479,18 @@ internal static class Gui_Button_StringStyle_UiWorkbench_Patch
 [HarmonyPatch(typeof(GUI), nameof(GUI.Button), new[] { typeof(Rect), typeof(GUIContent) })]
 internal static class Gui_Button_Content_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect position, GUIContent content, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect position, GUIContent content, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var label = content?.text;
         __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "gui.button", position, label, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(GUIContent content, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        var label = content?.text;
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1217,20 +1498,18 @@ internal static class Gui_Button_Content_UiWorkbench_Patch
 [HarmonyPatch(typeof(GUI), nameof(GUI.Button), new[] { typeof(Rect), typeof(GUIContent), typeof(GUIStyle) })]
 internal static class Gui_Button_ContentStyle_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect position, GUIContent content, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect position, GUIContent content, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var label = content?.text;
         __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "gui.button", position, label, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(GUIContent content, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        var label = content?.text;
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1238,19 +1517,20 @@ internal static class Gui_Button_ContentStyle_UiWorkbench_Patch
 [HarmonyPatch(typeof(GUI), nameof(GUI.Toggle), new[] { typeof(Rect), typeof(bool), typeof(string) })]
 internal static class Gui_Toggle_String_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect position, bool value, string text, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect position, bool value, string text, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl("checkbox", "gui.toggle", position, text, checkedState: value);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = !value;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{text}' on the current surface.");
-        return false;
+        __state.InitialCheckedState = value;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string text, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(
+            __state,
+            __state.InitialCheckedState.HasValue && __result != __state.InitialCheckedState.Value,
+            $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "checkbox" : text)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1258,19 +1538,20 @@ internal static class Gui_Toggle_String_UiWorkbench_Patch
 [HarmonyPatch(typeof(GUI), nameof(GUI.Toggle), new[] { typeof(Rect), typeof(bool), typeof(string), typeof(GUIStyle) })]
 internal static class Gui_Toggle_StringStyle_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect position, bool value, string text, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect position, bool value, string text, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl("checkbox", "gui.toggle", position, text, checkedState: value);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = !value;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{text}' on the current surface.");
-        return false;
+        __state.InitialCheckedState = value;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string text, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(
+            __state,
+            __state.InitialCheckedState.HasValue && __result != __state.InitialCheckedState.Value,
+            $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "checkbox" : text)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1278,20 +1559,22 @@ internal static class Gui_Toggle_StringStyle_UiWorkbench_Patch
 [HarmonyPatch(typeof(GUI), nameof(GUI.Toggle), new[] { typeof(Rect), typeof(bool), typeof(GUIContent) })]
 internal static class Gui_Toggle_Content_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect position, bool value, GUIContent content, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect position, bool value, GUIContent content, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var label = content?.text;
         __state = RimBridgeUiWorkbench.BeginCompoundControl("checkbox", "gui.toggle", position, label, checkedState: value);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = !value;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        __state.InitialCheckedState = value;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(GUIContent content, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        var label = content?.text;
+        RimBridgeUiWorkbench.ObserveControlResult(
+            __state,
+            __state.InitialCheckedState.HasValue && __result != __state.InitialCheckedState.Value,
+            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1299,20 +1582,22 @@ internal static class Gui_Toggle_Content_UiWorkbench_Patch
 [HarmonyPatch(typeof(GUI), nameof(GUI.Toggle), new[] { typeof(Rect), typeof(bool), typeof(GUIContent), typeof(GUIStyle) })]
 internal static class Gui_Toggle_ContentStyle_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect position, bool value, GUIContent content, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect position, bool value, GUIContent content, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var label = content?.text;
         __state = RimBridgeUiWorkbench.BeginCompoundControl("checkbox", "gui.toggle", position, label, checkedState: value);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = !value;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        __state.InitialCheckedState = value;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(GUIContent content, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        var label = content?.text;
+        RimBridgeUiWorkbench.ObserveControlResult(
+            __state,
+            __state.InitialCheckedState.HasValue && __result != __state.InitialCheckedState.Value,
+            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1325,19 +1610,20 @@ internal static class Widgets_CheckboxLabeled_UiWorkbench_Patch
         return AccessTools.Method(typeof(Widgets), nameof(Widgets.CheckboxLabeled), [typeof(Rect), typeof(string), typeof(bool).MakeByRefType(), typeof(bool), typeof(Texture2D), typeof(Texture2D), typeof(bool), typeof(bool)]);
     }
 
-    public static bool Prefix(Rect rect, string label, ref bool checkOn, bool disabled, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect rect, string label, ref bool checkOn, bool disabled, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl("checkbox", "widgets.checkbox_labeled", rect, label, checkedState: checkOn, disabled: disabled);
-        if (!__state.ShouldActivate)
-            return true;
-
-        checkOn = !checkOn;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        __state.InitialCheckedState = checkOn;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string label, bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(
+            __state,
+            __state.InitialCheckedState.HasValue && checkOn != __state.InitialCheckedState.Value,
+            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1350,7 +1636,8 @@ internal static class Widgets_Checkbox_Vector_UiWorkbench_Patch
         return AccessTools.Method(typeof(Widgets), nameof(Widgets.Checkbox), [typeof(Vector2), typeof(bool).MakeByRefType(), typeof(float), typeof(bool), typeof(bool), typeof(Texture2D), typeof(Texture2D)]);
     }
 
-    public static bool Prefix(Vector2 topLeft, ref bool checkOn, float size, bool disabled, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Vector2 topLeft, ref bool checkOn, float size, bool disabled, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl(
             "checkbox",
@@ -1358,16 +1645,16 @@ internal static class Widgets_Checkbox_Vector_UiWorkbench_Patch
             new Rect(topLeft.x, topLeft.y, size, size),
             checkedState: checkOn,
             disabled: disabled);
-        if (!__state.ShouldActivate)
-            return true;
-
-        checkOn = !checkOn;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, "Activated a checkbox UI target on the current surface.");
-        return false;
+        __state.InitialCheckedState = checkOn;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, new Rect(topLeft.x, topLeft.y, size, size));
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(
+            __state,
+            __state.InitialCheckedState.HasValue && checkOn != __state.InitialCheckedState.Value,
+            "Activated a checkbox UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1380,7 +1667,8 @@ internal static class Widgets_Checkbox_Floats_UiWorkbench_Patch
         return AccessTools.Method(typeof(Widgets), nameof(Widgets.Checkbox), [typeof(float), typeof(float), typeof(bool).MakeByRefType(), typeof(float), typeof(bool), typeof(bool), typeof(Texture2D), typeof(Texture2D)]);
     }
 
-    public static bool Prefix(float x, float y, ref bool checkOn, float size, bool disabled, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(float x, float y, ref bool checkOn, float size, bool disabled, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl(
             "checkbox",
@@ -1388,16 +1676,16 @@ internal static class Widgets_Checkbox_Floats_UiWorkbench_Patch
             new Rect(x, y, size, size),
             checkedState: checkOn,
             disabled: disabled);
-        if (!__state.ShouldActivate)
-            return true;
-
-        checkOn = !checkOn;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, "Activated a checkbox UI target on the current surface.");
-        return false;
+        __state.InitialCheckedState = checkOn;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, new Rect(x, y, size, size));
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(
+            __state,
+            __state.InitialCheckedState.HasValue && checkOn != __state.InitialCheckedState.Value,
+            "Activated a checkbox UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1405,19 +1693,16 @@ internal static class Widgets_Checkbox_Floats_UiWorkbench_Patch
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.RadioButtonLabeled), new[] { typeof(Rect), typeof(string), typeof(bool), typeof(bool) })]
 internal static class Widgets_RadioButtonLabeled_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect rect, string labelText, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect rect, string labelText, bool disabled, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        __state = RimBridgeUiWorkbench.BeginCompoundControl("radio_button", "widgets.radio_button_labeled", rect, labelText, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{labelText}' on the current surface.");
-        return false;
+        __state = RimBridgeUiWorkbench.BeginCompoundControl("radio_button", "widgets.radio_button_labeled", rect, labelText, actionable: true, disabled: disabled);
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string labelText, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(labelText) ? "radio button" : labelText)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1425,39 +1710,43 @@ internal static class Widgets_RadioButtonLabeled_UiWorkbench_Patch
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.ButtonInvisible), new[] { typeof(Rect), typeof(bool) })]
 internal static class Widgets_ButtonInvisible_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect butRect, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect butRect, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "widgets.button_invisible", butRect, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, "Activated an invisible button UI target on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, butRect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, "Activated an invisible button UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
+    }
+}
+
+[HarmonyPatch(typeof(Widgets), nameof(Widgets.ButtonInvisibleDraggable), new[] { typeof(Rect), typeof(bool) })]
+internal static class Widgets_ButtonInvisibleDraggable_UiWorkbench_Patch
+{
+    [HarmonyPriority(Priority.First)]
+    public static void Postfix(Rect butRect, ref Widgets.DraggableResult __result)
+    {
+        RimBridgeUiWorkbench.OverrideDraggableResultIfPending(butRect, ref __result);
     }
 }
 
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.ButtonText), new[] { typeof(Rect), typeof(string), typeof(bool), typeof(bool), typeof(bool), typeof(Nullable<TextAnchor>) })]
 internal static class Widgets_ButtonText_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect rect, string label, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect rect, string label, bool active, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "widgets.button_text", rect, label, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "widgets.button_text", rect, label, actionable: true, disabled: !active);
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string label, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1465,19 +1754,16 @@ internal static class Widgets_ButtonText_UiWorkbench_Patch
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.ButtonText), new[] { typeof(Rect), typeof(string), typeof(bool), typeof(bool), typeof(Color), typeof(bool), typeof(Nullable<TextAnchor>) })]
 internal static class Widgets_ButtonTextColored_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect rect, string label, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect rect, string label, bool active, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "widgets.button_text", rect, label, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "widgets.button_text", rect, label, actionable: true, disabled: !active);
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string label, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1485,19 +1771,16 @@ internal static class Widgets_ButtonTextColored_UiWorkbench_Patch
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.ButtonImage), new[] { typeof(Rect), typeof(Texture2D), typeof(bool), typeof(string) })]
 internal static class Widgets_ButtonImage_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect butRect, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect butRect, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl("icon_button", "widgets.button_image", butRect, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, "Activated an icon button UI target on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, butRect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, "Activated an icon button UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1505,19 +1788,16 @@ internal static class Widgets_ButtonImage_UiWorkbench_Patch
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.ButtonImage), new[] { typeof(Rect), typeof(Texture2D), typeof(Color), typeof(bool), typeof(string) })]
 internal static class Widgets_ButtonImageColored_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect butRect, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect butRect, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl("icon_button", "widgets.button_image", butRect, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, "Activated an icon button UI target on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, butRect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, "Activated an icon button UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1525,19 +1805,16 @@ internal static class Widgets_ButtonImageColored_UiWorkbench_Patch
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.ButtonImage), new[] { typeof(Rect), typeof(Texture2D), typeof(Color), typeof(Color), typeof(bool), typeof(string) })]
 internal static class Widgets_ButtonImageHoverColored_UiWorkbench_Patch
 {
-    public static bool Prefix(Rect butRect, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Rect butRect, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         __state = RimBridgeUiWorkbench.BeginCompoundControl("icon_button", "widgets.button_image", butRect, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, "Activated an icon button UI target on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, butRect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, "Activated an icon button UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1570,20 +1847,21 @@ internal static class ListingStandard_CheckboxLabeled_Basic_UiWorkbench_Patch
         return AccessTools.Method(typeof(Listing_Standard), nameof(Listing_Standard.CheckboxLabeled), [typeof(string), typeof(bool).MakeByRefType(), typeof(float)]);
     }
 
-    public static bool Prefix(Listing_Standard __instance, string label, ref bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Listing_Standard __instance, string label, ref bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         __state = RimBridgeUiWorkbench.BeginCompoundControl("checkbox", "listing_standard.checkbox_labeled", rect, label, checkedState: checkOn);
-        if (!__state.ShouldActivate)
-            return true;
-
-        checkOn = !checkOn;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        __state.InitialCheckedState = checkOn;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string label, bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(
+            __state,
+            __state.InitialCheckedState.HasValue && checkOn != __state.InitialCheckedState.Value,
+            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1596,20 +1874,21 @@ internal static class ListingStandard_CheckboxLabeled_Tooltip_UiWorkbench_Patch
         return AccessTools.Method(typeof(Listing_Standard), nameof(Listing_Standard.CheckboxLabeled), [typeof(string), typeof(bool).MakeByRefType(), typeof(string), typeof(float), typeof(float)]);
     }
 
-    public static bool Prefix(Listing_Standard __instance, string label, ref bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Listing_Standard __instance, string label, ref bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         __state = RimBridgeUiWorkbench.BeginCompoundControl("checkbox", "listing_standard.checkbox_labeled", rect, label, checkedState: checkOn);
-        if (!__state.ShouldActivate)
-            return true;
-
-        checkOn = !checkOn;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        __state.InitialCheckedState = checkOn;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string label, bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(
+            __state,
+            __state.InitialCheckedState.HasValue && checkOn != __state.InitialCheckedState.Value,
+            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1617,20 +1896,17 @@ internal static class ListingStandard_CheckboxLabeled_Tooltip_UiWorkbench_Patch
 [HarmonyPatch(typeof(Listing_Standard), nameof(Listing_Standard.ButtonText), new[] { typeof(string), typeof(string), typeof(float) })]
 internal static class ListingStandard_ButtonText_UiWorkbench_Patch
 {
-    public static bool Prefix(Listing_Standard __instance, string label, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Listing_Standard __instance, string label, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "listing_standard.button_text", rect, label, actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{label}' on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string label, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -1638,20 +1914,17 @@ internal static class ListingStandard_ButtonText_UiWorkbench_Patch
 [HarmonyPatch(typeof(Listing_Standard), nameof(Listing_Standard.ButtonTextLabeled), new[] { typeof(string), typeof(string), typeof(TextAnchor), typeof(string), typeof(string) })]
 internal static class ListingStandard_ButtonTextLabeled_UiWorkbench_Patch
 {
-    public static bool Prefix(Listing_Standard __instance, string label, string buttonLabel, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix(Listing_Standard __instance, string label, string buttonLabel, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "listing_standard.button_text_labeled", rect, $"{label}: {buttonLabel}", actionable: true);
-        if (!__state.ShouldActivate)
-            return true;
-
-        __result = true;
-        RimBridgeUiWorkbench.TryActivateCurrentControl(__state, $"Activated UI target '{buttonLabel}' on the current surface.");
-        return false;
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string buttonLabel, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(buttonLabel) ? "button" : buttonLabel)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
