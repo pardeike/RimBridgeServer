@@ -1055,3 +1055,60 @@ Notes:
 Next:
 
 - Step A29: decide whether the next priority is a machine-readable Lua authoring reference or moving more of the prison setup and planning logic into Lua itself
+
+## 2026-03-17 - Step A29 - Machine-Readable Lua Authoring Reference
+
+Status:
+
+- completed
+
+Completed:
+
+- added [`CapabilityLuaReferenceBuilder.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/CapabilityLuaReferenceBuilder.cs) so `rimbridge/run_lua` now has a dedicated machine-readable authoring reference instead of forcing fresh agents to infer the supported subset from sparse tool metadata or compiler failures
+- exposed that document through a new [`rimbridge/get_lua_reference`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) capability routed by [`ScriptingCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ScriptingCapabilityModule.cs) and marked it `Immediate` in [`BuiltInCapabilityModuleProvider.cs`](/Users/ap/Projects/RimBridgeServer/Source/BuiltInCapabilityModuleProvider.cs)
+- documented the actual Lua v1 subset implemented by [`LuaScriptCompiler.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeServer.Core/LuaScriptCompiler.cs), including supported statements and expressions, scope rules, the `rb.*` host API, compile-error fields and codes, unsupported constructs, the shared runtime model, and copyable examples
+- updated [`RimBridgeTools.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) so `rimbridge/run_lua` and `rimbridge/compile_lua` explicitly point discoverers at the new reference tool
+- added focused coverage in [`CapabilityLuaReferenceBuilderTests.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.Core.Tests/CapabilityLuaReferenceBuilderTests.cs) for tool metadata, host API entries, unsupported-surface coverage, compile errors, examples, and the shared-runtime linkage back to `rimbridge/get_script_reference`
+- updated [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md) and [`lua-frontend-design.md`](/Users/ap/Projects/RimBridgeServer/docs/lua-frontend-design.md) so the public docs mention the new discoverability seam directly
+
+Verification:
+
+- `dotnet test Tests/RimBridgeServer.Core.Tests/RimBridgeServer.Core.Tests.csproj --filter "CapabilityLuaReferenceBuilderTests|CapabilityScriptReferenceBuilderTests|LuaScriptCompilerTests"`
+- `dotnet build RimBridgeServer.sln`
+
+Notes:
+
+- this deliberately complements, rather than replaces, `rimbridge/get_script_reference`: the Lua reference describes authoring the Lua front-end, while the JSON reference still documents the shared lowered runtime model and condition system in full
+- the next obvious path after this is the one we intentionally did not take first: move more bootstrap and planning logic out of the harness and into Lua-backed scripts
+
+Next:
+
+- Step A30: move more scenario bootstrap and planning logic into Lua where that improves test-script autonomy without making the scripts opaque or brittle
+
+## 2026-03-17 - Step A30 - Generic Cell Search and Flood-Fill Tools
+
+Status:
+
+- completed
+
+Completed:
+
+- added generic nearby-cell search to the runtime through [`rimworld/find_random_cell_near`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs), implemented in [`RimWorldArchitect.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldArchitect.cs) as a thin wrapper over RimWorld's own `RCellFinder.TryFindRandomCellNearWith`
+- added generic contiguous-area analysis through [`rimworld/flood_fill_cells`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs), implemented in [`RimWorldArchitect.cs`](/Users/ap/Projects/RimBridgeServer/Source/RimWorldArchitect.cs) as a wrapper over `Verse.FloodFiller.FloodFill`
+- kept both tools generic by sharing one footprint-criteria surface instead of baking in scenario-specific concepts: footprint width/height, anchor mode, walkable/standable/fog/impassable checks, optional pawn reachability, and optional `CanDesignateCell` validation through an Architect designator id
+- exposed both tools through [`ArchitectCapabilityModule.cs`](/Users/ap/Projects/RimBridgeServer/Source/ArchitectCapabilityModule.cs) and documented them in [`README.md`](/Users/ap/Projects/RimBridgeServer/README.md)
+- updated the live-smoke helpers in [`SmokeScenarioCatalog.cs`](/Users/ap/Projects/RimBridgeServer/Tests/RimBridgeServer.LiveSmoke/SmokeScenarioCatalog.cs) to use `rimworld/find_random_cell_near` as a fast first pass before falling back to the older brute-force probes
+- added a live flood-fill verification inside the script-driven prison scenario so the new contiguous-area tool is exercised against a real enclosed `3x3` prison interior instead of being left as compile-only surface area
+
+Verification:
+
+- `dotnet build RimBridgeServer.sln`
+
+Notes:
+
+- this keeps the product/runtime side generic while still speeding up the current smoke scenarios that were previously probing many candidate cells with repeated dry runs and cell-info reads
+- the flood-fill wrapper is intentionally cell-based and criterion-driven rather than scenario-shaped; callers can use it for "enough space" checks, contiguous placement regions, or enclosed-area assertions
+
+Next:
+
+- Decide whether the next scripting/runtime slice should consume these generic map-analysis tools inside Lua examples and smoke helpers, or shift to a different backlog item

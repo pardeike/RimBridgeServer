@@ -72,6 +72,7 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimbridge/wait_for_game_loaded`** - Wait until RimWorld has finished loading a playable game
 - **`rimbridge/wait_for_long_event_idle`** - Wait until RimWorld reports no long event in progress
 - **`rimbridge/get_script_reference`** - Get a machine-readable authoring reference for `rimbridge/run_script`
+- **`rimbridge/get_lua_reference`** - Get a machine-readable authoring reference for `rimbridge/run_lua`
 - **`rimbridge/run_script`** - Execute a JSON script containing an ordered list of capability calls and return a step-by-step report
 - **`rimbridge/run_lua`** - Compile and execute a narrow Lua scripting subset through the shared script runner
 - **`rimbridge/compile_lua`** - Compile supported Lua into the lowered JSON script model without executing capability calls
@@ -99,6 +100,8 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/delete_area`** - Delete a mutable area such as a custom allowed area
 - **`rimworld/delete_zone`** - Delete an existing zone by id
 - **`rimworld/get_cell_info`** - Inspect one map cell, including blueprints, frames, solid things, designations, zones, and areas
+- **`rimworld/find_random_cell_near`** - Use RimWorld's generic nearby-cell search to find a cell or footprint that satisfies reusable map criteria
+- **`rimworld/flood_fill_cells`** - Use RimWorld's generic flood-fill algorithm to measure contiguous matching space from one root cell
 - **`rimworld/get_ui_state`** - Inspect the current RimWorld window stack and UI/input state
 - **`rimworld/press_accept`** - Send semantic accept input to the active RimWorld window stack
 - **`rimworld/press_cancel`** - Send semantic cancel input to the active RimWorld window stack
@@ -130,8 +133,6 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/take_screenshot`** - Save an in-game screenshot and return the file path plus optional screen-target metadata
 
 ### Context-menu debugging
-- **`rimworld/get_achtung_state`** - Report Achtung debug settings relevant to menu repro cases
-- **`rimworld/set_achtung_show_drafted_orders_when_undrafted`** - Toggle the compatibility mode that re-enables the old merged-menu behavior
 - **`rimworld/open_context_menu`** - Open a debug context menu at a pawn or cell
 - **`rimworld/get_context_menu_options`** - Return the currently opened debug menu options
 - **`rimworld/execute_context_menu_option`** - Execute one menu option by index or label
@@ -141,7 +142,7 @@ Your external program can send these commands to RimBridgeServer:
 
 `rimworld/go_to_main_menu` is the matching lifecycle reset seam. It is idempotent: if RimWorld is already at the entry scene with no loaded game, the call succeeds with a no-op status. Otherwise it queues a return to the main menu so later script steps can start from a stable known state.
 
-`rimworld/open_context_menu` supports `mode: auto`, `mode: achtung`, and `mode: vanilla`. When Achtung is loaded, `auto` prefers Achtung's merged multi-pawn menu via reflection so external tools can reproduce issues against the same action builder the player sees in-game.
+`rimworld/open_context_menu` is vanilla-only. `mode: vanilla` is the intended value, and the older `mode: auto` alias is still accepted for backward compatibility but resolves to the same vanilla behavior.
 
 ### Debug menu mapping
 
@@ -160,6 +161,8 @@ Pawn-target debug actions are now supported through the same surface. Discovery 
 The designator payload now also reports drag and targeting metadata from RimWorld itself, including `applicationKind`, `supportsRectangleApplication`, `dragDrawMeasurements`, `drawStyleCategoryDefName`, and `zoneTypeName` where applicable. That makes dropdown-heavy floor tools, zone tools, and area tools discoverable without guessing from UI text.
 
 `rimworld/set_god_mode` and `rimworld/apply_architect_designator` make the important dev workflow deterministic. With god mode disabled, build designators create blueprints; with god mode enabled, the same designator can place the finished structure directly. `rimworld/list_zones`, `rimworld/list_areas`, and `rimworld/get_cell_info` exist specifically so tests can verify zone, area, and structure outcomes without OCR or pixel heuristics.
+
+For generic map planning, the bridge now also exposes RimWorld's own search primitives instead of forcing callers to brute-force probe cells manually. `rimworld/find_random_cell_near` wraps `RCellFinder.TryFindRandomCellNearWith`, while `rimworld/flood_fill_cells` wraps `Verse.FloodFiller.FloodFill`. Both tools share the same footprint criteria surface, so the same request can ask for a single walkable cell, a centered `3x3` open area, or a placement-compatible footprint validated against an Architect designator.
 
 The stateful parts of RimWorld's Zone menu now also have explicit bridge controls instead of hidden UI context. `rimworld/create_allowed_area` and `rimworld/select_allowed_area` control the allowed-area target used by `Designator_AreaAllowedExpand`, while `rimworld/set_zone_target` pins a zone-add designator to an existing zone so later placement expands that specific zone instead of creating a new one. `rimworld/clear_area`, `rimworld/delete_area`, and `rimworld/delete_zone` provide the corresponding cleanup seam for test fixture teardown.
 
@@ -299,6 +302,8 @@ Those global limits complement the existing local bounds on `while.maxIterations
 ### Lua front-end
 
 `rimbridge/run_lua` now sits on top of that same runner instead of introducing a second execution path. It compiles a narrow Lua subset into the shared JSON script model, then executes the lowered script through the normal capability registry. The outer result shape matches `rimbridge/run_script`: `success`, `message`, `error`, `output`, `result`, and the full `script` report.
+
+Fresh clients do not need to infer the Lua subset from this README alone. Call `rimbridge/get_lua_reference` over GABS to retrieve a machine-readable reference covering the supported Lua subset, the `rb.*` host API, compile-error codes, inherited runtime model, and copyable examples.
 
 Use `rimbridge/compile_lua` when you want to inspect the lowered JSON without executing anything. That is the debugging seam for Lua lowering problems and the easiest way to confirm that Lua remains a front-end over the existing runner rather than a separate runtime.
 
@@ -461,15 +466,14 @@ The reference root also exposes step metadata such as `operationId`, `success`, 
 }
 ```
 
-### Example workflow for Achtung Issue #95
+### Example workflow for a context-menu repro
 
 1. Start or load a prepared colony.
 2. Use `rimworld/list_colonists` to find the colonists involved in the repro.
 3. Use `rimworld/select_pawn` and `rimworld/frame_pawns` to put the scene on screen.
-4. If you need a controlled before/after comparison, use `rimworld/set_achtung_show_drafted_orders_when_undrafted` to switch between the legacy and fixed menu behavior without changing the save.
-5. Use `rimworld/open_context_menu` with `mode: achtung` on the target pawn.
-6. Inspect the returned options or call `rimworld/take_screenshot` for visual proof.
-7. Use `rimworld/save_game` to preserve the repro state for later development cycles.
+4. Use `rimworld/open_context_menu` with `mode: vanilla` on the target pawn or cell.
+5. Inspect the returned options or call `rimworld/take_screenshot` for visual proof.
+6. Use `rimworld/save_game` to preserve the repro state for later development cycles.
 
 ## For developers
 

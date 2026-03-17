@@ -76,4 +76,68 @@ internal sealed class ArchitectCapabilityModule
     {
         return RimWorldArchitect.GetCellInfoResponse(x, z);
     }
+
+    public object FindRandomCellNear(
+        int x,
+        int z,
+        int startingSearchRadius = 5,
+        int maxSearchRadius = 60,
+        int width = 1,
+        int height = 1,
+        string footprintAnchor = "top_left",
+        bool requireWalkable = false,
+        bool requireStandable = false,
+        bool requireNotFogged = false,
+        bool requireNoImpassableThings = false,
+        string reachablePawnName = null,
+        string designatorId = null)
+    {
+        return RimWorldArchitect.FindRandomCellNearResponse(
+            x,
+            z,
+            startingSearchRadius,
+            maxSearchRadius,
+            width,
+            height,
+            footprintAnchor,
+            requireWalkable,
+            requireStandable,
+            requireNotFogged,
+            requireNoImpassableThings,
+            reachablePawnName,
+            designatorId);
+    }
+
+    public object FloodFillCells(
+        int x,
+        int z,
+        int maxCellsToProcess = 256,
+        int minimumCellCount = 0,
+        int maxReturnedCells = 64,
+        int width = 1,
+        int height = 1,
+        string footprintAnchor = "top_left",
+        bool requireWalkable = false,
+        bool requireStandable = false,
+        bool requireNotFogged = false,
+        bool requireNoImpassableThings = false,
+        string reachablePawnName = null,
+        string designatorId = null)
+    {
+        return RimWorldArchitect.FloodFillCellsResponse(
+            x,
+            z,
+            maxCellsToProcess,
+            minimumCellCount,
+            maxReturnedCells,
+            width,
+            height,
+            footprintAnchor,
+            requireWalkable,
+            requireStandable,
+            requireNotFogged,
+            requireNoImpassableThings,
+            reachablePawnName,
+            designatorId);
+    }
 }

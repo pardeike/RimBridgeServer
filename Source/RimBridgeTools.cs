@@ -88,6 +88,12 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
+    [Tool("rimbridge/get_lua_reference", Description = "Get a machine-readable authoring reference for rimbridge/run_lua, including the supported Lua subset, rb.* host API, compile errors, limits, and examples")]
+    public object GetLuaReference()
+    {
+        return InvokeAlias();
+    }
+
     [Tool("rimbridge/run_script", Description = "Execute a JSON script containing ordered capability calls and generic control statements; call rimbridge/get_script_reference for the machine-readable language reference")]
     public object RunScript(
         [ToolParameter(Description = "Structured JSON script. Call rimbridge/get_script_reference for the full machine-readable language reference. Example: {\"name\":\"setup\",\"continueOnError\":false,\"steps\":[{\"id\":\"pause\",\"call\":\"rimworld/pause_game\",\"arguments\":{\"pause\":true}}]}")] string scriptJson,
@@ -96,16 +102,16 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(scriptJson), scriptJson), (nameof(includeStepResults), includeStepResults)));
     }
 
-    [Tool("rimbridge/run_lua", Description = "Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry")]
+    [Tool("rimbridge/run_lua", Description = "Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry; call rimbridge/get_lua_reference for the machine-readable language reference")]
     public object RunLua(
-        [ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Use rimbridge/compile_lua to inspect the lowered JSON script.")] string luaSource,
+        [ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Call rimbridge/get_lua_reference for the full machine-readable language reference and rimbridge/compile_lua to inspect the lowered JSON script.")] string luaSource,
         [ToolParameter(Description = "Include each successful call step's result payload in the returned script report")] bool includeStepResults = true)
     {
         return InvokeAlias(Arguments((nameof(luaSource), luaSource), (nameof(includeStepResults), includeStepResults)));
     }
 
     [Tool("rimbridge/compile_lua", Description = "Compile supported Lua source into the lowered JSON script model without executing capability calls")]
-    public object CompileLua([ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset")] string luaSource)
+    public object CompileLua([ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Call rimbridge/get_lua_reference for the full machine-readable language reference.")] string luaSource)
     {
         return InvokeAlias(Arguments((nameof(luaSource), luaSource)));
     }
@@ -266,6 +272,72 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z)));
     }
 
+    [Tool("rimworld/find_random_cell_near", Description = "Use RimWorld's expanding-radius random cell search to find a nearby cell or footprint that satisfies generic map criteria")]
+    public object FindRandomCellNear(
+        [ToolParameter(Description = "Origin cell x coordinate")] int x,
+        [ToolParameter(Description = "Origin cell z coordinate")] int z,
+        [ToolParameter(Description = "Initial search radius in cells")] int startingSearchRadius = 5,
+        [ToolParameter(Description = "Maximum search radius in cells")] int maxSearchRadius = 60,
+        [ToolParameter(Description = "Footprint width to validate at each candidate cell")] int width = 1,
+        [ToolParameter(Description = "Footprint height to validate at each candidate cell")] int height = 1,
+        [ToolParameter(Description = "Interpret the candidate cell as the footprint's top_left or center anchor")] string footprintAnchor = "top_left",
+        [ToolParameter(Description = "Require every footprint cell to be walkable")] bool requireWalkable = false,
+        [ToolParameter(Description = "Require every footprint cell to be standable")] bool requireStandable = false,
+        [ToolParameter(Description = "Require every footprint cell to be unfogged")] bool requireNotFogged = false,
+        [ToolParameter(Description = "Reject footprint cells containing impassable things such as walls or solid rocks")] bool requireNoImpassableThings = false,
+        [ToolParameter(Description = "Optional current-map pawn name; when provided, the returned anchor cell must be reachable by that pawn")] string reachablePawnName = null,
+        [ToolParameter(Description = "Optional architect designator id; when provided, every footprint cell must pass that designator's CanDesignateCell validation")] string designatorId = null)
+    {
+        return InvokeAlias(Arguments(
+            (nameof(x), x),
+            (nameof(z), z),
+            (nameof(startingSearchRadius), startingSearchRadius),
+            (nameof(maxSearchRadius), maxSearchRadius),
+            (nameof(width), width),
+            (nameof(height), height),
+            (nameof(footprintAnchor), footprintAnchor),
+            (nameof(requireWalkable), requireWalkable),
+            (nameof(requireStandable), requireStandable),
+            (nameof(requireNotFogged), requireNotFogged),
+            (nameof(requireNoImpassableThings), requireNoImpassableThings),
+            (nameof(reachablePawnName), reachablePawnName),
+            (nameof(designatorId), designatorId)));
+    }
+
+    [Tool("rimworld/flood_fill_cells", Description = "Analyze a contiguous area from one root cell using RimWorld's generic cell flood-fill algorithm and the same reusable footprint criteria as find_random_cell_near")]
+    public object FloodFillCells(
+        [ToolParameter(Description = "Root cell x coordinate")] int x,
+        [ToolParameter(Description = "Root cell z coordinate")] int z,
+        [ToolParameter(Description = "Maximum number of cells to process before stopping")] int maxCellsToProcess = 256,
+        [ToolParameter(Description = "Optional minimum contiguous cell count to satisfy before stopping early")] int minimumCellCount = 0,
+        [ToolParameter(Description = "Maximum number of matching cells to include in the returned sample list")] int maxReturnedCells = 64,
+        [ToolParameter(Description = "Footprint width to validate at each visited cell")] int width = 1,
+        [ToolParameter(Description = "Footprint height to validate at each visited cell")] int height = 1,
+        [ToolParameter(Description = "Interpret each visited cell as the footprint's top_left or center anchor")] string footprintAnchor = "top_left",
+        [ToolParameter(Description = "Require every footprint cell to be walkable")] bool requireWalkable = false,
+        [ToolParameter(Description = "Require every footprint cell to be standable")] bool requireStandable = false,
+        [ToolParameter(Description = "Require every footprint cell to be unfogged")] bool requireNotFogged = false,
+        [ToolParameter(Description = "Reject footprint cells containing impassable things such as walls or solid rocks")] bool requireNoImpassableThings = false,
+        [ToolParameter(Description = "Optional current-map pawn name; when provided, each visited anchor cell must be reachable by that pawn")] string reachablePawnName = null,
+        [ToolParameter(Description = "Optional architect designator id; when provided, every footprint cell must pass that designator's CanDesignateCell validation")] string designatorId = null)
+    {
+        return InvokeAlias(Arguments(
+            (nameof(x), x),
+            (nameof(z), z),
+            (nameof(maxCellsToProcess), maxCellsToProcess),
+            (nameof(minimumCellCount), minimumCellCount),
+            (nameof(maxReturnedCells), maxReturnedCells),
+            (nameof(width), width),
+            (nameof(height), height),
+            (nameof(footprintAnchor), footprintAnchor),
+            (nameof(requireWalkable), requireWalkable),
+            (nameof(requireStandable), requireStandable),
+            (nameof(requireNotFogged), requireNotFogged),
+            (nameof(requireNoImpassableThings), requireNoImpassableThings),
+            (nameof(reachablePawnName), reachablePawnName),
+            (nameof(designatorId), designatorId)));
+    }
+
     [Tool("rimworld/get_ui_state", Description = "Get the current RimWorld window stack and input state for background-safe UI automation")]
     public object GetUiState()
     {
@@ -405,19 +477,6 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(clipTargetId), clipTargetId), (nameof(clipPadding), clipPadding)));
     }
 
-    [Tool("rimworld/get_achtung_state", Description = "Get Achtung-specific debug state when the mod is loaded")]
-    public object GetAchtungState()
-    {
-        return InvokeAlias();
-    }
-
-    [Tool("rimworld/set_achtung_show_drafted_orders_when_undrafted", Description = "Enable or disable Achtung's compatibility mode that merges drafted-only orders into undrafted menus")]
-    public object SetAchtungShowDraftedOrdersWhenUndrafted(
-        [ToolParameter(Description = "True to re-enable the old merged-menu behavior, false to use the fixed behavior")] bool enabled)
-    {
-        return InvokeAlias(Arguments((nameof(enabled), enabled)));
-    }
-
     [Tool("rimworld/list_saves", Description = "List saved RimWorld games")]
     public object ListSaves()
     {
@@ -446,12 +505,12 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(saveName), saveName)));
     }
 
-    [Tool("rimworld/open_context_menu", Description = "Open a debug context menu at a target pawn or cell using Achtung when available")]
+    [Tool("rimworld/open_context_menu", Description = "Open a vanilla debug context menu at a target pawn or cell")]
     public object OpenContextMenu(
         [ToolParameter(Description = "Target pawn name on the current map. Optional if x/z are provided.")] string targetPawnName = null,
         [ToolParameter(Description = "Target cell x coordinate when no pawn name is given")] int x = 0,
         [ToolParameter(Description = "Target cell z coordinate when no pawn name is given")] int z = 0,
-        [ToolParameter(Description = "Context menu provider: auto, achtung, or vanilla")] string mode = "auto")
+        [ToolParameter(Description = "Optional provider hint. Use vanilla; auto is accepted as a backwards-compatible alias.")] string mode = "vanilla")
     {
         return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(x), x), (nameof(z), z), (nameof(mode), mode)));
     }

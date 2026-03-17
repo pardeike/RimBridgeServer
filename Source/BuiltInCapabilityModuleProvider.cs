@@ -176,6 +176,7 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             "rimbridge/wait_for_game_loaded" => CapabilityExecutionKind.Immediate,
             "rimbridge/wait_for_long_event_idle" => CapabilityExecutionKind.Immediate,
             "rimbridge/get_script_reference" => CapabilityExecutionKind.Immediate,
+            "rimbridge/get_lua_reference" => CapabilityExecutionKind.Immediate,
             "rimbridge/run_script" => CapabilityExecutionKind.Immediate,
             "rimbridge/run_lua" => CapabilityExecutionKind.Immediate,
             "rimbridge/compile_lua" => CapabilityExecutionKind.Immediate,

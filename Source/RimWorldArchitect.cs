@@ -5,11 +5,35 @@ using System.Linq;
 using RimBridgeServer.Core;
 using RimWorld;
 using Verse;
+using Verse.AI;
 
 namespace RimBridgeServer;
 
 internal static class RimWorldArchitect
 {
+    private sealed class CellSearchCriteria
+    {
+        public int Width { get; set; } = 1;
+
+        public int Height { get; set; } = 1;
+
+        public string FootprintAnchor { get; set; } = "top_left";
+
+        public bool RequireWalkable { get; set; }
+
+        public bool RequireStandable { get; set; }
+
+        public bool RequireNotFogged { get; set; }
+
+        public bool RequireNoImpassableThings { get; set; }
+
+        public Pawn ReachablePawn { get; set; }
+
+        public string ReachablePawnName { get; set; }
+
+        public ArchitectDesignatorDescriptor DesignatorDescriptor { get; set; }
+    }
+
     private sealed class ArchitectSelectionState
     {
         public Designator SelectedRootDesignator { get; set; }
@@ -288,6 +312,222 @@ internal static class RimWorldArchitect
         {
             success = true,
             cell = CreateCellInfoPayload(map, cell),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    public static object FindRandomCellNearResponse(
+        int x,
+        int z,
+        int startingSearchRadius = 5,
+        int maxSearchRadius = 60,
+        int width = 1,
+        int height = 1,
+        string footprintAnchor = "top_left",
+        bool requireWalkable = false,
+        bool requireStandable = false,
+        bool requireNotFogged = false,
+        bool requireNoImpassableThings = false,
+        string reachablePawnName = null,
+        string designatorId = null)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+        if (startingSearchRadius <= 0)
+            return Failure("startingSearchRadius must be positive.");
+        if (maxSearchRadius < startingSearchRadius)
+            return Failure("maxSearchRadius must be greater than or equal to startingSearchRadius.");
+        if (!TryCreateCellSearchCriteria(
+                map,
+                width,
+                height,
+                footprintAnchor,
+                requireWalkable,
+                requireStandable,
+                requireNotFogged,
+                requireNoImpassableThings,
+                reachablePawnName,
+                designatorId,
+                out var criteria,
+                out error))
+        {
+            return Failure(error);
+        }
+
+        var near = new IntVec3(x, 0, z);
+        if (!near.InBounds(map))
+            return Failure($"Cell ({x}, {z}) is out of bounds for the current map.");
+
+        var found = RCellFinder.TryFindRandomCellNearWith(
+            near,
+            cell => CellSatisfiesCriteria(map, cell, criteria),
+            map,
+            out var result,
+            startingSearchRadius,
+            maxSearchRadius);
+
+        if (!found)
+        {
+            return new
+            {
+                success = false,
+                message = $"Could not find a nearby cell that satisfied the requested criteria near ({x}, {z}).",
+                method = "RimWorld.RCellFinder.TryFindRandomCellNearWith",
+                near = ToCellPayload(near),
+                startingSearchRadius,
+                maxSearchRadius,
+                criteria = CreateCellSearchCriteriaPayload(criteria),
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        return new
+        {
+            success = true,
+            method = "RimWorld.RCellFinder.TryFindRandomCellNearWith",
+            near = ToCellPayload(near),
+            cell = ToCellPayload(result),
+            cellInfo = CreateCellInfoPayload(map, result),
+            footprint = CreateFootprintPayload(result, criteria.Width, criteria.Height, criteria.FootprintAnchor),
+            startingSearchRadius,
+            maxSearchRadius,
+            criteria = CreateCellSearchCriteriaPayload(criteria),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    public static object FloodFillCellsResponse(
+        int x,
+        int z,
+        int maxCellsToProcess = 256,
+        int minimumCellCount = 0,
+        int maxReturnedCells = 64,
+        int width = 1,
+        int height = 1,
+        string footprintAnchor = "top_left",
+        bool requireWalkable = false,
+        bool requireStandable = false,
+        bool requireNotFogged = false,
+        bool requireNoImpassableThings = false,
+        string reachablePawnName = null,
+        string designatorId = null)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+        if (maxCellsToProcess <= 0)
+            return Failure("maxCellsToProcess must be positive.");
+        if (minimumCellCount < 0)
+            return Failure("minimumCellCount cannot be negative.");
+        if (maxReturnedCells < 0)
+            return Failure("maxReturnedCells cannot be negative.");
+        if (!TryCreateCellSearchCriteria(
+                map,
+                width,
+                height,
+                footprintAnchor,
+                requireWalkable,
+                requireStandable,
+                requireNotFogged,
+                requireNoImpassableThings,
+                reachablePawnName,
+                designatorId,
+                out var criteria,
+                out error))
+        {
+            return Failure(error);
+        }
+
+        var root = new IntVec3(x, 0, z);
+        if (!root.InBounds(map))
+            return Failure($"Cell ({x}, {z}) is out of bounds for the current map.");
+
+        var rootAccepted = CellSatisfiesCriteria(map, root, criteria);
+        var returnedCells = new List<IntVec3>(Math.Min(maxReturnedCells, maxCellsToProcess));
+        var visitedCellCount = 0;
+        var maxTraversalDistance = 0;
+        var stoppedEarly = false;
+        var boundsInitialized = false;
+        var minX = 0;
+        var maxX = 0;
+        var minZ = 0;
+        var maxZ = 0;
+
+        if (rootAccepted)
+        {
+            map.floodFiller.FloodFill(
+                root,
+                cell => CellSatisfiesCriteria(map, cell, criteria),
+                (cell, traversalDistance) =>
+                {
+                    visitedCellCount++;
+                    if (returnedCells.Count < maxReturnedCells)
+                        returnedCells.Add(cell);
+
+                    maxTraversalDistance = Math.Max(maxTraversalDistance, traversalDistance);
+                    if (!boundsInitialized)
+                    {
+                        minX = maxX = cell.x;
+                        minZ = maxZ = cell.z;
+                        boundsInitialized = true;
+                    }
+                    else
+                    {
+                        minX = Math.Min(minX, cell.x);
+                        maxX = Math.Max(maxX, cell.x);
+                        minZ = Math.Min(minZ, cell.z);
+                        maxZ = Math.Max(maxZ, cell.z);
+                    }
+
+                    if (minimumCellCount > 0 && visitedCellCount >= minimumCellCount)
+                    {
+                        stoppedEarly = true;
+                        return true;
+                    }
+
+                    return false;
+                },
+                maxCellsToProcess,
+                rememberParents: false,
+                extraRoots: null);
+        }
+
+        var meetsMinimum = minimumCellCount <= 0
+            ? visitedCellCount > 0
+            : visitedCellCount >= minimumCellCount;
+        var message = rootAccepted
+            ? (meetsMinimum
+                ? null
+                : $"Flood fill found {visitedCellCount} matching cells, below the requested minimum of {minimumCellCount}.")
+            : "The root cell did not satisfy the requested criteria.";
+
+        return new
+        {
+            success = meetsMinimum,
+            message,
+            method = "Verse.FloodFiller.FloodFill",
+            root = ToCellPayload(root),
+            rootAccepted,
+            visitedCellCount,
+            minimumCellCount,
+            maxCellsToProcess,
+            hitCellProcessingLimit = rootAccepted && !stoppedEarly && visitedCellCount >= maxCellsToProcess,
+            maxTraversalDistance,
+            stoppedEarly,
+            returnedCellCount = returnedCells.Count,
+            returnedCellsTruncated = returnedCells.Count < visitedCellCount,
+            cells = returnedCells.Select(ToCellPayload).ToList(),
+            bounds = boundsInitialized
+                ? new
+                {
+                    minX,
+                    maxX,
+                    minZ,
+                    maxZ,
+                    width = maxX - minX + 1,
+                    height = maxZ - minZ + 1
+                }
+                : null,
+            criteria = CreateCellSearchCriteriaPayload(criteria),
             state = RimWorldState.ToolStateSnapshot()
         };
     }
@@ -1056,6 +1296,191 @@ internal static class RimWorldArchitect
             className = designator.GetType().FullName ?? designator.GetType().Name,
             highlightTag = designator.HighlightTag,
             designationDefName = designator.Designation?.defName
+        };
+    }
+
+    private static bool TryCreateCellSearchCriteria(
+        Map map,
+        int width,
+        int height,
+        string footprintAnchor,
+        bool requireWalkable,
+        bool requireStandable,
+        bool requireNotFogged,
+        bool requireNoImpassableThings,
+        string reachablePawnName,
+        string designatorId,
+        out CellSearchCriteria criteria,
+        out string error)
+    {
+        criteria = null;
+        error = string.Empty;
+
+        if (width <= 0 || height <= 0)
+        {
+            error = "Width and height must be positive.";
+            return false;
+        }
+
+        if (!TryNormalizeFootprintAnchor(footprintAnchor, out var normalizedAnchor, out error))
+            return false;
+
+        Pawn reachablePawn = null;
+        if (!string.IsNullOrWhiteSpace(reachablePawnName))
+        {
+            try
+            {
+                reachablePawn = RimWorldState.ResolveCurrentMapPawn(reachablePawnName);
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        ArchitectDesignatorDescriptor designatorDescriptor = null;
+        if (!string.IsNullOrWhiteSpace(designatorId))
+        {
+            if (!TryResolveDesignator(designatorId, out designatorDescriptor, out error))
+                return false;
+            if (!designatorDescriptor.Actionable || !designatorDescriptor.SupportsCellApplication)
+            {
+                error = $"Architect designator '{designatorId}' does not support direct cell validation.";
+                return false;
+            }
+        }
+
+        criteria = new CellSearchCriteria
+        {
+            Width = width,
+            Height = height,
+            FootprintAnchor = normalizedAnchor,
+            RequireWalkable = requireWalkable,
+            RequireStandable = requireStandable,
+            RequireNotFogged = requireNotFogged,
+            RequireNoImpassableThings = requireNoImpassableThings,
+            ReachablePawn = reachablePawn,
+            ReachablePawnName = reachablePawnName,
+            DesignatorDescriptor = designatorDescriptor
+        };
+        return true;
+    }
+
+    private static bool TryNormalizeFootprintAnchor(string footprintAnchor, out string normalizedAnchor, out string error)
+    {
+        error = string.Empty;
+        normalizedAnchor = "top_left";
+        if (string.IsNullOrWhiteSpace(footprintAnchor))
+            return true;
+
+        var trimmed = footprintAnchor.Trim();
+        if (string.Equals(trimmed, "top_left", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "top-left", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "origin", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedAnchor = "top_left";
+            return true;
+        }
+
+        if (string.Equals(trimmed, "center", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "centre", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedAnchor = "center";
+            return true;
+        }
+
+        error = $"Unsupported footprintAnchor '{footprintAnchor}'. Use 'top_left' or 'center'.";
+        return false;
+    }
+
+    private static bool CellSatisfiesCriteria(Map map, IntVec3 anchorCell, CellSearchCriteria criteria)
+    {
+        var footprintOrigin = GetFootprintOrigin(anchorCell, criteria.Width, criteria.Height, criteria.FootprintAnchor);
+        if (criteria.ReachablePawn != null)
+        {
+            var traverseParms = TraverseParms.For(criteria.ReachablePawn);
+            if (!map.reachability.CanReach(criteria.ReachablePawn.Position, anchorCell, PathEndMode.OnCell, traverseParms))
+                return false;
+        }
+
+        foreach (var footprintCell in EnumerateCells(footprintOrigin.x, footprintOrigin.z, criteria.Width, criteria.Height))
+        {
+            if (!footprintCell.InBounds(map))
+                return false;
+            if (criteria.RequireNotFogged && footprintCell.Fogged(map))
+                return false;
+            if (criteria.RequireWalkable && !footprintCell.Walkable(map))
+                return false;
+            if (criteria.RequireStandable && !footprintCell.Standable(map))
+                return false;
+            if (criteria.RequireNoImpassableThings && footprintCell.Impassable(map))
+                return false;
+
+            if (criteria.DesignatorDescriptor != null)
+            {
+                var report = criteria.DesignatorDescriptor.Designator.CanDesignateCell(footprintCell);
+                if (!report.Accepted)
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static IntVec3 GetFootprintOrigin(IntVec3 anchorCell, int width, int height, string footprintAnchor)
+    {
+        if (string.Equals(footprintAnchor, "center", StringComparison.Ordinal))
+        {
+            return new IntVec3(
+                anchorCell.x - (width / 2),
+                0,
+                anchorCell.z - (height / 2));
+        }
+
+        return anchorCell;
+    }
+
+    private static object CreateFootprintPayload(IntVec3 anchorCell, int width, int height, string footprintAnchor)
+    {
+        var origin = GetFootprintOrigin(anchorCell, width, height, footprintAnchor);
+        var cells = EnumerateCells(origin.x, origin.z, width, height)
+            .Select(ToCellPayload)
+            .ToList();
+
+        return new
+        {
+            anchor = ToCellPayload(anchorCell),
+            anchorMode = footprintAnchor,
+            origin = ToCellPayload(origin),
+            width,
+            height,
+            cellCount = cells.Count,
+            cells
+        };
+    }
+
+    private static object CreateCellSearchCriteriaPayload(CellSearchCriteria criteria)
+    {
+        return new
+        {
+            width = criteria.Width,
+            height = criteria.Height,
+            footprintAnchor = criteria.FootprintAnchor,
+            requireWalkable = criteria.RequireWalkable,
+            requireStandable = criteria.RequireStandable,
+            requireNotFogged = criteria.RequireNotFogged,
+            requireNoImpassableThings = criteria.RequireNoImpassableThings,
+            reachablePawnName = criteria.ReachablePawnName,
+            designator = criteria.DesignatorDescriptor == null
+                ? null
+                : new
+                {
+                    id = criteria.DesignatorDescriptor.Id,
+                    label = criteria.DesignatorDescriptor.Designator.Label,
+                    className = criteria.DesignatorDescriptor.Designator.GetType().FullName ?? criteria.DesignatorDescriptor.Designator.GetType().Name,
+                    applicationKind = criteria.DesignatorDescriptor.ApplicationKind
+                }
         };
     }
 

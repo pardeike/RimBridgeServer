@@ -12,7 +12,7 @@ The important constraint is architectural: Lua should not become a second direct
 
 ## Status
 
-As of 2026-03-17, slices 3 and 4 below are implemented. [`rimbridge/run_lua`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) and [`rimbridge/compile_lua`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) now compile a narrow Lua v1 subset into the shared script runner instead of introducing a second automation runtime. The remaining work is around proving that front-end against richer live scenarios and improving authoring/discoverability, not around the core Lua execution path itself.
+As of 2026-03-17, slices 3, 4, and the first discoverability follow-up are implemented. [`rimbridge/run_lua`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) and [`rimbridge/compile_lua`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) now compile a narrow Lua v1 subset into the shared script runner instead of introducing a second automation runtime, and [`rimbridge/get_lua_reference`](/Users/ap/Projects/RimBridgeServer/Source/RimBridgeTools.cs) exposes that supported subset in machine-readable form for fresh agents. The remaining work is around richer scenario self-planning, not around the core Lua execution path itself.
 
 ## Why Lua
 

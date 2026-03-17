@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
@@ -9,26 +8,7 @@ namespace RimBridgeServer;
 
 internal sealed class ContextMenuCapabilityModule
 {
-    public object GetAchtungState()
-    {
-        return AchtungIntegration.DescribeState();
-    }
-
-    public object SetAchtungShowDraftedOrdersWhenUndrafted(bool enabled)
-    {
-        if (!AchtungIntegration.IsLoaded())
-            return new { success = false, message = "Achtung is not loaded." };
-
-        var value = AchtungIntegration.SetShowDraftedOrdersWhenUndrafted(enabled);
-        return new
-        {
-            success = true,
-            loaded = true,
-            showDraftedOrdersWhenUndrafted = value
-        };
-    }
-
-    public object OpenContextMenu(string targetPawnName = null, int x = 0, int z = 0, string mode = "auto")
+    public object OpenContextMenu(string targetPawnName = null, int x = 0, int z = 0, string mode = "vanilla")
     {
         if (Current.Game == null)
             return new { success = false, message = "No game is currently loaded." };
@@ -64,33 +44,22 @@ internal sealed class ContextMenuCapabilityModule
             Find.WindowStack.TryRemove(Find.WindowStack.FloatMenu, doCloseSound: false);
 
         var clickPos = RimWorldState.CellCenter(clickCell);
-        var normalizedMode = (mode ?? "auto").Trim().ToLowerInvariant();
-        if (normalizedMode != "auto" && normalizedMode != "achtung" && normalizedMode != "vanilla")
+        var normalizedMode = (mode ?? "vanilla").Trim().ToLowerInvariant();
+        if (normalizedMode == "auto")
+            normalizedMode = "vanilla";
+
+        if (normalizedMode != "vanilla")
         {
             return new
             {
                 success = false,
-                message = $"Unsupported context menu mode '{mode}'. Use auto, achtung, or vanilla."
+                message = $"Unsupported context menu mode '{mode}'. Only vanilla is supported."
             };
         }
 
         FloatMenu menu = null;
-        List<FloatMenuOption> options;
-        string provider;
-
-        if (normalizedMode == "achtung" || (normalizedMode == "auto" && AchtungIntegration.IsLoaded()))
-        {
-            if (!AchtungIntegration.IsLoaded())
-                return new { success = false, message = "Achtung is not loaded, so an Achtung context menu is unavailable." };
-
-            (menu, options) = AchtungIntegration.BuildMenu(clickPos);
-            provider = "achtung";
-        }
-        else
-        {
-            options = FloatMenuMakerMap.GetOptions(selectedPawns, clickPos, out _).ToList();
-            provider = "vanilla";
-        }
+        var options = FloatMenuMakerMap.GetOptions(selectedPawns, clickPos, out _).ToList();
+        const string provider = "vanilla";
 
         if (options.Count == 0)
         {

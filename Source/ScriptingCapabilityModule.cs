@@ -204,6 +204,11 @@ internal sealed class ScriptingCapabilityModule
         return CapabilityScriptReferenceBuilder.CreateDocument();
     }
 
+    public object GetLuaReference()
+    {
+        return CapabilityLuaReferenceBuilder.CreateDocument();
+    }
+
     private static object ProjectLuaCompileError(LuaScriptCompileException ex)
     {
         return new

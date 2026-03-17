@@ -1393,6 +1393,22 @@ internal static class SmokeScenarioCatalog
                     throw new InvalidOperationException($"Colonist '{JsonNodeHelpers.ReadString(colonist, "name")}' was not inside the prison interior after the script.");
             }
 
+            var interiorFlood = await context.CallGameToolAsync("script_prison.verify_interior_flood", "rimworld/flood_fill_cells", new
+            {
+                x = rally.RallyX,
+                z = rally.RallyZ,
+                maxCellsToProcess = 16,
+                minimumCellCount = 9,
+                maxReturnedCells = 16,
+                requireWalkable = true,
+                requireStandable = true,
+                requireNoImpassableThings = true
+            }, cancellationToken);
+            context.EnsureSucceeded(interiorFlood, "Flood-filling the enclosed prison interior");
+
+            if (JsonNodeHelpers.ReadInt32(interiorFlood.StructuredContent, "visitedCellCount").GetValueOrDefault() != 9)
+                throw new InvalidOperationException("Expected the final prison interior flood fill to contain exactly 9 reachable interior cells.");
+
             if (context.HumanVerificationEnabled)
             {
                 await context.ExportHumanVerificationArtifactAsync(
@@ -1414,6 +1430,7 @@ internal static class SmokeScenarioCatalog
             context.SetScenarioData("compileLua", compileLua.StructuredContent);
             context.SetScenarioData("runLua", runLua.StructuredContent);
             context.SetScenarioData("finalColonists", finalColonists.StructuredContent);
+            context.SetScenarioData("interiorFlood", interiorFlood.StructuredContent);
             context.SetScenarioData("structureDesignators", new JsonArray(designatorArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
         }
         catch (Exception ex)
@@ -2786,6 +2803,29 @@ internal static class SmokeScenarioCatalog
     {
         var origin = ResolveColonistSearchOrigin(colonistsStructuredContent);
         var attempt = 0;
+        var fastCandidate = await context.CallGameToolAsync($"{stepPrefix}.fast_candidate", "rimworld/find_random_cell_near", new
+        {
+            x = origin.X,
+            z = origin.Z,
+            startingSearchRadius = 4,
+            maxSearchRadius = 24,
+            width = 3,
+            height = 3,
+            footprintAnchor = "center",
+            requireWalkable = true,
+            requireNoImpassableThings = true
+        }, cancellationToken);
+        if (fastCandidate.Success)
+        {
+            var rallyX = JsonNodeHelpers.ReadInt32(fastCandidate.StructuredContent, "cell", "x");
+            var rallyZ = JsonNodeHelpers.ReadInt32(fastCandidate.StructuredContent, "cell", "z");
+            if (rallyX.HasValue
+                && rallyZ.HasValue
+                && await PrisonLayoutIsAcceptedAsync(context, $"{stepPrefix}_fast", wallDesignatorId, rallyX.Value, rallyZ.Value, cancellationToken))
+            {
+                return (rallyX.Value, rallyZ.Value, rallyX.Value - 1, rallyX.Value + 1, rallyZ.Value - 1, rallyZ.Value + 1);
+            }
+        }
 
         foreach (var candidate in BuildArchitectProbeCells(origin, minRadius: 4, maxRadius: 24))
         {
@@ -2865,6 +2905,31 @@ internal static class SmokeScenarioCatalog
     {
         var origin = ResolveColonistSearchOrigin(colonistsStructuredContent);
         var attempt = 0;
+        var fastCandidate = await context.CallGameToolAsync($"{stepPrefix}.fast_candidate", "rimworld/find_random_cell_near", new
+        {
+            x = origin.X,
+            z = origin.Z,
+            startingSearchRadius = minRadius,
+            maxSearchRadius = maxRadius,
+            width,
+            height,
+            footprintAnchor = "top_left",
+            designatorId
+        }, cancellationToken);
+        if (fastCandidate.Success)
+        {
+            var candidateX = JsonNodeHelpers.ReadInt32(fastCandidate.StructuredContent, "cell", "x");
+            var candidateZ = JsonNodeHelpers.ReadInt32(fastCandidate.StructuredContent, "cell", "z");
+            if (candidateX.HasValue && candidateZ.HasValue)
+            {
+                var fastCellKey = CellKey(candidateX.Value, candidateZ.Value);
+                if (blockedCells.Add(fastCellKey)
+                    && (preflightAsync == null || await preflightAsync(context, candidateX.Value, candidateZ.Value, width, height, cancellationToken)))
+                {
+                    return (candidateX.Value, candidateZ.Value);
+                }
+            }
+        }
 
         foreach (var candidateCell in BuildArchitectProbeCells(origin, minRadius, maxRadius))
         {

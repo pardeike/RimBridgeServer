@@ -161,7 +161,7 @@ Source/
   RimBridgeServer.Capabilities.Optional.Pawns/
   RimBridgeServer.Capabilities.Optional.UI/
   RimBridgeServer.Extensions.Abstractions/   // provider contract used by all packages
-  RimBridgeServer.Extensions.Achtung/        // example third-party adapter
+  RimBridgeServer.Extensions.Example/        // example third-party adapter
 
 Tests/
   RimBridgeServer.Contracts.Tests/
@@ -248,7 +248,7 @@ Optional domains:
 Extension domains:
 
 - capabilities registered by other mods
-- adapters for known mods like Achtung
+- adapters for known mods
 
 ### 4. Observability layer
 
@@ -833,7 +833,7 @@ Tests:
 - prefer explicit extension registration over auto-discovery in v1
 - prefer stable ids over repeated fuzzy name lookup
 - prefer publicized RimWorld APIs over reflection
-- prefer reflection only in isolated third-party adapters such as Achtung integration
+- prefer reflection only in isolated third-party adapters
 
 ## Immediate Next Step
 
