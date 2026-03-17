@@ -52,7 +52,7 @@ internal static class RimWorldTargeting
                 topWindowType = topWindowType
             },
             camera = TryDescribeCamera(),
-            selectedPawns = Find.Selector.SelectedPawns.Select(RimWorldState.DescribePawn).ToList(),
+            selectedPawns = TryDescribeSelectedPawns(),
             mainTab = CreateMainTabPayload(uiState.MainTab),
             windows = uiState.Windows.Select(window => CreateWindowPayload(window, topWindowType, focusedWindowType)).ToList(),
             contextMenu = CreateContextMenuPayload()
@@ -220,6 +220,24 @@ internal static class RimWorldTargeting
         catch
         {
             return null;
+        }
+    }
+
+    private static List<object> TryDescribeSelectedPawns()
+    {
+        try
+        {
+            if (Current.ProgramState != ProgramState.Playing || Current.Game == null)
+                return new List<object>();
+
+            return Find.Selector?.SelectedPawns?
+                .Select(RimWorldState.DescribePawn)
+                .ToList()
+                ?? new List<object>();
+        }
+        catch
+        {
+            return new List<object>();
         }
     }
 
