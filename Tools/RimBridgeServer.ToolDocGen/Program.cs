@@ -100,16 +100,26 @@ static ToolDefinition? ParseToolDefinition(MethodDeclarationSyntax method)
     var toolAttribute = FindAttribute(method.AttributeLists, "Tool");
     if (toolAttribute is null)
         return null;
+    var readmeToolAttribute = FindAttribute(method.AttributeLists, "ReadmeTool")
+        ?? throw new InvalidOperationException($"Method {method.Identifier.ValueText} is missing the required ReadmeTool metadata.");
 
     var toolName = GetPositionalStringArgument(toolAttribute, 0)
         ?? throw new InvalidOperationException($"Method {method.Identifier.ValueText} is missing the Tool name argument.");
     var description = GetNamedStringArgument(toolAttribute, "Description")
         ?? throw new InvalidOperationException($"Method {method.Identifier.ValueText} is missing Tool.Description.");
+    var readmeGroup = GetPositionalStringArgument(readmeToolAttribute, 0);
+    if (string.IsNullOrWhiteSpace(readmeGroup))
+        throw new InvalidOperationException($"Method {method.Identifier.ValueText} is missing the ReadmeTool group.");
+
+    var readmeSummary = GetPositionalStringArgument(readmeToolAttribute, 1);
+    if (string.IsNullOrWhiteSpace(readmeSummary))
+        throw new InvalidOperationException($"Method {method.Identifier.ValueText} is missing the ReadmeTool summary.");
+
     var parameters = method.ParameterList.Parameters
         .Select(ParseParameterDefinition)
         .ToList();
 
-    return new ToolDefinition(toolName, description, parameters);
+    return new ToolDefinition(toolName, description, readmeGroup, readmeSummary, parameters);
 }
 
 static ParameterDefinition ParseParameterDefinition(ParameterSyntax parameter)
@@ -281,6 +291,6 @@ static string GetRelativeMarkdownPath(string fromPath, string toPath)
     return relativePath.Replace('\\', '/');
 }
 
-internal sealed record ToolDefinition(string Name, string Description, IReadOnlyList<ParameterDefinition> Parameters);
+internal sealed record ToolDefinition(string Name, string Description, string ReadmeGroup, string ReadmeSummary, IReadOnlyList<ParameterDefinition> Parameters);
 
 internal sealed record ParameterDefinition(string Name, string TypeName, string? Description, bool Required, string? DefaultValue);
