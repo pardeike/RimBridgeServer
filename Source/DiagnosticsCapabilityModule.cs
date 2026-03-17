@@ -57,17 +57,17 @@ internal sealed class DiagnosticsCapabilityModule
         return RimWorldWaits.GetBridgeStatus(_journal, _logJournal);
     }
 
-    public object ListOperations(int limit = 20)
+    public object ListOperations(int limit = 20, bool includeResults = false)
     {
         return new
         {
-            operations = _journal.GetRecentOperations(limit)
+            operations = _journal.GetRecentOperations(limit, includeResults)
         };
     }
 
-    public object ListOperationEvents(int limit = 50, string eventType = null, long afterSequence = 0, bool includeDiagnostics = false)
+    public object ListOperationEvents(int limit = 50, string eventType = null, long afterSequence = 0, string operationId = null, bool includeDiagnostics = false)
     {
-        var events = _journal.GetRecentEvents(Math.Max(limit * 4, limit), eventType, afterSequence);
+        var events = _journal.GetRecentEvents(Math.Max(limit * 4, limit), eventType, afterSequence, operationId);
         if (includeDiagnostics == false)
         {
             events = events
@@ -81,11 +81,11 @@ internal sealed class DiagnosticsCapabilityModule
         };
     }
 
-    public object ListLogs(int limit = 50, string minimumLevel = "info", long afterSequence = 0)
+    public object ListLogs(int limit = 50, string minimumLevel = "info", long afterSequence = 0, string operationId = null, string rootOperationId = null, string capabilityId = null)
     {
         return new
         {
-            logs = _logJournal.GetEntries(limit, minimumLevel, afterSequence)
+            logs = _logJournal.GetEntries(limit, minimumLevel, afterSequence, operationId, rootOperationId, capabilityId)
         };
     }
 

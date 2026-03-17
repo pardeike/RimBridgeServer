@@ -18,6 +18,20 @@ public sealed class BridgeLogEntry
 
     public string Source { get; set; } = string.Empty;
 
+    public string OperationId { get; set; } = string.Empty;
+
+    public string CapabilityId { get; set; } = string.Empty;
+
+    public string ParentOperationId { get; set; } = string.Empty;
+
+    public string RootOperationId { get; set; } = string.Empty;
+
+    public string ScriptStatementId { get; set; } = string.Empty;
+
+    public string ScriptStepId { get; set; } = string.Empty;
+
+    public string ScriptCall { get; set; } = string.Empty;
+
     public DateTimeOffset FirstSeenAtUtc { get; set; }
 
     public DateTimeOffset TimestampUtc { get; set; }
@@ -43,7 +57,7 @@ public sealed class LogJournal
     private readonly int _collapseWindowMs;
     private long _nextSequence = 1;
 
-    public LogJournal(int maxEntries = 500, int collapseWindowMs = 2000)
+    public LogJournal(int maxEntries = 2000, int collapseWindowMs = 2000)
     {
         if (maxEntries <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxEntries));
@@ -56,6 +70,19 @@ public sealed class LogJournal
 
     public event Action<BridgeLogEntry> EntryRecorded;
 
+    public int MaxEntries => _maxEntries;
+
+    public int EntryCount
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _entries.Count;
+            }
+        }
+    }
+
     public long LatestSequence
     {
         get
@@ -67,9 +94,16 @@ public sealed class LogJournal
         }
     }
 
-    public BridgeLogEntry Record(string level, string message, string stackTrace = null, string source = null, DateTimeOffset? timestampUtc = null)
+    public BridgeLogEntry Record(
+        string level,
+        string message,
+        string stackTrace = null,
+        string source = null,
+        DateTimeOffset? timestampUtc = null,
+        OperationContextSnapshot operationContext = null)
     {
         var recordedAtUtc = timestampUtc ?? DateTimeOffset.UtcNow;
+        var context = operationContext ?? OperationContext.Capture();
         var entry = new BridgeLogEntry
         {
             Sequence = _nextSequence,
@@ -78,6 +112,13 @@ public sealed class LogJournal
             Message = message ?? string.Empty,
             StackTrace = stackTrace ?? string.Empty,
             Source = source ?? string.Empty,
+            OperationId = context?.OperationId ?? string.Empty,
+            CapabilityId = context?.CapabilityId ?? string.Empty,
+            ParentOperationId = context?.ParentOperationId ?? string.Empty,
+            RootOperationId = context?.RootOperationId ?? string.Empty,
+            ScriptStatementId = context?.ScriptStatementId ?? string.Empty,
+            ScriptStepId = context?.ScriptStepId ?? string.Empty,
+            ScriptCall = context?.ScriptCall ?? string.Empty,
             FirstSeenAtUtc = recordedAtUtc,
             TimestampUtc = recordedAtUtc
         };
@@ -107,7 +148,13 @@ public sealed class LogJournal
         return Clone(entry);
     }
 
-    public IReadOnlyList<BridgeLogEntry> GetEntries(int limit = 50, string minimumLevel = null, long afterSequence = 0)
+    public IReadOnlyList<BridgeLogEntry> GetEntries(
+        int limit = 50,
+        string minimumLevel = null,
+        long afterSequence = 0,
+        string operationId = null,
+        string rootOperationId = null,
+        string capabilityId = null)
     {
         if (limit <= 0)
             return [];
@@ -122,6 +169,12 @@ public sealed class LogJournal
             }
             if (afterSequence > 0)
                 query = query.Where(entry => entry.Sequence > afterSequence);
+            if (string.IsNullOrWhiteSpace(operationId) == false)
+                query = query.Where(entry => string.Equals(entry.OperationId, operationId, StringComparison.Ordinal));
+            if (string.IsNullOrWhiteSpace(rootOperationId) == false)
+                query = query.Where(entry => string.Equals(entry.RootOperationId, rootOperationId, StringComparison.Ordinal));
+            if (string.IsNullOrWhiteSpace(capabilityId) == false)
+                query = query.Where(entry => string.Equals(entry.CapabilityId, capabilityId, StringComparison.Ordinal));
 
             return query
                 .Take(limit)
@@ -150,6 +203,13 @@ public sealed class LogJournal
             && string.Equals(existing.Message, candidate.Message, StringComparison.Ordinal)
             && string.Equals(existing.StackTrace, candidate.StackTrace, StringComparison.Ordinal)
             && string.Equals(existing.Source, candidate.Source, StringComparison.Ordinal)
+            && string.Equals(existing.OperationId, candidate.OperationId, StringComparison.Ordinal)
+            && string.Equals(existing.CapabilityId, candidate.CapabilityId, StringComparison.Ordinal)
+            && string.Equals(existing.ParentOperationId, candidate.ParentOperationId, StringComparison.Ordinal)
+            && string.Equals(existing.RootOperationId, candidate.RootOperationId, StringComparison.Ordinal)
+            && string.Equals(existing.ScriptStatementId, candidate.ScriptStatementId, StringComparison.Ordinal)
+            && string.Equals(existing.ScriptStepId, candidate.ScriptStepId, StringComparison.Ordinal)
+            && string.Equals(existing.ScriptCall, candidate.ScriptCall, StringComparison.Ordinal)
             && (candidate.TimestampUtc - existing.TimestampUtc).TotalMilliseconds <= _collapseWindowMs;
     }
 
@@ -163,6 +223,13 @@ public sealed class LogJournal
             Message = entry.Message,
             StackTrace = entry.StackTrace,
             Source = entry.Source,
+            OperationId = entry.OperationId,
+            CapabilityId = entry.CapabilityId,
+            ParentOperationId = entry.ParentOperationId,
+            RootOperationId = entry.RootOperationId,
+            ScriptStatementId = entry.ScriptStatementId,
+            ScriptStepId = entry.ScriptStepId,
+            ScriptCall = entry.ScriptCall,
             FirstSeenAtUtc = entry.FirstSeenAtUtc,
             TimestampUtc = entry.TimestampUtc,
             RepeatCount = entry.RepeatCount

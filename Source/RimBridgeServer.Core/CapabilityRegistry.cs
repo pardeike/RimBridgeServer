@@ -48,17 +48,33 @@ public sealed class CapabilityRegistry
         var descriptor = registration.Descriptor;
         var operationId = "op_" + Guid.NewGuid().ToString("N");
         var requestedAtUtc = DateTimeOffset.UtcNow;
+        var correlation = OperationContext.Capture();
         var invocationArguments = arguments != null
             ? new Dictionary<string, object>(arguments, StringComparer.Ordinal)
             : [];
 
-        _journal?.RecordStarted(operationId, descriptor.Id, new Dictionary<string, object>(StringComparer.Ordinal)
+        var metadata = new Dictionary<string, object>(StringComparer.Ordinal)
         {
             ["requestedId"] = idOrAlias,
             ["providerId"] = descriptor.ProviderId,
             ["category"] = descriptor.Category,
             ["arguments"] = invocationArguments
-        }, requestedAtUtc);
+        };
+
+        if (string.IsNullOrWhiteSpace(correlation?.OperationId) == false)
+            metadata["parentOperationId"] = correlation.OperationId;
+        if (string.IsNullOrWhiteSpace(correlation?.CapabilityId) == false)
+            metadata["parentCapabilityId"] = correlation.CapabilityId;
+        if (string.IsNullOrWhiteSpace(correlation?.RootOperationId) == false)
+            metadata["rootOperationId"] = correlation.RootOperationId;
+        if (string.IsNullOrWhiteSpace(correlation?.ScriptStatementId) == false)
+            metadata["scriptStatementId"] = correlation.ScriptStatementId;
+        if (string.IsNullOrWhiteSpace(correlation?.ScriptStepId) == false)
+            metadata["scriptStepId"] = correlation.ScriptStepId;
+        if (string.IsNullOrWhiteSpace(correlation?.ScriptCall) == false)
+            metadata["scriptCall"] = correlation.ScriptCall;
+
+        _journal?.RecordStarted(operationId, descriptor.Id, metadata, requestedAtUtc);
 
         if (!registration.HasHandler)
         {
@@ -81,6 +97,7 @@ public sealed class CapabilityRegistry
             Arguments = invocationArguments
         };
 
+        using var scope = OperationContext.PushOperation(operationId, descriptor.Id);
         try
         {
             var envelope = registration.Handler(invocation, cancellationToken).GetAwaiter().GetResult()

@@ -33,4 +33,29 @@ public class LogJournalTests
         Assert.DoesNotContain(filtered, entry => entry.Sequence <= info.Sequence);
         Assert.Equal("warning", warning.Level);
     }
+
+    [Fact]
+    public void CapturesAndFiltersOperationCorrelation()
+    {
+        var journal = new LogJournal();
+
+        using (OperationContext.PushOperation("op_root", "rimbridge.core/script"))
+        {
+            using (OperationContext.PushMetadata(scriptStatementId: "step-1", scriptStepId: "call-1", scriptCall: "rimworld/pause_game"))
+            using (OperationContext.PushOperation("op_child", "rimworld/pause_game"))
+            {
+                journal.Record("warning", "child warning");
+            }
+        }
+
+        var direct = journal.GetEntries(operationId: "op_child");
+        var rooted = journal.GetEntries(rootOperationId: "op_root");
+
+        Assert.Single(direct);
+        Assert.Single(rooted);
+        Assert.Equal("rimworld/pause_game", direct[0].CapabilityId);
+        Assert.Equal("op_root", direct[0].RootOperationId);
+        Assert.Equal("step-1", direct[0].ScriptStatementId);
+        Assert.Equal("call-1", direct[0].ScriptStepId);
+    }
 }

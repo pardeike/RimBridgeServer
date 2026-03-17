@@ -34,6 +34,7 @@ public class ContractTests
         var projected = envelope.WithoutResult();
 
         Assert.Null(projected.Result);
+        Assert.True(projected.HasResult);
         Assert.Equal(envelope.OperationId, projected.OperationId);
         Assert.Equal(envelope.CapabilityId, projected.CapabilityId);
         Assert.Equal("test", projected.Metadata["source"]);

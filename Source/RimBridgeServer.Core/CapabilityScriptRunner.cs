@@ -1252,6 +1252,10 @@ public sealed class CapabilityScriptRunner
         bool includeStepResults,
         int attempts)
     {
+        using var scope = OperationContext.PushMetadata(
+            scriptStatementId: baseId,
+            scriptStepId: reportId,
+            scriptCall: call);
         var envelope = _registry.Invoke(call, arguments);
         return new ExecutedStepContext
         {

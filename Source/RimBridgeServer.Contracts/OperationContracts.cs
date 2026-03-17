@@ -51,13 +51,17 @@ public sealed class OperationEnvelope
 
     public object Result { get; set; }
 
+    public bool HasResult { get; set; }
+
+    public bool ResultWasTruncated { get; set; }
+
     public List<OperationWarning> Warnings { get; set; } = [];
 
     public OperationError Error { get; set; }
 
     public Dictionary<string, object> Metadata { get; set; } = [];
 
-    public OperationEnvelope WithoutResult()
+    public OperationEnvelope Clone(bool includeResult = true)
     {
         return new OperationEnvelope
         {
@@ -68,11 +72,26 @@ public sealed class OperationEnvelope
             StartedAtUtc = StartedAtUtc,
             CompletedAtUtc = CompletedAtUtc,
             DurationMs = DurationMs,
-            Result = null,
-            Error = Error,
+            Result = includeResult ? Result : null,
+            HasResult = HasResult,
+            ResultWasTruncated = ResultWasTruncated,
+            Error = Error == null
+                ? null
+                : new OperationError
+                {
+                    Code = Error.Code,
+                    Message = Error.Message,
+                    ExceptionType = Error.ExceptionType,
+                    Details = Error.Details
+                },
             Warnings = new List<OperationWarning>(Warnings),
             Metadata = new Dictionary<string, object>(Metadata)
         };
+    }
+
+    public OperationEnvelope WithoutResult()
+    {
+        return Clone(includeResult: false);
     }
 
     public static OperationEnvelope Completed(string operationId, string capabilityId, DateTimeOffset startedAtUtc, object result)
@@ -87,7 +106,8 @@ public sealed class OperationEnvelope
             StartedAtUtc = startedAtUtc,
             CompletedAtUtc = completedAtUtc,
             DurationMs = (long)(completedAtUtc - startedAtUtc).TotalMilliseconds,
-            Result = result
+            Result = result,
+            HasResult = result != null
         };
     }
 
@@ -104,6 +124,7 @@ public sealed class OperationEnvelope
             CompletedAtUtc = completedAtUtc,
             DurationMs = (long)(completedAtUtc - startedAtUtc).TotalMilliseconds,
             Result = result,
+            HasResult = result != null,
             Error = error
         };
     }
@@ -121,6 +142,7 @@ public sealed class OperationEnvelope
             CompletedAtUtc = completedAtUtc,
             DurationMs = (long)(completedAtUtc - startedAtUtc).TotalMilliseconds,
             Result = result,
+            HasResult = result != null,
             Error = error
         };
     }
@@ -138,6 +160,7 @@ public sealed class OperationEnvelope
             CompletedAtUtc = completedAtUtc,
             DurationMs = (long)(completedAtUtc - startedAtUtc).TotalMilliseconds,
             Result = result,
+            HasResult = result != null,
             Error = error
         };
     }

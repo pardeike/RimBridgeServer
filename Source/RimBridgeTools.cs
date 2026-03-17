@@ -18,7 +18,7 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
-    [Tool("rimbridge/get_operation", Description = "Get the latest journal snapshot for a specific operation id")]
+    [Tool("rimbridge/get_operation", Description = "Get the latest retained journal snapshot for a specific operation id, including any bounded retained result payload")]
     public object GetOperation([ToolParameter(Description = "Operation id returned in tool metadata")] string operationId)
     {
         return InvokeAlias(Arguments((nameof(operationId), operationId)));
@@ -30,10 +30,12 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
-    [Tool("rimbridge/list_operations", Description = "List recent bridge operations from the in-memory operation journal")]
-    public object ListOperations([ToolParameter(Description = "Maximum number of operations to return")] int limit = 20)
+    [Tool("rimbridge/list_operations", Description = "List recent bridge operations from the in-memory operation journal, optionally expanding retained result payloads")]
+    public object ListOperations(
+        [ToolParameter(Description = "Maximum number of operations to return")] int limit = 20,
+        [ToolParameter(Description = "Include bounded retained result payloads instead of summary-only operation envelopes")] bool includeResults = false)
     {
-        return InvokeAlias(Arguments((nameof(limit), limit)));
+        return InvokeAlias(Arguments((nameof(limit), limit), (nameof(includeResults), includeResults)));
     }
 
     [Tool("rimbridge/list_operation_events", Description = "List recent bridge operation lifecycle events from the in-memory event journal")]
@@ -41,18 +43,22 @@ public class RimBridgeTools
         [ToolParameter(Description = "Maximum number of events to return")] int limit = 50,
         [ToolParameter(Description = "Optional event type filter, such as operation.failed")] string eventType = null,
         [ToolParameter(Description = "Only include events with a sequence greater than this cursor")] long afterSequence = 0,
+        [ToolParameter(Description = "Optional exact operation id filter")] string operationId = null,
         [ToolParameter(Description = "Include diagnostic bridge operations such as status and journal reads")] bool includeDiagnostics = false)
     {
-        return InvokeAlias(Arguments((nameof(limit), limit), (nameof(eventType), eventType), (nameof(afterSequence), afterSequence), (nameof(includeDiagnostics), includeDiagnostics)));
+        return InvokeAlias(Arguments((nameof(limit), limit), (nameof(eventType), eventType), (nameof(afterSequence), afterSequence), (nameof(operationId), operationId), (nameof(includeDiagnostics), includeDiagnostics)));
     }
 
-    [Tool("rimbridge/list_logs", Description = "List recent captured RimWorld and bridge log entries from the in-memory log journal")]
+    [Tool("rimbridge/list_logs", Description = "List recent captured RimWorld and bridge log entries from the in-memory log journal, including operation correlation when available")]
     public object ListLogs(
         [ToolParameter(Description = "Maximum number of log entries to return")] int limit = 50,
         [ToolParameter(Description = "Minimum level to include: info, warning, error, or fatal")] string minimumLevel = "info",
-        [ToolParameter(Description = "Only include log entries with a sequence greater than this cursor")] long afterSequence = 0)
+        [ToolParameter(Description = "Only include log entries with a sequence greater than this cursor")] long afterSequence = 0,
+        [ToolParameter(Description = "Optional direct operation id filter")] string operationId = null,
+        [ToolParameter(Description = "Optional root operation id filter for grouped script runs or nested flows")] string rootOperationId = null,
+        [ToolParameter(Description = "Optional exact capability id filter")] string capabilityId = null)
     {
-        return InvokeAlias(Arguments((nameof(limit), limit), (nameof(minimumLevel), minimumLevel), (nameof(afterSequence), afterSequence)));
+        return InvokeAlias(Arguments((nameof(limit), limit), (nameof(minimumLevel), minimumLevel), (nameof(afterSequence), afterSequence), (nameof(operationId), operationId), (nameof(rootOperationId), rootOperationId), (nameof(capabilityId), capabilityId)));
     }
 
     [Tool("rimbridge/wait_for_operation", Description = "Wait for an operation in the journal to reach a terminal status")]

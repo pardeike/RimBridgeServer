@@ -15,9 +15,15 @@ internal static class RimWorldWaits
         {
             success = true,
             state,
-            recentOperationCount = journal.GetRecentOperations(200).Count,
-            recentEventCount = journal.GetRecentEvents(200).Count,
-            recentLogCount = logJournal.GetEntries(200).Count,
+            recentOperationCount = journal.OperationCount,
+            trackedOperationCount = journal.OperationCount,
+            operationJournalCapacity = journal.MaxOperations,
+            retainedResultCount = journal.RetainedResultCount,
+            retainedResultCapacity = journal.MaxRetainedResults,
+            recentEventCount = journal.EventCount,
+            eventJournalCapacity = journal.MaxEvents,
+            recentLogCount = logJournal.EntryCount,
+            logJournalCapacity = logJournal.MaxEntries,
             latestOperationEventSequence = journal.LatestEventSequence,
             latestLogSequence = logJournal.LatestSequence
         };

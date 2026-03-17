@@ -90,6 +90,27 @@ public class CapabilityRegistryTests
         Assert.Equal("capability.cancelled", envelope.Error.Code);
     }
 
+    [Fact]
+    public void RecordsParentAndScriptCorrelationMetadata()
+    {
+        var journal = new OperationJournal();
+        var registry = new CapabilityRegistry(journal);
+        registry.RegisterProvider(new FakeProvider());
+
+        using (OperationContext.PushOperation("op_parent", "rimbridge.core/run_script"))
+        using (OperationContext.PushMetadata(scriptStatementId: "step-1", scriptStepId: "call-1", scriptCall: "rimbridge/ping"))
+        {
+            var envelope = registry.Invoke("rimbridge/ping");
+            var tracked = journal.GetOperation(envelope.OperationId, includeResult: false);
+
+            Assert.Equal("op_parent", tracked.Metadata["parentOperationId"]);
+            Assert.Equal("rimbridge.core/run_script", tracked.Metadata["parentCapabilityId"]);
+            Assert.Equal("step-1", tracked.Metadata["scriptStatementId"]);
+            Assert.Equal("call-1", tracked.Metadata["scriptStepId"]);
+            Assert.Equal("rimbridge/ping", tracked.Metadata["scriptCall"]);
+        }
+    }
+
     private sealed class FakeProvider : IRimBridgeCapabilityProvider
     {
         public string ProviderId => "fake.provider";

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using HarmonyLib;
+using RimBridgeServer.Core;
 using Verse;
 
 namespace RimBridgeServer;
@@ -43,6 +44,7 @@ internal static class RimBridgeMainThread
     {
         private readonly Func<T> _func;
         private readonly TaskCompletionSource<T> _completion = new();
+        private readonly OperationContextSnapshot _context = OperationContext.Capture();
         private int _state;
 
         public MainThreadWorkItem(Func<T> func)
@@ -59,6 +61,7 @@ internal static class RimBridgeMainThread
 
             try
             {
+                using var scope = OperationContext.Restore(_context);
                 var result = _func();
                 _completion.TrySetResult(result);
             }
