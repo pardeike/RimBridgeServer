@@ -32,6 +32,7 @@ internal static class SmokeScenarioCatalog
     public const string SemanticDiagnosticsRoundTripScenarioName = "semantic-diagnostics-roundtrip";
     public const string ModSettingsDiscoveryScenarioName = "mod-settings-discovery";
     public const string ModSettingsRoundTripScenarioName = "mod-settings-roundtrip";
+    public const string ModConfigurationRoundTripScenarioName = "mod-configuration-roundtrip";
     public const string MainTabNavigationScenarioName = "main-tab-navigation";
     public const string UiLayoutRoundTripScenarioName = "ui-layout-roundtrip";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
@@ -136,6 +137,12 @@ internal static class SmokeScenarioCatalog
                 Name = ModSettingsRoundTripScenarioName,
                 Description = "Round-trip transient and persisted mod-settings updates, reload from disk, and verify semantic Dialog_ModSettings UI state.",
                 RunAsync = RunModSettingsRoundTripAsync
+            },
+            [ModConfigurationRoundTripScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ModConfigurationRoundTripScenarioName,
+                Description = "Inspect installed mod inventory, disable and re-enable one active non-core mod, restore its original load-order slot, and verify restart-needed semantics against the loaded session.",
+                RunAsync = RunModConfigurationRoundTripAsync
             },
             [MainTabNavigationScenarioName] = new SmokeScenarioDefinition
             {
@@ -584,6 +591,182 @@ internal static class SmokeScenarioCatalog
             "mod_settings_roundtrip.final_bridge_status",
             "mod_settings_roundtrip.collect_operation_events",
             "mod_settings_roundtrip.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunModConfigurationRoundTripAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.WaitForLongEventIdleAsync("mod_configuration.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("mod_configuration.snapshot_bridge_status", cancellationToken);
+        string targetModId = string.Empty;
+        string targetPackageId = string.Empty;
+        string baselineConfigurationHash = string.Empty;
+        string baselineLoadedSessionHash = string.Empty;
+        var baselineRestartRequired = false;
+        int? baselineIndex = null;
+        var restoreReached = false;
+
+        try
+        {
+            var listMods = await context.CallGameToolAsync("mod_configuration.list_mods", "rimworld/list_mods", new
+            {
+                includeInactive = true
+            }, cancellationToken);
+            context.EnsureSucceeded(listMods, "Listing installed mods for configuration discovery");
+
+            var allMods = JsonNodeHelpers.ReadArray(listMods.StructuredContent, "mods");
+            if (allMods.Count == 0)
+                throw new InvalidOperationException("Mod configuration discovery returned no installed mods.");
+
+            var initialStatus = await context.CallGameToolAsync("mod_configuration.get_status_initial", "rimworld/get_mod_configuration_status", new { }, cancellationToken);
+            context.EnsureSucceeded(initialStatus, "Reading the initial mod configuration status");
+
+            baselineConfigurationHash = ReadRequiredString(initialStatus.StructuredContent, "currentConfigurationHash");
+            baselineLoadedSessionHash = ReadRequiredString(initialStatus.StructuredContent, "loadedSessionHash");
+            baselineRestartRequired = JsonNodeHelpers.ReadBoolean(initialStatus.StructuredContent, "restartRequired") == true;
+
+            var initialActiveMods = JsonNodeHelpers.ReadArray(initialStatus.StructuredContent, "activeMods");
+            var targetMod = ResolvePreferredActiveNonCoreMod(initialActiveMods, "brrainz.rimbridgeserver");
+            targetModId = ReadRequiredString(targetMod, "modId");
+            targetPackageId = ReadRequiredString(targetMod, "packageId");
+            baselineIndex = JsonNodeHelpers.ReadInt32(targetMod, "activeLoadOrder");
+            if (!baselineIndex.HasValue)
+                throw new InvalidOperationException("The chosen mod did not report an active load-order index.");
+
+            var disableMod = await context.CallGameToolAsync("mod_configuration.disable", "rimworld/set_mod_enabled", new
+            {
+                modId = targetModId,
+                enabled = false,
+                save = true
+            }, cancellationToken);
+            context.EnsureSucceeded(disableMod, $"Disabling active mod '{targetPackageId}'");
+
+            if (JsonNodeHelpers.ReadBoolean(disableMod.StructuredContent, "currentEnabled") != false)
+                throw new InvalidOperationException("Disabling the target mod did not report currentEnabled=false.");
+            if (JsonNodeHelpers.ReadBoolean(disableMod.StructuredContent, "mod", "enabled") != false)
+                throw new InvalidOperationException("The disabled mod payload still reported enabled=true.");
+            if (JsonNodeHelpers.ReadBoolean(disableMod.StructuredContent, "mod", "loadedInSession") != true)
+                throw new InvalidOperationException("Disabling a loaded mod should still report loadedInSession=true until RimWorld is restarted.");
+
+            var disabledStatus = JsonNodeHelpers.GetPath(disableMod.StructuredContent, "configurationStatus");
+            if (disabledStatus == null)
+                throw new InvalidOperationException("Disabling a mod did not return an embedded configurationStatus payload.");
+
+            var disabledConfigurationHash = ReadRequiredString(disabledStatus, "currentConfigurationHash");
+            if (string.Equals(disabledConfigurationHash, baselineConfigurationHash, StringComparison.Ordinal))
+                throw new InvalidOperationException("Disabling the target mod did not change the configuration hash.");
+
+            var reenableMod = await context.CallGameToolAsync("mod_configuration.reenable", "rimworld/set_mod_enabled", new
+            {
+                modId = targetModId,
+                enabled = true,
+                save = true
+            }, cancellationToken);
+            context.EnsureSucceeded(reenableMod, $"Re-enabling active mod '{targetPackageId}'");
+
+            if (JsonNodeHelpers.ReadBoolean(reenableMod.StructuredContent, "currentEnabled") != true)
+                throw new InvalidOperationException("Re-enabling the target mod did not report currentEnabled=true.");
+
+            var reenabledIndex = JsonNodeHelpers.ReadInt32(reenableMod.StructuredContent, "mod", "activeLoadOrder");
+            if (!reenabledIndex.HasValue)
+                throw new InvalidOperationException("Re-enabling the target mod did not report an active load-order index.");
+
+            JsonNode? finalStatusNode;
+            ToolInvocationResult? reorderMod = null;
+            if (reenabledIndex.Value != baselineIndex.Value)
+            {
+                reorderMod = await context.CallGameToolAsync("mod_configuration.reorder", "rimworld/reorder_mod", new
+                {
+                    modId = targetModId,
+                    targetIndex = baselineIndex.Value,
+                    save = true
+                }, cancellationToken);
+                context.EnsureSucceeded(reorderMod, $"Restoring mod '{targetPackageId}' to load-order index {baselineIndex.Value}");
+                finalStatusNode = JsonNodeHelpers.GetPath(reorderMod.StructuredContent, "configurationStatus");
+                if (finalStatusNode == null)
+                    throw new InvalidOperationException("Reordering a mod did not return an embedded configurationStatus payload.");
+            }
+            else
+            {
+                finalStatusNode = JsonNodeHelpers.GetPath(reenableMod.StructuredContent, "configurationStatus");
+                if (finalStatusNode == null)
+                    throw new InvalidOperationException("Re-enabling a mod did not return an embedded configurationStatus payload.");
+            }
+
+            var finalStatus = await context.CallGameToolAsync("mod_configuration.get_status_final", "rimworld/get_mod_configuration_status", new { }, cancellationToken);
+            context.EnsureSucceeded(finalStatus, "Reading final mod configuration status after restoration");
+
+            var finalConfigurationHash = ReadRequiredString(finalStatus.StructuredContent, "currentConfigurationHash");
+            if (!string.Equals(finalConfigurationHash, baselineConfigurationHash, StringComparison.Ordinal))
+                throw new InvalidOperationException("Restoring the mod configuration did not recover the original configuration hash.");
+
+            var finalLoadedSessionHash = ReadRequiredString(finalStatus.StructuredContent, "loadedSessionHash");
+            if (!string.Equals(finalLoadedSessionHash, baselineLoadedSessionHash, StringComparison.Ordinal))
+                throw new InvalidOperationException("The loaded-session hash changed while exercising the mod configuration surface.");
+
+            var finalRestartRequired = JsonNodeHelpers.ReadBoolean(finalStatus.StructuredContent, "restartRequired") == true;
+            if (finalRestartRequired != baselineRestartRequired)
+                throw new InvalidOperationException("Restoring the mod configuration did not return restartRequired to its original state.");
+
+            var finalActiveMods = JsonNodeHelpers.ReadArray(finalStatus.StructuredContent, "activeMods");
+            var finalTargetMod = ResolveModById(finalActiveMods, targetModId);
+            if (JsonNodeHelpers.ReadInt32(finalTargetMod, "activeLoadOrder") != baselineIndex)
+                throw new InvalidOperationException("The restored mod did not return to its original active load-order index.");
+
+            restoreReached = true;
+
+            context.SetSummaryValue("modId", targetModId);
+            context.SetSummaryValue("packageId", targetPackageId);
+            context.SetSummaryValue("baselineIndex", baselineIndex.Value.ToString());
+            context.SetSummaryValue("baselineRestartRequired", baselineRestartRequired.ToString());
+            context.SetScenarioData("listMods", listMods.StructuredContent);
+            context.SetScenarioData("initialStatus", initialStatus.StructuredContent);
+            context.SetScenarioData("disableMod", disableMod.StructuredContent);
+            context.SetScenarioData("reenableMod", reenableMod.StructuredContent);
+            context.SetScenarioData("reorderMod", reorderMod?.StructuredContent);
+            context.SetScenarioData("finalStatus", finalStatus.StructuredContent);
+        }
+        finally
+        {
+            if (!restoreReached && !string.IsNullOrWhiteSpace(targetModId) && baselineIndex.HasValue)
+            {
+                try
+                {
+                    var cleanupEnable = await context.CallGameToolAsync("mod_configuration.cleanup_enable", "rimworld/set_mod_enabled", new
+                    {
+                        modId = targetModId,
+                        enabled = true,
+                        save = true
+                    }, cancellationToken);
+                    if (!cleanupEnable.Success)
+                    {
+                        context.Note($"Cleanup warning: enabling mod '{targetModId}' did not succeed.");
+                    }
+                    else
+                    {
+                        var cleanupReorder = await context.CallGameToolAsync("mod_configuration.cleanup_reorder", "rimworld/reorder_mod", new
+                        {
+                            modId = targetModId,
+                            targetIndex = baselineIndex.Value,
+                            save = true
+                        }, cancellationToken);
+                        if (!cleanupReorder.Success)
+                            context.Note($"Cleanup warning: reordering mod '{targetModId}' back to index {baselineIndex.Value} did not succeed.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    context.Note($"Cleanup warning: restoring mod configuration for '{targetModId}' failed: {ex.Message}");
+                }
+            }
+        }
+
+        var observation = await observationWindow.CaptureAsync(
+            "mod_configuration.final_bridge_status",
+            "mod_configuration.collect_operation_events",
+            "mod_configuration.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }
@@ -3450,6 +3633,42 @@ internal static class SmokeScenarioCatalog
         }
 
         throw new InvalidOperationException("Could not find an enabled draft gizmo for the selected colonist.");
+    }
+
+    private static JsonNode? ResolvePreferredActiveNonCoreMod(IReadOnlyList<JsonNode?> mods, string preferredPackageId)
+    {
+        foreach (var mod in mods)
+        {
+            if (JsonNodeHelpers.ReadBoolean(mod, "enabled") != true)
+                continue;
+            if (JsonNodeHelpers.ReadBoolean(mod, "isCoreMod") == true)
+                continue;
+            if (string.Equals(JsonNodeHelpers.ReadString(mod, "packageId"), preferredPackageId, StringComparison.OrdinalIgnoreCase))
+                return mod;
+        }
+
+        foreach (var mod in mods)
+        {
+            if (JsonNodeHelpers.ReadBoolean(mod, "enabled") != true)
+                continue;
+            if (JsonNodeHelpers.ReadBoolean(mod, "isCoreMod") == true)
+                continue;
+
+            return mod;
+        }
+
+        throw new InvalidOperationException("Could not find an active non-core mod to use for the mod-configuration roundtrip.");
+    }
+
+    private static JsonNode? ResolveModById(IReadOnlyList<JsonNode?> mods, string modId)
+    {
+        foreach (var mod in mods)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(mod, "modId"), modId, StringComparison.Ordinal))
+                return mod;
+        }
+
+        throw new InvalidOperationException($"Could not find mod '{modId}' in the returned mod list response.");
     }
 
     private static HashSet<string> ReadIdSet(ToolInvocationResult result, string arrayPropertyName)

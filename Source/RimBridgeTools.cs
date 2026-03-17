@@ -206,6 +206,37 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(path), path), (nameof(enabled), enabled)));
     }
 
+    [Tool("rimworld/list_mods", Description = "List installed RimWorld mods, whether each one is enabled in the current configuration, and whether it matches the currently loaded session")]
+    public object ListMods([ToolParameter(Description = "Include inactive installed mods as well as the active load order")] bool includeInactive = true)
+    {
+        return InvokeAlias(Arguments((nameof(includeInactive), includeInactive)));
+    }
+
+    [Tool("rimworld/get_mod_configuration_status", Description = "Read semantic mod-configuration status for the current active load order, including warnings, ordering issues, and whether a restart is required to match the loaded session")]
+    public object GetModConfigurationStatus()
+    {
+        return InvokeAlias();
+    }
+
+    [Tool("rimworld/set_mod_enabled", Description = "Enable or disable one installed mod by stable mod id, package id, name, or folder name, optionally persisting the updated ModsConfig.xml immediately")]
+    public object SetModEnabled(
+        [ToolParameter(Description = "Stable modId from rimworld/list_mods, or an exact package id / package id (player-facing) / name / folder name match")] string modId,
+        [ToolParameter(Description = "True to enable the mod in the current configuration, false to disable it")] bool enabled,
+        [ToolParameter(Description = "True to persist the updated active-mod list to ModsConfig.xml immediately")] bool save = true,
+        [ToolParameter(Description = "Allow disabling the core RimWorld mod. Defaults to false as a safety guard.")] bool allowDisableCore = false)
+    {
+        return InvokeAlias(Arguments((nameof(modId), modId), (nameof(enabled), enabled), (nameof(save), save), (nameof(allowDisableCore), allowDisableCore)));
+    }
+
+    [Tool("rimworld/reorder_mod", Description = "Move one currently enabled mod to a new zero-based active load-order index, optionally persisting the updated ModsConfig.xml immediately")]
+    public object ReorderMod(
+        [ToolParameter(Description = "Stable modId from rimworld/list_mods, or an exact package id / package id (player-facing) / name / folder name match")] string modId,
+        [ToolParameter(Description = "Desired zero-based index within the current active mod load order")] int targetIndex,
+        [ToolParameter(Description = "True to persist the updated active-mod order to ModsConfig.xml immediately")] bool save = true)
+    {
+        return InvokeAlias(Arguments((nameof(modId), modId), (nameof(targetIndex), targetIndex), (nameof(save), save)));
+    }
+
     [Tool("rimworld/list_mod_settings_surfaces", Description = "List loaded mod handles that expose a settings dialog, a persistent ModSettings state object, or both")]
     public object ListModSettingsSurfaces([ToolParameter(Description = "Include loaded mod handles even when they expose neither a settings window nor a ModSettings object")] bool includeWithoutSettings = false)
     {

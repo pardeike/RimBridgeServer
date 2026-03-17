@@ -87,6 +87,10 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/get_debug_action`** - Get one debug node with metadata such as tab, toggle state, and execution mode
 - **`rimworld/execute_debug_action`** - Execute a supported debug action and return captured side effects such as logs and opened windows, including pawn-target actions when `pawnName` is provided
 - **`rimworld/set_debug_setting`** - Set a debug settings toggle to a deterministic on/off state by stable path
+- **`rimworld/list_mods`** - List installed RimWorld mods, their enabled state, and whether the current configuration matches the loaded session
+- **`rimworld/get_mod_configuration_status`** - Read semantic status for the current active mod order, including warnings, ordering issues, and restart-needed state
+- **`rimworld/set_mod_enabled`** - Enable or disable one installed mod in the current configuration and optionally persist `ModsConfig.xml`
+- **`rimworld/reorder_mod`** - Move one enabled mod to a new zero-based active load-order index and optionally persist `ModsConfig.xml`
 - **`rimworld/list_mod_settings_surfaces`** - List loaded mod handles that expose a settings dialog, a persistent `ModSettings` object, or both
 - **`rimworld/get_mod_settings`** - Read one loaded mod's semantic `ModSettings` object by stable mod id, package id, settings category, or handle type name
 - **`rimworld/update_mod_settings`** - Apply one or more field-path updates to a loaded mod's `ModSettings` object, with optional persistence through `Mod.WriteSettings()`
@@ -168,6 +172,14 @@ For default pawn-selected map actions such as drafted move orders, prefer `rimwo
 Pawn-target debug actions are now supported through the same surface. Discovery metadata exposes `execution.requiredTargetKind = "pawn"` for `ToolMapForPawns` leaves, and callers can execute those nodes by passing `pawnName` to `rimworld/execute_debug_action`. That makes actions such as `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details` reachable without foreground input or a second pawn-specific API.
 
 `rimworld/set_debug_setting` builds deterministic semantics on top of the same graph. Settings nodes already expose their current `on` state and a direct toggle action, so the bridge can move them to an explicit target value and report whether anything changed.
+
+### Mod configuration mapping
+
+`rimworld/list_mods` discovers the full installed mod inventory through RimWorld's own `ModLister`, not by scraping the Mods page. Each returned entry includes a stable `modId`, package metadata, enabled state, active load-order index when applicable, loaded-session index when applicable, version-compatibility flags, dependency/order metadata, and the same configuration warning text that the Mods page derives for red error icons.
+
+`rimworld/get_mod_configuration_status` then summarizes the active configuration itself. It returns the current active load order, the loaded session load order, counts for configuration issues and version warnings, and a `restartRequired` flag that is based on whether the current config differs from the mod stack actually loaded in this running RimWorld process. That makes it useful both before and after calling the mutation tools.
+
+`rimworld/set_mod_enabled` and `rimworld/reorder_mod` mutate `ModsConfig` directly instead of requiring foreground interaction with the Mods page. Both tools can persist immediately through `ModsConfig.Save()`, both return an embedded `configurationStatus` snapshot after the change, and both keep the important distinction between “configured active” and “currently loaded in this session” explicit so automation can reason about restart boundaries instead of guessing.
 
 ### Mod settings mapping
 
@@ -650,6 +662,14 @@ The `mod-settings-roundtrip` scenario covers the richer mutation and UI slice:
 - opens the native `Dialog_ModSettings` window through `rimworld/open_mod_settings`
 - verifies `rimworld/get_ui_state` reports `semanticKind: "mod_settings_dialog"` for the requested mod
 - restores the original persisted values before the scenario finishes
+
+The `mod-configuration-roundtrip` scenario covers the semantic mod-order slice:
+
+- waits for RimWorld startup to go idle and reads the initial mod configuration status
+- lists installed mods through `rimworld/list_mods`
+- disables one active non-core mod through `rimworld/set_mod_enabled`
+- verifies the mod becomes disabled in config while still reporting `loadedInSession: true`
+- re-enables that mod, restores its original active load-order index through `rimworld/reorder_mod` when needed, and confirms the original configuration hash returns
 
 The `main-tab-navigation` scenario covers deterministic built-in window navigation:
 
