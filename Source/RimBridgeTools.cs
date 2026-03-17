@@ -206,6 +206,21 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(path), path), (nameof(enabled), enabled)));
     }
 
+    [Tool("rimworld/list_mod_settings_surfaces", Description = "List loaded mod handles that expose a settings dialog, a persistent ModSettings state object, or both")]
+    public object ListModSettingsSurfaces([ToolParameter(Description = "Include loaded mod handles even when they expose neither a settings window nor a ModSettings object")] bool includeWithoutSettings = false)
+    {
+        return InvokeAlias(Arguments((nameof(includeWithoutSettings), includeWithoutSettings)));
+    }
+
+    [Tool("rimworld/get_mod_settings", Description = "Read one loaded mod's semantic ModSettings object by stable mod id, package id, settings category, or handle type name")]
+    public object GetModSettings(
+        [ToolParameter(Description = "Stable modId from rimworld/list_mod_settings_surfaces, or an exact package id / settings category / handle type match")] string modId,
+        [ToolParameter(Description = "Maximum object depth to traverse when describing nested settings")] int maxDepth = 4,
+        [ToolParameter(Description = "Maximum number of children to return for any one list or dictionary node")] int maxCollectionEntries = 32)
+    {
+        return InvokeAlias(Arguments((nameof(modId), modId), (nameof(maxDepth), maxDepth), (nameof(maxCollectionEntries), maxCollectionEntries)));
+    }
+
     [Tool("rimworld/get_designator_state", Description = "Get the current Architect/designator selection state, including god mode and the selected designator")]
     public object GetDesignatorState()
     {

@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using Lib.GAB.Server;
+using UnityEngine;
 using Verse;
 
 namespace RimBridgeServer;
@@ -8,12 +9,14 @@ namespace RimBridgeServer;
 public class RimBridgeServerMod : Mod
 {
     private readonly GabpServer _server;
+    private readonly RimBridgeServerSettings _settings;
 
     public RimBridgeServerMod(ModContentPack content)
         : base(content)
     {
         try
         {
+            _settings = GetSettings<RimBridgeServerSettings>();
             RimBridgeMainThread.Initialize();
             RimBridgePatches.Apply();
             RimBridgeCapabilities.Initialize();
@@ -47,5 +50,15 @@ public class RimBridgeServerMod : Mod
         {
             Log.Error($"[RimBridge] Failed to initialize server: {ex}");
         }
+    }
+
+    public override string SettingsCategory()
+    {
+        return "RimBridgeServer";
+    }
+
+    public override void DoSettingsWindowContents(Rect inRect)
+    {
+        RimBridgeServerSettingsDrawer.Draw(inRect, _settings);
     }
 }

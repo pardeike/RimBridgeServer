@@ -30,6 +30,7 @@ internal static class SmokeScenarioCatalog
     public const string ScriptWallSequenceScenarioName = "script-wall-sequence";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
     public const string SemanticDiagnosticsRoundTripScenarioName = "semantic-diagnostics-roundtrip";
+    public const string ModSettingsDiscoveryScenarioName = "mod-settings-discovery";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
@@ -120,6 +121,12 @@ internal static class SmokeScenarioCatalog
                 Name = SemanticDiagnosticsRoundTripScenarioName,
                 Description = "Ensure a playable game exists, then smoke the newer discovery, stable-id, selection semantics, notification, alert, wait, and observability surfaces in one roundtrip.",
                 RunAsync = RunSemanticDiagnosticsRoundTripAsync
+            },
+            [ModSettingsDiscoveryScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ModSettingsDiscoveryScenarioName,
+                Description = "Inspect loaded mod-settings surfaces and verify RimBridgeServer exposes a deterministic semantic ModSettings payload.",
+                RunAsync = RunModSettingsDiscoveryAsync
             },
             [SaveLoadRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -310,6 +317,60 @@ internal static class SmokeScenarioCatalog
             "debug_actions.final_bridge_status",
             "debug_actions.collect_operation_events",
             "debug_actions.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunModSettingsDiscoveryAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.WaitForLongEventIdleAsync("mod_settings.wait_for_long_event_idle", cancellationToken);
+
+        var observationWindow = await context.BeginObservationWindowAsync("mod_settings.snapshot_bridge_status", cancellationToken);
+
+        var listSurfaces = await context.CallGameToolAsync("mod_settings.list_surfaces", "rimworld/list_mod_settings_surfaces", new
+        {
+            includeWithoutSettings = false
+        }, cancellationToken);
+        context.EnsureSucceeded(listSurfaces, "Listing loaded mod settings surfaces");
+
+        var surfaces = JsonNodeHelpers.ReadArray(listSurfaces.StructuredContent, "surfaces");
+        if (surfaces.Count == 0)
+            throw new InvalidOperationException("Mod settings discovery returned no readable settings surfaces.");
+
+        var rimBridgeSurface = surfaces.FirstOrDefault(surface =>
+            string.Equals(JsonNodeHelpers.ReadString(surface, "packageId"), "brrainz.rimbridgeserver", StringComparison.OrdinalIgnoreCase));
+        if (rimBridgeSurface == null)
+            throw new InvalidOperationException("Mod settings discovery did not include the RimBridgeServer settings surface.");
+
+        var modId = JsonNodeHelpers.ReadString(rimBridgeSurface, "modId");
+        if (string.IsNullOrWhiteSpace(modId))
+            throw new InvalidOperationException("The RimBridgeServer mod settings surface did not return a stable modId.");
+
+        var getSettings = await context.CallGameToolAsync("mod_settings.get_settings", "rimworld/get_mod_settings", new
+        {
+            modId
+        }, cancellationToken);
+        context.EnsureSucceeded(getSettings, $"Reading semantic settings for '{modId}'");
+
+        var root = JsonNodeHelpers.GetPath(getSettings.StructuredContent, "root");
+        if (root == null)
+            throw new InvalidOperationException("Mod settings readback did not include a root semantic node.");
+
+        var rootChildren = JsonNodeHelpers.ReadArray(root, "children");
+        if (!rootChildren.Any(child => string.Equals(JsonNodeHelpers.ReadString(child, "name"), "SemanticHarnessSmokeToggle", StringComparison.Ordinal)))
+            throw new InvalidOperationException("The semantic mod settings payload did not include the expected SemanticHarnessSmokeToggle field.");
+        if (!rootChildren.Any(child => string.Equals(JsonNodeHelpers.ReadString(child, "name"), "SemanticHarnessSmokeValue", StringComparison.Ordinal)))
+            throw new InvalidOperationException("The semantic mod settings payload did not include the expected SemanticHarnessSmokeValue field.");
+
+        context.SetSummaryValue("modSettingsSurfaceCount", surfaces.Count.ToString());
+        context.SetSummaryValue("rimBridgeModSettingsId", modId);
+        context.SetScenarioData("modSettingsSurface", rimBridgeSurface);
+        context.SetScenarioData("modSettingsRoot", root);
+
+        var observation = await observationWindow.CaptureAsync(
+            "mod_settings.final_bridge_status",
+            "mod_settings.collect_operation_events",
+            "mod_settings.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }

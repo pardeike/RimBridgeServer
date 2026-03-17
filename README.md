@@ -87,6 +87,8 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/get_debug_action`** - Get one debug node with metadata such as tab, toggle state, and execution mode
 - **`rimworld/execute_debug_action`** - Execute a supported debug action and return captured side effects such as logs and opened windows, including pawn-target actions when `pawnName` is provided
 - **`rimworld/set_debug_setting`** - Set a debug settings toggle to a deterministic on/off state by stable path
+- **`rimworld/list_mod_settings_surfaces`** - List loaded mod handles that expose a settings dialog, a persistent `ModSettings` object, or both
+- **`rimworld/get_mod_settings`** - Read one loaded mod's semantic `ModSettings` object by stable mod id, package id, settings category, or handle type name
 - **`rimworld/get_designator_state`** - Get the current Architect/designator selection state, including god mode and the selected designator
 - **`rimworld/set_god_mode`** - Enable or disable RimWorld god mode deterministically
 - **`rimworld/list_architect_categories`** - List the visible Architect categories with stable ids
@@ -158,6 +160,12 @@ For default pawn-selected map actions such as drafted move orders, prefer `rimwo
 Pawn-target debug actions are now supported through the same surface. Discovery metadata exposes `execution.requiredTargetKind = "pawn"` for `ToolMapForPawns` leaves, and callers can execute those nodes by passing `pawnName` to `rimworld/execute_debug_action`. That makes actions such as `Actions\\T: Toggle Job Logging` and `Actions\\T: Log Job Details` reachable without foreground input or a second pawn-specific API.
 
 `rimworld/set_debug_setting` builds deterministic semantics on top of the same graph. Settings nodes already expose their current `on` state and a direct toggle action, so the bridge can move them to an explicit target value and report whether anything changed.
+
+### Mod settings mapping
+
+`rimworld/list_mod_settings_surfaces` discovers loaded `Verse.Mod` handles rather than scraping the Mods UI. Each returned surface includes a stable `modId`, package metadata, the handle type, whether a settings window exists, and whether the mod currently exposes a persistent `ModSettings` instance.
+
+`rimworld/get_mod_settings` then reflects that `ModSettings` instance into a semantic tree of field-backed values. Scalars stay typed as booleans, numbers, strings, or enums, while nested objects, arrays, and dictionaries keep their child paths so an external harness can reason about configuration state without screenshot OCR or ad hoc XML parsing.
 
 ### Architect and god-mode mapping
 
@@ -598,6 +606,14 @@ The `selection-roundtrip` scenario reuses the same harness primitives against a 
 - lists current-map colonists and selects a real pawn
 - jumps the camera to that pawn, reads camera state, and clears the selection again
 - captures only the operation and log window for that interaction block
+
+The `mod-settings-discovery` scenario covers the first semantic mod-settings slice:
+
+- waits for RimWorld to finish any startup long events
+- lists loaded mod-settings surfaces through `rimworld/list_mod_settings_surfaces`
+- verifies that RimBridgeServer exposes a stable `modId`
+- reads the semantic `ModSettings` tree through `rimworld/get_mod_settings`
+- confirms the deterministic harness-owned settings fields are present in the payload
 
 The `context-menu-cancel-roundtrip` scenario exercises the first background-safe input path:
 
