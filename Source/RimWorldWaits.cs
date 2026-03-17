@@ -57,6 +57,7 @@ internal static class RimWorldWaits
         {
             TimeoutMs = timeoutMs,
             PollIntervalMs = pollIntervalMs,
+            HandleProbeException = ex => HandleMainThreadProbeException(ex, "RimWorld main thread was busy while checking game-load readiness. Retrying."),
             TimeoutMessage = waitForScreenFade
                 ? "Timed out waiting for RimWorld to become automation-ready after loading."
                 : "Timed out waiting for RimWorld to load a playable game."
@@ -84,6 +85,7 @@ internal static class RimWorldWaits
         {
             TimeoutMs = timeoutMs,
             PollIntervalMs = pollIntervalMs,
+            HandleProbeException = ex => HandleMainThreadProbeException(ex, "RimWorld main thread was busy while checking long-event state. Retrying."),
             TimeoutMessage = "Timed out waiting for RimWorld long events to finish."
         });
 
@@ -128,7 +130,21 @@ internal static class RimWorldWaits
             message = outcome.Message,
             elapsedMs = outcome.ElapsedMs,
             attempts = outcome.Attempts,
+            probeFailureCount = outcome.ProbeFailureCount,
             state = outcome.Snapshot
+        };
+    }
+
+    private static WaitProbeResult HandleMainThreadProbeException(System.Exception exception, string message)
+    {
+        return exception switch
+        {
+            System.TimeoutException => new WaitProbeResult
+            {
+                IsSatisfied = false,
+                Message = message
+            },
+            _ => null
         };
     }
 }

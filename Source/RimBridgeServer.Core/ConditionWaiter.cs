@@ -11,6 +11,8 @@ public sealed class WaitOptions
     public int PollIntervalMs { get; set; } = 100;
 
     public string TimeoutMessage { get; set; } = "Timed out waiting for the condition.";
+
+    public Func<Exception, WaitProbeResult> HandleProbeException { get; set; }
 }
 
 public sealed class WaitProbeResult
@@ -29,6 +31,8 @@ public sealed class WaitOutcome
     public int Attempts { get; set; }
 
     public long ElapsedMs { get; set; }
+
+    public int ProbeFailureCount { get; set; }
 
     public string Message { get; set; } = string.Empty;
 
@@ -51,13 +55,29 @@ public sealed class ConditionWaiter
         var stopwatch = Stopwatch.StartNew();
         WaitProbeResult lastProbe = null;
         var attempts = 0;
+        var probeFailureCount = 0;
 
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             attempts++;
 
-            lastProbe = probe() ?? new WaitProbeResult();
+            try
+            {
+                lastProbe = probe() ?? new WaitProbeResult();
+            }
+            catch (Exception ex)
+            {
+                if (options.HandleProbeException == null)
+                    throw;
+
+                lastProbe = options.HandleProbeException(ex);
+                if (lastProbe == null)
+                    throw;
+
+                probeFailureCount++;
+            }
+
             if (lastProbe.IsSatisfied)
             {
                 return new WaitOutcome
@@ -65,6 +85,7 @@ public sealed class ConditionWaiter
                     Satisfied = true,
                     Attempts = attempts,
                     ElapsedMs = stopwatch.ElapsedMilliseconds,
+                    ProbeFailureCount = probeFailureCount,
                     Message = string.IsNullOrWhiteSpace(lastProbe.Message) ? "Condition satisfied." : lastProbe.Message,
                     Snapshot = lastProbe.Snapshot
                 };
@@ -77,13 +98,29 @@ public sealed class ConditionWaiter
                     Satisfied = false,
                     Attempts = attempts,
                     ElapsedMs = stopwatch.ElapsedMilliseconds,
+                    ProbeFailureCount = probeFailureCount,
                     Message = string.IsNullOrWhiteSpace(options.TimeoutMessage) ? lastProbe.Message : options.TimeoutMessage,
                     Snapshot = lastProbe.Snapshot
                 };
             }
 
             if (options.PollIntervalMs > 0)
-                Thread.Sleep(options.PollIntervalMs);
+                SleepUntilNextProbe(options.PollIntervalMs, cancellationToken);
         }
+    }
+
+    private static void SleepUntilNextProbe(int pollIntervalMs, CancellationToken cancellationToken)
+    {
+        if (pollIntervalMs <= 0)
+            return;
+
+        if (!cancellationToken.CanBeCanceled)
+        {
+            Thread.Sleep(pollIntervalMs);
+            return;
+        }
+
+        if (cancellationToken.WaitHandle.WaitOne(pollIntervalMs))
+            cancellationToken.ThrowIfCancellationRequested();
     }
 }

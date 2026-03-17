@@ -1207,25 +1207,32 @@ public sealed class CapabilityScriptRunner
                 return CreateConditionFailureContext(reportIndex, reportId, baseId, call, guardError, lastAttempt);
 
             if (!lastAttempt.Report.Success)
-                return lastAttempt;
-
-            bool satisfied;
-            try
             {
-                satisfied = EvaluateContinueCondition(
-                    policy.Condition,
-                    CreateReferenceRoot(lastAttempt),
-                    baseId,
-                    state,
-                    out lastUnsatisfiedMessage);
-            }
-            catch (Exception ex)
-            {
-                return CreateConditionFailureContext(reportIndex, reportId, baseId, call, "script.invalid_condition", ex.Message, lastAttempt);
-            }
+                if (!ShouldRetryContinueAttempt(lastAttempt))
+                    return lastAttempt;
 
-            if (satisfied)
-                return lastAttempt;
+                lastUnsatisfiedMessage = CreateContinueAttemptRetryMessage(lastAttempt);
+            }
+            else
+            {
+                bool satisfied;
+                try
+                {
+                    satisfied = EvaluateContinueCondition(
+                        policy.Condition,
+                        CreateReferenceRoot(lastAttempt),
+                        baseId,
+                        state,
+                        out lastUnsatisfiedMessage);
+                }
+                catch (Exception ex)
+                {
+                    return CreateConditionFailureContext(reportIndex, reportId, baseId, call, "script.invalid_condition", ex.Message, lastAttempt);
+                }
+
+                if (satisfied)
+                    return lastAttempt;
+            }
 
             if (stopwatch.ElapsedMilliseconds >= timeoutMs)
             {
@@ -1241,6 +1248,19 @@ public sealed class CapabilityScriptRunner
             if (pollIntervalMs > 0)
                 Thread.Sleep(pollIntervalMs);
         }
+    }
+
+    private static bool ShouldRetryContinueAttempt(ExecutedStepContext attempt)
+    {
+        return attempt?.Report?.Status == OperationStatus.TimedOut;
+    }
+
+    private static string CreateContinueAttemptRetryMessage(ExecutedStepContext attempt)
+    {
+        var errorMessage = attempt?.Report?.Error?.Message;
+        return string.IsNullOrWhiteSpace(errorMessage)
+            ? "The most recent continueUntil attempt timed out. Retrying until the step-level timeout expires."
+            : $"The most recent continueUntil attempt timed out: {errorMessage}";
     }
 
     private ExecutedStepContext InvokeStepOnce(

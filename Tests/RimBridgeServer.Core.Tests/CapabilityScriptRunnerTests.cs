@@ -463,6 +463,41 @@ public class CapabilityScriptRunnerTests
     }
 
     [Fact]
+    public void ContinueUntilRetriesTimedOutAttempts()
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new ScriptTestProvider());
+        var runner = new CapabilityScriptRunner(registry);
+
+        var report = runner.Execute(new CapabilityScriptDefinition
+        {
+            Steps =
+            [
+                new CapabilityScriptStep
+                {
+                    Id = "poll",
+                    Call = "test/flaky_counter",
+                    ContinueUntil = new CapabilityScriptContinuePolicy
+                    {
+                        TimeoutMs = 1000,
+                        PollIntervalMs = 0,
+                        Condition = new Dictionary<string, object>
+                        {
+                            ["path"] = "result.value",
+                            ["greaterThanOrEqual"] = 2
+                        }
+                    }
+                }
+            ]
+        });
+
+        Assert.True(report.Success);
+        Assert.Equal(3, report.Steps[0].Attempts);
+        var result = Assert.IsType<Dictionary<string, object>>(report.Steps[0].Result);
+        Assert.Equal(2, System.Convert.ToInt32(result["value"], System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
     public void CanDeclareVariablesAndBranchWithIf()
     {
         var registry = new CapabilityRegistry();
@@ -1054,6 +1089,8 @@ public class CapabilityScriptRunnerTests
     private sealed class ScriptTestProvider : IRimBridgeCapabilityProvider
     {
         private int _counter;
+        private int _flakyCounter;
+        private int _flakyCounterCallCount;
         private int _pawnSnapshotCallCount;
 
         public string ProviderId => "script.test";
@@ -1111,6 +1148,33 @@ public class CapabilityScriptRunnerTests
                 {
                     _counter++;
                     return Task.FromResult(OperationEnvelope.Completed("op_counter", "test.state/counter", System.DateTimeOffset.UtcNow, new { value = _counter }));
+                });
+
+            yield return new RimBridgeCapabilityRegistration(
+                new CapabilityDescriptor
+                {
+                    Id = "test.state/flaky_counter",
+                    ProviderId = ProviderId,
+                    Category = "test",
+                    Aliases = ["test/flaky_counter"]
+                },
+                (_, _) =>
+                {
+                    _flakyCounterCallCount++;
+                    if (_flakyCounterCallCount == 1)
+                    {
+                        return Task.FromResult(OperationEnvelope.TimedOut("op_flaky_counter", "test.state/flaky_counter", System.DateTimeOffset.UtcNow, new OperationError
+                        {
+                            Code = "capability.timed_out",
+                            Message = "main thread busy"
+                        }));
+                    }
+
+                    _flakyCounter++;
+                    return Task.FromResult(OperationEnvelope.Completed("op_flaky_counter", "test.state/flaky_counter", System.DateTimeOffset.UtcNow, new Dictionary<string, object>
+                    {
+                        ["value"] = _flakyCounter
+                    }));
                 });
 
             yield return new RimBridgeCapabilityRegistration(

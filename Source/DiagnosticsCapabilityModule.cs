@@ -130,6 +130,7 @@ internal sealed class DiagnosticsCapabilityModule
             message = outcome.Message,
             elapsedMs = outcome.ElapsedMs,
             attempts = outcome.Attempts,
+            probeFailureCount = outcome.ProbeFailureCount,
             trackedOperation = outcome.Snapshot
         };
     }
