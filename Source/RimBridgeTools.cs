@@ -221,6 +221,34 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(modId), modId), (nameof(maxDepth), maxDepth), (nameof(maxCollectionEntries), maxCollectionEntries)));
     }
 
+    [Tool("rimworld/update_mod_settings", Description = "Apply one or more field-path updates to a loaded mod's ModSettings object, with optional immediate persistence through Mod.WriteSettings()")]
+    public object UpdateModSettings(
+        [ToolParameter(Description = "Stable modId from rimworld/list_mod_settings_surfaces, or an exact package id / settings category / handle type match")] string modId,
+        [ToolParameter(Description = "Object mapping field paths such as SemanticHarnessSmokeToggle or Nested.List[0] to desired values")] Dictionary<string, object> values,
+        [ToolParameter(Description = "True to persist through Mod.WriteSettings() after applying the updates")] bool write = true,
+        [ToolParameter(Description = "Maximum object depth to traverse when returning the updated settings snapshot")] int maxDepth = 4,
+        [ToolParameter(Description = "Maximum number of children to return for any one list or dictionary node in the updated snapshot")] int maxCollectionEntries = 32)
+    {
+        return InvokeAlias(Arguments((nameof(modId), modId), (nameof(values), values), (nameof(write), write), (nameof(maxDepth), maxDepth), (nameof(maxCollectionEntries), maxCollectionEntries)));
+    }
+
+    [Tool("rimworld/reload_mod_settings", Description = "Reload a loaded mod's ModSettings object from disk, discarding unsaved in-memory changes")]
+    public object ReloadModSettings(
+        [ToolParameter(Description = "Stable modId from rimworld/list_mod_settings_surfaces, or an exact package id / settings category / handle type match")] string modId,
+        [ToolParameter(Description = "Maximum object depth to traverse when returning the reloaded settings snapshot")] int maxDepth = 4,
+        [ToolParameter(Description = "Maximum number of children to return for any one list or dictionary node in the reloaded snapshot")] int maxCollectionEntries = 32)
+    {
+        return InvokeAlias(Arguments((nameof(modId), modId), (nameof(maxDepth), maxDepth), (nameof(maxCollectionEntries), maxCollectionEntries)));
+    }
+
+    [Tool("rimworld/open_mod_settings", Description = "Open RimWorld's native Dialog_ModSettings window for one loaded mod without foreground-dependent input")]
+    public object OpenModSettings(
+        [ToolParameter(Description = "Stable modId from rimworld/list_mod_settings_surfaces, or an exact package id / settings category / handle type match")] string modId,
+        [ToolParameter(Description = "Close any currently open mod-settings dialogs before opening the requested one")] bool replaceExisting = true)
+    {
+        return InvokeAlias(Arguments((nameof(modId), modId), (nameof(replaceExisting), replaceExisting)));
+    }
+
     [Tool("rimworld/get_designator_state", Description = "Get the current Architect/designator selection state, including god mode and the selected designator")]
     public object GetDesignatorState()
     {

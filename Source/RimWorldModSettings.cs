@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using RimWorld;
 using RimBridgeServer.Core;
 using Verse;
 
@@ -99,6 +101,227 @@ internal static class RimWorldModSettings
             root = ToResponseNode(settings),
             topLevelSettingCount = settings.Children.Count
         };
+    }
+
+    public static object UpdateModSettingsResponse(string modId, Dictionary<string, object> values, bool write = true, int maxDepth = 4, int maxCollectionEntries = 32)
+    {
+        if (!TryResolveMod(modId, out var mod, out var normalizedQuery, out var error))
+            return Failure(error, normalizedQuery);
+
+        if (mod.modSettings == null)
+        {
+            return new
+            {
+                success = false,
+                message = $"Mod '{normalizedQuery}' does not currently expose a persistent ModSettings instance.",
+                requestedModId = normalizedQuery,
+                mod = ToResponseSurface(DescribeSurface(mod))
+            };
+        }
+
+        if (values == null || values.Count == 0)
+        {
+            return new
+            {
+                success = false,
+                message = "At least one settings path/value pair is required.",
+                requestedModId = normalizedQuery,
+                mod = ToResponseSurface(DescribeSurface(mod))
+            };
+        }
+
+        IReadOnlyList<ObjectPathUpdateResult> updates;
+        try
+        {
+            updates = ObjectPathUpdater.Apply(mod.modSettings, values);
+            if (write)
+                mod.WriteSettings();
+        }
+        catch (Exception ex)
+        {
+            return new
+            {
+                success = false,
+                message = $"Updating mod settings for '{normalizedQuery}' failed: {ex.Message}",
+                requestedModId = normalizedQuery,
+                mod = ToResponseSurface(DescribeSurface(mod))
+            };
+        }
+
+        var root = SemanticValueGraph.Describe(mod.modSettings, new SemanticValueGraphOptions
+        {
+            MaxDepth = maxDepth,
+            MaxCollectionEntries = maxCollectionEntries
+        });
+
+        return new
+        {
+            success = true,
+            requestedModId = normalizedQuery,
+            wroteSettings = write,
+            changed = updates.Any(update => update.Changed),
+            updateCount = updates.Count,
+            updates = updates.Select(update => new
+            {
+                path = update.Path,
+                typeName = update.TypeName,
+                changed = update.Changed,
+                previous = ToResponseNode(SemanticValueGraph.Describe(update.PreviousValue)),
+                current = ToResponseNode(SemanticValueGraph.Describe(update.CurrentValue))
+            }).ToList(),
+            mod = ToResponseSurface(DescribeSurface(mod)),
+            root = ToResponseNode(root),
+            topLevelSettingCount = root.Children.Count
+        };
+    }
+
+    public static object ReloadModSettingsResponse(string modId, int maxDepth = 4, int maxCollectionEntries = 32)
+    {
+        if (!TryResolveMod(modId, out var mod, out var normalizedQuery, out var error))
+            return Failure(error, normalizedQuery);
+
+        if (mod.modSettings == null)
+        {
+            return new
+            {
+                success = false,
+                message = $"Mod '{normalizedQuery}' does not currently expose a persistent ModSettings instance.",
+                requestedModId = normalizedQuery,
+                mod = ToResponseSurface(DescribeSurface(mod))
+            };
+        }
+
+        var previous = mod.modSettings;
+        try
+        {
+            var settingsType = previous.GetType();
+            var getSettingsMethod = typeof(Mod)
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .First(method => method.Name == nameof(Mod.GetSettings) && method.IsGenericMethodDefinition && method.GetParameters().Length == 0);
+
+            mod.modSettings = null;
+            var reloaded = getSettingsMethod.MakeGenericMethod(settingsType).Invoke(mod, Array.Empty<object>()) as ModSettings;
+            if (reloaded == null)
+                throw new InvalidOperationException($"Reloading mod settings returned no '{settingsType.FullName ?? settingsType.Name}' instance.");
+        }
+        catch (Exception ex)
+        {
+            mod.modSettings = previous;
+            return new
+            {
+                success = false,
+                message = $"Reloading mod settings for '{normalizedQuery}' failed: {ex.InnerException?.Message ?? ex.Message}",
+                requestedModId = normalizedQuery,
+                mod = ToResponseSurface(DescribeSurface(mod))
+            };
+        }
+
+        var root = SemanticValueGraph.Describe(mod.modSettings, new SemanticValueGraphOptions
+        {
+            MaxDepth = maxDepth,
+            MaxCollectionEntries = maxCollectionEntries
+        });
+
+        return new
+        {
+            success = true,
+            requestedModId = normalizedQuery,
+            message = $"Reloaded mod settings for '{normalizedQuery}' from disk.",
+            mod = ToResponseSurface(DescribeSurface(mod)),
+            root = ToResponseNode(root),
+            topLevelSettingCount = root.Children.Count
+        };
+    }
+
+    public static object OpenModSettingsResponse(string modId, bool replaceExisting = true)
+    {
+        if (!TryResolveMod(modId, out var mod, out var normalizedQuery, out var error))
+            return Failure(error, normalizedQuery);
+
+        var settingsCategory = TryGetSettingsCategory(mod);
+        if (string.IsNullOrWhiteSpace(settingsCategory.Category))
+        {
+            return new
+            {
+                success = false,
+                message = $"Mod '{normalizedQuery}' does not expose a settings dialog.",
+                requestedModId = normalizedQuery,
+                mod = ToResponseSurface(DescribeSurface(mod))
+            };
+        }
+
+        var before = RimWorldInput.GetUiState();
+        var windowStack = Find.WindowStack;
+        if (windowStack == null)
+        {
+            return new
+            {
+                success = false,
+                message = "RimWorld window stack is not available.",
+                requestedModId = normalizedQuery,
+                mod = ToResponseSurface(DescribeSurface(mod)),
+                before = RimWorldInput.DescribeUiState(before),
+                after = RimWorldInput.DescribeUiState(before)
+            };
+        }
+
+        var openDialogs = windowStack.Windows?.OfType<Dialog_ModSettings>().ToList() ?? [];
+        var matchingDialog = openDialogs.LastOrDefault(dialog => string.Equals(GetSurfaceId(dialog.mod), GetSurfaceId(mod), StringComparison.Ordinal));
+        if (matchingDialog != null && !replaceExisting)
+        {
+            return new
+            {
+                success = true,
+                changed = false,
+                requestedModId = normalizedQuery,
+                message = $"Settings dialog for '{normalizedQuery}' is already open.",
+                mod = ToResponseSurface(DescribeSurface(mod)),
+                dialog = DescribeOpenDialog(matchingDialog),
+                before = RimWorldInput.DescribeUiState(before),
+                after = RimWorldInput.DescribeUiState(before)
+            };
+        }
+
+        var closedDialogCount = 0;
+        if (replaceExisting)
+        {
+            foreach (var dialog in openDialogs)
+            {
+                windowStack.TryRemove(dialog, doCloseSound: false);
+                closedDialogCount++;
+            }
+        }
+
+        var createdDialog = new Dialog_ModSettings(mod);
+        windowStack.Add(createdDialog);
+        var after = RimWorldInput.GetUiState();
+
+        return new
+        {
+            success = true,
+            changed = true,
+            requestedModId = normalizedQuery,
+            replaceExisting,
+            closedExistingDialogCount = closedDialogCount,
+            message = $"Opened mod settings dialog for '{normalizedQuery}'.",
+            mod = ToResponseSurface(DescribeSurface(mod)),
+            dialog = DescribeOpenDialog(createdDialog),
+            before = RimWorldInput.DescribeUiState(before),
+            after = RimWorldInput.DescribeUiState(after)
+        };
+    }
+
+    public static bool TryDescribeWindow(Window window, out string semanticKind, out object semanticDetails)
+    {
+        semanticKind = string.Empty;
+        semanticDetails = null;
+
+        if (window is not Dialog_ModSettings dialog || dialog.mod == null)
+            return false;
+
+        semanticKind = "mod_settings_dialog";
+        semanticDetails = DescribeOpenDialog(dialog);
+        return true;
     }
 
     private static bool TryResolveMod(string modId, out Mod mod, out string normalizedQuery, out string error)
@@ -221,6 +444,16 @@ internal static class RimWorldModSettings
     private static string NormalizeString(string value)
     {
         return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+    }
+
+    private static object DescribeOpenDialog(Dialog_ModSettings dialog)
+    {
+        return new
+        {
+            windowType = dialog.GetType().FullName ?? dialog.GetType().Name,
+            windowId = dialog.ID,
+            mod = ToResponseSurface(DescribeSurface(dialog.mod))
+        };
     }
 
     private static object ToResponseSurface(ModSettingsSurfaceSnapshot surface)

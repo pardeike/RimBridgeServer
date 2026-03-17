@@ -35,6 +35,10 @@ internal sealed class UiWindowSnapshot
 
     public bool DrawInScreenshotMode { get; set; }
 
+    public string SemanticKind { get; set; } = string.Empty;
+
+    public object SemanticDetails { get; set; }
+
     public UiRectSnapshot Rect { get; set; } = new();
 }
 
@@ -128,7 +132,7 @@ internal static class RimWorldInput
 {
     public static object GetUiStateResponse()
     {
-        return ToToolResponse(GetUiState());
+        return DescribeUiState(GetUiState());
     }
 
     public static object PressAcceptResponse()
@@ -441,6 +445,10 @@ internal static class RimWorldInput
 
     private static UiWindowSnapshot DescribeWindow(WindowStack windowStack, Window window, int index)
     {
+        var semanticKind = string.Empty;
+        object semanticDetails = null;
+        RimWorldModSettings.TryDescribeWindow(window, out semanticKind, out semanticDetails);
+
         return new UiWindowSnapshot
         {
             Index = index,
@@ -456,6 +464,8 @@ internal static class RimWorldInput
             PreventCameraMotion = window.preventCameraMotion,
             AbsorbInputAroundWindow = window.absorbInputAroundWindow,
             DrawInScreenshotMode = window.drawInScreenshotMode,
+            SemanticKind = semanticKind,
+            SemanticDetails = semanticDetails,
             Rect = new UiRectSnapshot
             {
                 X = window.windowRect.x,
@@ -509,7 +519,7 @@ internal static class RimWorldInput
             });
     }
 
-    private static object ToToolResponse(UiStateSnapshot state)
+    internal static object DescribeUiState(UiStateSnapshot state)
     {
         return new
         {
@@ -552,6 +562,8 @@ internal static class RimWorldInput
             preventCameraMotion = window.PreventCameraMotion,
             absorbInputAroundWindow = window.AbsorbInputAroundWindow,
             drawInScreenshotMode = window.DrawInScreenshotMode,
+            semanticKind = string.IsNullOrWhiteSpace(window.SemanticKind) ? null : window.SemanticKind,
+            semanticDetails = window.SemanticDetails,
             rect = ToToolResponse(window.Rect)
         };
     }
@@ -576,8 +588,8 @@ internal static class RimWorldInput
             changed = result.Changed,
             windowCountDelta = result.WindowCountDelta,
             message = result.Message,
-            before = ToToolResponse(result.Before),
-            after = ToToolResponse(result.After),
+            before = DescribeUiState(result.Before),
+            after = DescribeUiState(result.After),
             openedWindowTypes = result.OpenedWindowTypes.ToList(),
             closedWindowTypes = result.ClosedWindowTypes.ToList()
         };
@@ -597,8 +609,8 @@ internal static class RimWorldInput
             actionKind = result.ActionKind,
             executedOptionIndex = result.ExecutedOptionIndex > 0 ? result.ExecutedOptionIndex : (int?)null,
             executedLabel = result.ExecutedLabel,
-            before = ToToolResponse(result.Before),
-            after = ToToolResponse(result.After),
+            before = DescribeUiState(result.Before),
+            after = DescribeUiState(result.After),
             openedWindowTypes = result.OpenedWindowTypes.ToList(),
             closedWindowTypes = result.ClosedWindowTypes.ToList()
         };

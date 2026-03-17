@@ -89,6 +89,9 @@ Your external program can send these commands to RimBridgeServer:
 - **`rimworld/set_debug_setting`** - Set a debug settings toggle to a deterministic on/off state by stable path
 - **`rimworld/list_mod_settings_surfaces`** - List loaded mod handles that expose a settings dialog, a persistent `ModSettings` object, or both
 - **`rimworld/get_mod_settings`** - Read one loaded mod's semantic `ModSettings` object by stable mod id, package id, settings category, or handle type name
+- **`rimworld/update_mod_settings`** - Apply one or more field-path updates to a loaded mod's `ModSettings` object, with optional persistence through `Mod.WriteSettings()`
+- **`rimworld/reload_mod_settings`** - Reload a loaded mod's `ModSettings` object from disk, discarding unsaved in-memory changes
+- **`rimworld/open_mod_settings`** - Open RimWorld's native `Dialog_ModSettings` window for one loaded mod without foreground-dependent input
 - **`rimworld/get_designator_state`** - Get the current Architect/designator selection state, including god mode and the selected designator
 - **`rimworld/set_god_mode`** - Enable or disable RimWorld god mode deterministically
 - **`rimworld/list_architect_categories`** - List the visible Architect categories with stable ids
@@ -166,6 +169,10 @@ Pawn-target debug actions are now supported through the same surface. Discovery 
 `rimworld/list_mod_settings_surfaces` discovers loaded `Verse.Mod` handles rather than scraping the Mods UI. Each returned surface includes a stable `modId`, package metadata, the handle type, whether a settings window exists, and whether the mod currently exposes a persistent `ModSettings` instance.
 
 `rimworld/get_mod_settings` then reflects that `ModSettings` instance into a semantic tree of field-backed values. Scalars stay typed as booleans, numbers, strings, or enums, while nested objects, arrays, and dictionaries keep their child paths so an external harness can reason about configuration state without screenshot OCR or ad hoc XML parsing.
+
+`rimworld/update_mod_settings` accepts an object whose keys are field paths from that semantic tree. The current implementation supports ordinary field-name traversal plus zero-based list segments such as `SomeList[0]`. Pass `write: false` when you want to mutate only the in-memory settings object for a transient test, then use `rimworld/reload_mod_settings` to restore the persisted on-disk state.
+
+`rimworld/open_mod_settings` opens RimWorld's real `Dialog_ModSettings` window for a chosen mod. `rimworld/get_ui_state` now annotates that window with `semanticKind: "mod_settings_dialog"` plus the resolved mod metadata, so a harness can confirm that the right settings dialog is actually on screen instead of only checking the raw window type.
 
 ### Architect and god-mode mapping
 
@@ -614,6 +621,16 @@ The `mod-settings-discovery` scenario covers the first semantic mod-settings sli
 - verifies that RimBridgeServer exposes a stable `modId`
 - reads the semantic `ModSettings` tree through `rimworld/get_mod_settings`
 - confirms the deterministic harness-owned settings fields are present in the payload
+
+The `mod-settings-roundtrip` scenario covers the richer mutation and UI slice:
+
+- reads the original RimBridgeServer settings values through `rimworld/get_mod_settings`
+- applies a transient in-memory update through `rimworld/update_mod_settings` with `write: false`
+- reloads from disk through `rimworld/reload_mod_settings` and verifies the original values return
+- applies a persisted update through `rimworld/update_mod_settings` with `write: true`
+- opens the native `Dialog_ModSettings` window through `rimworld/open_mod_settings`
+- verifies `rimworld/get_ui_state` reports `semanticKind: "mod_settings_dialog"` for the requested mod
+- restores the original persisted values before the scenario finishes
 
 The `context-menu-cancel-roundtrip` scenario exercises the first background-safe input path:
 
