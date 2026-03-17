@@ -208,8 +208,8 @@ For the generated parameter-level reference pulled straight from the annotated s
 
 ### Context Menus And Map Interaction
 
-- `rimworld/open_context_menu` - Dispatch a live right-click at a target pawn or cell and capture the resulting context menu when one remains open
-- `rimworld/right_click_cell` - Dispatch a live right-click map interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
+- `rimworld/open_context_menu` - Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open
+- `rimworld/right_click_cell` - Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
 - `rimworld/get_context_menu_options` - Get the currently opened debug context menu options
 - `rimworld/execute_context_menu_option` - Execute a context menu option by index or label
 - `rimworld/close_context_menu` - Close the currently opened debug context menu

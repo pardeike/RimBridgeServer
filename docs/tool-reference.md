@@ -752,24 +752,30 @@ Parameters:
 
 ### `rimworld/open_context_menu`
 
-Dispatch a live right-click at a target pawn or cell and capture the resulting context menu when one remains open
+Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open
 
 Parameters:
 - `targetPawnName` (`string`, `optional`, default `null`): Optional target pawn name on the current map.
 - `targetPawnId` (`string`, `optional`, default `null`): Optional stable target pawn id from rimworld/list_colonists.
 - `x` (`int`, `optional`, default `0`): Target cell x coordinate when no pawn name or id is given
 - `z` (`int`, `optional`, default `0`): Target cell z coordinate when no pawn name or id is given
-- `mode` (`string`, `optional`, default `"vanilla"`): Compatibility hint. 'vanilla', 'auto', and 'live' are accepted; the tool always routes through the live play-UI click path.
+- `mode` (`string`, `optional`, default `"vanilla"`): Compatibility hint. `vanilla`, `auto`, and `live` are accepted; the tool always routes through the live play-UI click path.
+- `button` (`string`, `optional`, default `"right"`): Mouse button to inject. Supported values are `left`, `right`, and `middle`.
+- `holdDurationMs` (`int`, `optional`, default `0`): How long to hold the mouse button down before releasing it. Use this for mods that distinguish tap from hold on map clicks.
+- `modifiers` (`string`, `optional`, default `null`): Optional comma-, space-, or plus-separated event modifiers such as `shift`, `ctrl`, `alt`, or `command`.
 
 ### `rimworld/right_click_cell`
 
-Dispatch a live right-click map interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
+Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
 
 Parameters:
 - `targetPawnName` (`string`, `optional`, default `null`): Optional target pawn name on the current map.
 - `targetPawnId` (`string`, `optional`, default `null`): Optional stable target pawn id from rimworld/list_colonists.
 - `x` (`int`, `optional`, default `0`): Target cell x coordinate when no pawn name or id is given
 - `z` (`int`, `optional`, default `0`): Target cell z coordinate when no pawn name or id is given
+- `button` (`string`, `optional`, default `"right"`): Mouse button to inject. Supported values are `left`, `right`, and `middle`.
+- `holdDurationMs` (`int`, `optional`, default `0`): How long to hold the mouse button down before releasing it. Use this for mods that distinguish tap from hold on map clicks.
+- `modifiers` (`string`, `optional`, default `null`): Optional comma-, space-, or plus-separated event modifiers such as `shift`, `ctrl`, `alt`, or `command`.
 
 ### `rimworld/get_context_menu_options`
 

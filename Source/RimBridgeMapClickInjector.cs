@@ -18,8 +18,30 @@ internal sealed class MapClickDispatchResult
     public ContextMenuSnapshot Snapshot { get; set; }
 }
 
+internal sealed class MapClickDispatchOptions
+{
+    public int Button { get; set; } = 1;
+
+    public string ButtonName { get; set; } = "right";
+
+    public EventModifiers Modifiers { get; set; } = EventModifiers.None;
+
+    public string ModifiersText { get; set; } = "none";
+
+    public int HoldDurationMs { get; set; }
+
+    public static MapClickDispatchOptions DefaultRightClick { get; } = new();
+}
+
 internal static class RimBridgeMapClickInjector
 {
+    private enum MapClickPhase
+    {
+        MouseDown = 0,
+        Hold = 1,
+        MouseUp = 2
+    }
+
     private sealed class MapClickRequest
     {
         public IntVec3 ClickCell { get; set; } = IntVec3.Invalid;
@@ -27,6 +49,16 @@ internal static class RimBridgeMapClickInjector
         public string TargetLabel { get; set; } = string.Empty;
 
         public Vector2 ScreenPositionInverted { get; set; }
+
+        public MapClickDispatchOptions Options { get; set; } = MapClickDispatchOptions.DefaultRightClick;
+
+        public MapClickPhase Phase { get; set; } = MapClickPhase.MouseDown;
+
+        public int PhaseInjectedFrame { get; set; } = -1;
+
+        public int HoldUntilTicks { get; set; } = -1;
+
+        public int PointerToken { get; set; }
 
         public TaskCompletionSource<MapClickDispatchResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
@@ -37,7 +69,7 @@ internal static class RimBridgeMapClickInjector
 
         public Event PreviousEvent { get; set; }
 
-        public int PointerToken { get; set; }
+        public EventType ObservedRawType { get; set; }
     }
 
     private static readonly object Sync = new();
@@ -45,14 +77,15 @@ internal static class RimBridgeMapClickInjector
 
     private static MapClickRequest _pendingRequest;
 
-    public static MapClickDispatchResult DispatchRightClick(IntVec3 clickCell, string targetLabel, int timeoutMs = 2000)
+    public static MapClickDispatchResult DispatchClick(IntVec3 clickCell, string targetLabel, MapClickDispatchOptions options = null, int timeoutMs = 2000)
     {
-        timeoutMs = timeoutMs <= 0 ? 2000 : timeoutMs;
+        options ??= MapClickDispatchOptions.DefaultRightClick;
+        timeoutMs = NormalizeTimeout(timeoutMs, options.HoldDurationMs);
 
         MapClickRequest request;
         try
         {
-            request = RimBridgeMainThread.Invoke(() => QueueRequest(clickCell, targetLabel), timeoutMs: 5000);
+            request = RimBridgeMainThread.Invoke(() => QueueRequest(clickCell, targetLabel, options), timeoutMs: 5000);
         }
         catch (Exception ex)
         {
@@ -69,7 +102,7 @@ internal static class RimBridgeMapClickInjector
             return new MapClickDispatchResult
             {
                 Success = false,
-                Message = $"Timed out waiting {timeoutMs}ms for RimWorld to process the synthetic map right-click."
+                Message = $"Timed out waiting {timeoutMs}ms for RimWorld to process the synthetic {options.ButtonName}-click."
             };
         }
 
@@ -86,21 +119,36 @@ internal static class RimBridgeMapClickInjector
                 return;
 
             var request = _pendingRequest;
+            if (request.PointerToken == 0)
+                request.PointerToken = RimBridgeVirtualPointer.PushTransientOverride(request.ScreenPositionInverted);
+
             var currentEvent = Event.current;
-            var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent)
+            var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent);
+            injectedEvent.button = request.Options.Button;
+            injectedEvent.clickCount = 1;
+            injectedEvent.modifiers = request.Options.Modifiers;
+            injectedEvent.mousePosition = request.ScreenPositionInverted;
+
+            if (request.Phase == MapClickPhase.MouseDown)
             {
-                type = EventType.MouseDown,
-                button = 1,
-                clickCount = 1,
-                modifiers = EventModifiers.None,
-                mousePosition = request.ScreenPositionInverted
-            };
+                injectedEvent.type = EventType.MouseDown;
+                request.PhaseInjectedFrame = Time.frameCount;
+            }
+            else if (request.Phase == MapClickPhase.MouseUp)
+            {
+                injectedEvent.type = EventType.MouseUp;
+                request.PhaseInjectedFrame = Time.frameCount;
+            }
+            else
+            {
+                injectedEvent.type = EventType.Layout;
+            }
 
             state = new InjectionState
             {
                 Active = true,
                 PreviousEvent = currentEvent,
-                PointerToken = RimBridgeVirtualPointer.PushTransientOverride(request.ScreenPositionInverted)
+                ObservedRawType = injectedEvent.rawType
             };
 
             Event.current = injectedEvent;
@@ -120,8 +168,6 @@ internal static class RimBridgeMapClickInjector
             pendingRequest = _pendingRequest;
         }
 
-        if (state.PointerToken != 0)
-            RimBridgeVirtualPointer.PopTransientOverride(state.PointerToken);
         Event.current = state.PreviousEvent;
 
         lock (Sync)
@@ -129,36 +175,40 @@ internal static class RimBridgeMapClickInjector
             if (!ReferenceEquals(_pendingRequest, pendingRequest) || pendingRequest == null)
                 return;
 
-            var floatMenu = Find.WindowStack?.FloatMenu;
-            if (floatMenu != null)
+            if (pendingRequest.Phase == MapClickPhase.Hold && TryBuildCompletionResultFromOpenMenu(pendingRequest, out completedResult))
             {
-                floatMenu.vanishIfMouseDistant = false;
-                var options = ExtractOptions(floatMenu);
-                var snapshot = RimBridgeContextMenus.Store("ui_event", floatMenu, options, pendingRequest.ClickCell, pendingRequest.TargetLabel);
-                completedResult = new MapClickDispatchResult
-                {
-                    Success = true,
-                    Snapshot = snapshot,
-                    Message = "Dispatched a live right-click through RimWorld's play UI and a context menu remained open."
-                };
-            }
-            else
-            {
-                RimBridgeContextMenus.Clear();
-                completedResult = new MapClickDispatchResult
-                {
-                    Success = true,
-                    Message = "Dispatched a live right-click through RimWorld's play UI. No context menu remained open after the click."
-                };
+                ReleasePointerOverride(pendingRequest);
+                _pendingRequest = null;
+                pendingRequest.Completion.TrySetResult(completedResult);
+                return;
             }
 
+            if (AdvancePhase(pendingRequest, state.ObservedRawType))
+                return;
+
+            if (TryBuildCompletionResultFromOpenMenu(pendingRequest, out completedResult))
+            {
+                ReleasePointerOverride(pendingRequest);
+                _pendingRequest = null;
+                pendingRequest.Completion.TrySetResult(completedResult);
+                return;
+            }
+
+            RimBridgeContextMenus.Clear();
+            completedResult = new MapClickDispatchResult
+            {
+                Success = true,
+                Message = BuildCompletionMessage(pendingRequest.Options, menuRemainedOpen: false)
+            };
+
+            ReleasePointerOverride(pendingRequest);
             _pendingRequest = null;
         }
 
         pendingRequest.Completion.TrySetResult(completedResult);
     }
 
-    private static MapClickRequest QueueRequest(IntVec3 clickCell, string targetLabel)
+    private static MapClickRequest QueueRequest(IntVec3 clickCell, string targetLabel, MapClickDispatchOptions options)
     {
         if (Current.ProgramState != ProgramState.Playing || Current.Game == null)
             throw new InvalidOperationException("RimWorld is not currently in a playable map state.");
@@ -173,7 +223,8 @@ internal static class RimBridgeMapClickInjector
         {
             ClickCell = clickCell,
             TargetLabel = targetLabel ?? string.Empty,
-            ScreenPositionInverted = RimWorldState.CellCenter(clickCell).MapToUIPosition()
+            ScreenPositionInverted = RimWorldState.CellCenter(clickCell).MapToUIPosition(),
+            Options = options
         };
         _pendingRequest = request;
         return request;
@@ -188,6 +239,7 @@ internal static class RimBridgeMapClickInjector
 
             var request = _pendingRequest;
             _pendingRequest = null;
+            ReleasePointerOverride(request);
             request.Completion.TrySetCanceled();
         }
     }
@@ -195,6 +247,86 @@ internal static class RimBridgeMapClickInjector
     private static List<FloatMenuOption> ExtractOptions(FloatMenu floatMenu)
     {
         return (FloatMenuOptionsField?.GetValue(floatMenu) as IEnumerable<FloatMenuOption>)?.ToList() ?? [];
+    }
+
+    private static int NormalizeTimeout(int timeoutMs, int holdDurationMs)
+    {
+        var baseTimeoutMs = timeoutMs <= 0 ? 2000 : timeoutMs;
+        var holdAllowanceMs = holdDurationMs < 0 ? 0 : holdDurationMs;
+        return Math.Max(baseTimeoutMs, holdAllowanceMs + 2000);
+    }
+
+    private static bool AdvancePhase(MapClickRequest request, EventType observedRawType)
+    {
+        if (request.Phase == MapClickPhase.MouseDown && request.PhaseInjectedFrame == Time.frameCount)
+        {
+            if (request.Options.HoldDurationMs > 0)
+            {
+                request.Phase = MapClickPhase.Hold;
+                request.HoldUntilTicks = PositiveEnvironmentTick() + request.Options.HoldDurationMs;
+            }
+            else
+            {
+                request.Phase = MapClickPhase.MouseUp;
+            }
+
+            request.PhaseInjectedFrame = -1;
+            return true;
+        }
+
+        if (request.Phase == MapClickPhase.Hold)
+        {
+            if (observedRawType == EventType.Layout && PositiveEnvironmentTick() >= request.HoldUntilTicks)
+                request.Phase = MapClickPhase.MouseUp;
+
+            return true;
+        }
+
+        return request.Phase != MapClickPhase.MouseUp || request.PhaseInjectedFrame != Time.frameCount;
+    }
+
+    private static bool TryBuildCompletionResultFromOpenMenu(MapClickRequest request, out MapClickDispatchResult result)
+    {
+        result = null;
+
+        var floatMenu = Find.WindowStack?.FloatMenu;
+        if (floatMenu == null)
+            return false;
+
+        floatMenu.vanishIfMouseDistant = false;
+        var options = ExtractOptions(floatMenu);
+        var snapshot = RimBridgeContextMenus.Store("ui_event", floatMenu, options, request.ClickCell, request.TargetLabel);
+        result = new MapClickDispatchResult
+        {
+            Success = true,
+            Snapshot = snapshot,
+            Message = BuildCompletionMessage(request.Options, menuRemainedOpen: true)
+        };
+        return true;
+    }
+
+    private static int PositiveEnvironmentTick()
+    {
+        var tick = Environment.TickCount;
+        return tick >= 0 ? tick : -tick;
+    }
+
+    private static void ReleasePointerOverride(MapClickRequest request)
+    {
+        if (request == null || request.PointerToken == 0)
+            return;
+
+        RimBridgeVirtualPointer.PopTransientOverride(request.PointerToken);
+        request.PointerToken = 0;
+    }
+
+    private static string BuildCompletionMessage(MapClickDispatchOptions options, bool menuRemainedOpen)
+    {
+        var holdText = options.HoldDurationMs > 0 ? $" held for {options.HoldDurationMs}ms" : string.Empty;
+        if (menuRemainedOpen)
+            return $"Dispatched a live {options.ButtonName}-click{holdText} through RimWorld's play UI and a context menu remained open.";
+
+        return $"Dispatched a live {options.ButtonName}-click{holdText} through RimWorld's play UI. No context menu remained open after the click.";
     }
 }
 

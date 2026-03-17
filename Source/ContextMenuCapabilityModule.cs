@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
+using UnityEngine;
 using Verse;
 
 namespace RimBridgeServer;
@@ -16,7 +17,7 @@ internal sealed class ContextMenuCapabilityModule
         public string Label { get; set; } = string.Empty;
     }
 
-    public object OpenContextMenu(string targetPawnName = null, string targetPawnId = null, int x = 0, int z = 0, string mode = "vanilla")
+    public object OpenContextMenu(string targetPawnName = null, string targetPawnId = null, int x = 0, int z = 0, string mode = "vanilla", string button = "right", int holdDurationMs = 0, string modifiers = null)
     {
         if (Current.Game == null)
             return new { success = false, message = "No game is currently loaded." };
@@ -42,7 +43,10 @@ internal sealed class ContextMenuCapabilityModule
             };
         }
 
-        var dispatch = RimBridgeMapClickInjector.DispatchRightClick(target.Cell, target.Label, DefaultTimeoutMs);
+        if (!TryParseDispatchOptions(button, holdDurationMs, modifiers, out var dispatchOptions, out failure))
+            return failure;
+
+        var dispatch = RimBridgeMapClickInjector.DispatchClick(target.Cell, target.Label, dispatchOptions, DefaultTimeoutMs);
         if (!dispatch.Success)
             return new { success = false, message = dispatch.Message };
 
@@ -56,6 +60,9 @@ internal sealed class ContextMenuCapabilityModule
                 provider = "ui_event",
                 clickCell = new { x = target.Cell.x, z = target.Cell.z },
                 target = target.Label,
+                button = dispatchOptions.ButtonName,
+                holdDurationMs = dispatchOptions.HoldDurationMs,
+                modifiers = dispatchOptions.ModifiersText,
                 selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
                 optionCount = 0,
                 options = new List<object>(),
@@ -70,6 +77,9 @@ internal sealed class ContextMenuCapabilityModule
             provider = snapshot.Provider,
             clickCell = new { x = target.Cell.x, z = target.Cell.z },
             target = target.Label,
+            button = dispatchOptions.ButtonName,
+            holdDurationMs = dispatchOptions.HoldDurationMs,
+            modifiers = dispatchOptions.ModifiersText,
             selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
             optionCount = snapshot.Options.Count,
             options = DescribeOptions(snapshot.Options),
@@ -77,7 +87,7 @@ internal sealed class ContextMenuCapabilityModule
         };
     }
 
-    public object RightClickCell(string targetPawnName = null, string targetPawnId = null, int x = 0, int z = 0)
+    public object RightClickCell(string targetPawnName = null, string targetPawnId = null, int x = 0, int z = 0, string button = "right", int holdDurationMs = 0, string modifiers = null)
     {
         if (Current.Game == null)
             return new { success = false, message = "No game is currently loaded." };
@@ -90,7 +100,10 @@ internal sealed class ContextMenuCapabilityModule
         if (!TryResolveMapClickTarget(map, targetPawnName, targetPawnId, x, z, out var target, out var failure))
             return failure;
 
-        var dispatch = RimBridgeMapClickInjector.DispatchRightClick(target.Cell, target.Label, DefaultTimeoutMs);
+        if (!TryParseDispatchOptions(button, holdDurationMs, modifiers, out var dispatchOptions, out failure))
+            return failure;
+
+        var dispatch = RimBridgeMapClickInjector.DispatchClick(target.Cell, target.Label, dispatchOptions, DefaultTimeoutMs);
         if (!dispatch.Success)
             return new { success = false, message = dispatch.Message };
 
@@ -105,6 +118,9 @@ internal sealed class ContextMenuCapabilityModule
                 provider = snapshot.Provider,
                 clickCell = new { x = target.Cell.x, z = target.Cell.z },
                 target = target.Label,
+                button = dispatchOptions.ButtonName,
+                holdDurationMs = dispatchOptions.HoldDurationMs,
+                modifiers = dispatchOptions.ModifiersText,
                 selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
                 optionCount = snapshot.Options.Count,
                 options = DescribeOptions(snapshot.Options),
@@ -118,6 +134,9 @@ internal sealed class ContextMenuCapabilityModule
             actionKind = "click_dispatched",
             clickCell = new { x = target.Cell.x, z = target.Cell.z },
             target = target.Label,
+            button = dispatchOptions.ButtonName,
+            holdDurationMs = dispatchOptions.HoldDurationMs,
+            modifiers = dispatchOptions.ModifiersText,
             selectedPawns = selectedPawns.Select(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort).ToList(),
             message = dispatch.Message
         };
@@ -218,6 +237,137 @@ internal sealed class ContextMenuCapabilityModule
             Cell = clickCell,
             Label = $"cell {x},{z}"
         };
+        return true;
+    }
+
+    private static bool TryParseDispatchOptions(string button, int holdDurationMs, string modifiers, out MapClickDispatchOptions options, out object failure)
+    {
+        options = null;
+        failure = null;
+
+        if (!TryParseMouseButton(button, out var parsedButton, out var normalizedButton))
+        {
+            failure = new
+            {
+                success = false,
+                message = $"Unsupported mouse button '{button}'. Supported values are 'left', 'right', and 'middle'."
+            };
+            return false;
+        }
+
+        if (holdDurationMs < 0)
+        {
+            failure = new
+            {
+                success = false,
+                message = "holdDurationMs must be zero or greater."
+            };
+            return false;
+        }
+
+        if (!TryParseModifiers(modifiers, out var parsedModifiers, out var normalizedModifiers, out var modifierError))
+        {
+            failure = new
+            {
+                success = false,
+                message = modifierError
+            };
+            return false;
+        }
+
+        options = new MapClickDispatchOptions
+        {
+            Button = parsedButton,
+            ButtonName = normalizedButton,
+            HoldDurationMs = holdDurationMs,
+            Modifiers = parsedModifiers,
+            ModifiersText = normalizedModifiers
+        };
+        return true;
+    }
+
+    private static bool TryParseMouseButton(string button, out int parsedButton, out string normalizedButton)
+    {
+        normalizedButton = (button ?? "right").Trim().ToLowerInvariant();
+        switch (normalizedButton)
+        {
+            case "0":
+            case "left":
+                parsedButton = 0;
+                normalizedButton = "left";
+                return true;
+
+            case "1":
+            case "right":
+                parsedButton = 1;
+                normalizedButton = "right";
+                return true;
+
+            case "2":
+            case "middle":
+                parsedButton = 2;
+                normalizedButton = "middle";
+                return true;
+
+            default:
+                parsedButton = 1;
+                return false;
+        }
+    }
+
+    private static bool TryParseModifiers(string modifiers, out EventModifiers parsedModifiers, out string normalizedModifiers, out string failure)
+    {
+        parsedModifiers = EventModifiers.None;
+        normalizedModifiers = "none";
+        failure = null;
+
+        if (string.IsNullOrWhiteSpace(modifiers))
+            return true;
+
+        var seen = new List<string>();
+        foreach (var token in modifiers.Split(new[] { ',', '+', '|', ' ' }, System.StringSplitOptions.RemoveEmptyEntries))
+        {
+            var normalizedToken = token.Trim().ToLowerInvariant();
+            switch (normalizedToken)
+            {
+                case "none":
+                    continue;
+
+                case "shift":
+                    parsedModifiers |= EventModifiers.Shift;
+                    seen.Add("shift");
+                    break;
+
+                case "ctrl":
+                case "control":
+                    parsedModifiers |= EventModifiers.Control;
+                    seen.Add("ctrl");
+                    break;
+
+                case "alt":
+                case "option":
+                    parsedModifiers |= EventModifiers.Alt;
+                    seen.Add("alt");
+                    break;
+
+                case "cmd":
+                case "command":
+                case "meta":
+                    parsedModifiers |= EventModifiers.Command;
+                    seen.Add("command");
+                    break;
+
+                default:
+                    failure = $"Unsupported modifier '{token}'. Supported values are shift, ctrl, alt, and command.";
+                    normalizedModifiers = "none";
+                    parsedModifiers = EventModifiers.None;
+                    return false;
+            }
+        }
+
+        if (seen.Count > 0)
+            normalizedModifiers = string.Join(",", seen.Distinct());
+
         return true;
     }
 }

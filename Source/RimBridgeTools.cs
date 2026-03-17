@@ -834,27 +834,33 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(saveName), saveName)));
     }
 
-    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live right-click at a target pawn or cell and capture the resulting context menu when one remains open")]
-    [Tool("rimworld/open_context_menu", Description = "Dispatch a live right-click at a target pawn or cell and capture the resulting context menu when one remains open")]
+    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open")]
+    [Tool("rimworld/open_context_menu", Description = "Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open")]
     public object OpenContextMenu(
         [ToolParameter(Description = "Optional target pawn name on the current map.")] string targetPawnName = null,
         [ToolParameter(Description = "Optional stable target pawn id from rimworld/list_colonists.")] string targetPawnId = null,
         [ToolParameter(Description = "Target cell x coordinate when no pawn name or id is given")] int x = 0,
         [ToolParameter(Description = "Target cell z coordinate when no pawn name or id is given")] int z = 0,
-        [ToolParameter(Description = "Compatibility hint. 'vanilla', 'auto', and 'live' are accepted; the tool always routes through the live play-UI click path.")] string mode = "vanilla")
+        [ToolParameter(Description = "Compatibility hint. 'vanilla', 'auto', and 'live' are accepted; the tool always routes through the live play-UI click path.")] string mode = "vanilla",
+        [ToolParameter(Description = "Mouse button to inject. Supported values are 'left', 'right', and 'middle'.")] string button = "right",
+        [ToolParameter(Description = "How long to hold the mouse button down before releasing it. Use this for mods that distinguish tap from hold on map clicks.")] int holdDurationMs = 0,
+        [ToolParameter(Description = "Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.")] string modifiers = null)
     {
-        return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(targetPawnId), targetPawnId), (nameof(x), x), (nameof(z), z), (nameof(mode), mode)));
+        return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(targetPawnId), targetPawnId), (nameof(x), x), (nameof(z), z), (nameof(mode), mode), (nameof(button), button), (nameof(holdDurationMs), holdDurationMs), (nameof(modifiers), modifiers)));
     }
 
-    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live right-click map interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click")]
-    [Tool("rimworld/right_click_cell", Description = "Dispatch a live right-click map interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click")]
+    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click")]
+    [Tool("rimworld/right_click_cell", Description = "Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click")]
     public object RightClickCell(
         [ToolParameter(Description = "Optional target pawn name on the current map.")] string targetPawnName = null,
         [ToolParameter(Description = "Optional stable target pawn id from rimworld/list_colonists.")] string targetPawnId = null,
         [ToolParameter(Description = "Target cell x coordinate when no pawn name or id is given")] int x = 0,
-        [ToolParameter(Description = "Target cell z coordinate when no pawn name or id is given")] int z = 0)
+        [ToolParameter(Description = "Target cell z coordinate when no pawn name or id is given")] int z = 0,
+        [ToolParameter(Description = "Mouse button to inject. Supported values are 'left', 'right', and 'middle'.")] string button = "right",
+        [ToolParameter(Description = "How long to hold the mouse button down before releasing it. Use this for mods that distinguish tap from hold on map clicks.")] int holdDurationMs = 0,
+        [ToolParameter(Description = "Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.")] string modifiers = null)
     {
-        return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(targetPawnId), targetPawnId), (nameof(x), x), (nameof(z), z)));
+        return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(targetPawnId), targetPawnId), (nameof(x), x), (nameof(z), z), (nameof(button), button), (nameof(holdDurationMs), holdDurationMs), (nameof(modifiers), modifiers)));
     }
 
     [ReadmeTool("Context Menus And Map Interaction", "Get the currently opened debug context menu options")]
