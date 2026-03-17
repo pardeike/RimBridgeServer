@@ -467,6 +467,24 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(pawnId), pawnId), (nameof(drafted), drafted)));
     }
 
+    [Tool("rimworld/get_selection_semantics", Description = "Get structured details for the current selection, including inspect strings, inspect-tab types, and the current selection fingerprint")]
+    public object GetSelectionSemantics()
+    {
+        return InvokeAlias();
+    }
+
+    [Tool("rimworld/list_selected_gizmos", Description = "List the current selection's actionable grouped gizmos using deterministic selection-scoped gizmo ids")]
+    public object ListSelectedGizmos()
+    {
+        return InvokeAlias();
+    }
+
+    [Tool("rimworld/execute_gizmo", Description = "Execute one grouped gizmo for the current selection by gizmo id returned from rimworld/list_selected_gizmos")]
+    public object ExecuteGizmo([ToolParameter(Description = "Selection-scoped gizmo id returned by rimworld/list_selected_gizmos")] string gizmoId)
+    {
+        return InvokeAlias(Arguments((nameof(gizmoId), gizmoId)));
+    }
+
     [Tool("rimworld/get_camera_state", Description = "Get the current map camera position, zoom, and visible rect")]
     public object GetCameraState()
     {
