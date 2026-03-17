@@ -485,6 +485,42 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(gizmoId), gizmoId)));
     }
 
+    [Tool("rimworld/list_messages", Description = "List live RimWorld messages with native message ids and structured look-target metadata")]
+    public object ListMessages([ToolParameter(Description = "Maximum number of live messages to return")] int limit = 12)
+    {
+        return InvokeAlias(Arguments((nameof(limit), limit)));
+    }
+
+    [Tool("rimworld/list_letters", Description = "List current letter-stack entries with native letter ids, semantic letter content, and structured look-target metadata")]
+    public object ListLetters([ToolParameter(Description = "Maximum number of letters to return")] int limit = 40)
+    {
+        return InvokeAlias(Arguments((nameof(limit), limit)));
+    }
+
+    [Tool("rimworld/open_letter", Description = "Open a specific letter by native letter id, mirroring a normal left-click on the letter stack entry")]
+    public object OpenLetter([ToolParameter(Description = "Letter id returned by rimworld/list_letters")] string letterId)
+    {
+        return InvokeAlias(Arguments((nameof(letterId), letterId)));
+    }
+
+    [Tool("rimworld/dismiss_letter", Description = "Dismiss a specific dismissible letter by native letter id, mirroring a normal right-click on the letter stack entry")]
+    public object DismissLetter([ToolParameter(Description = "Letter id returned by rimworld/list_letters")] string letterId)
+    {
+        return InvokeAlias(Arguments((nameof(letterId), letterId)));
+    }
+
+    [Tool("rimworld/list_alerts", Description = "List active RimWorld alerts with structured culprit targets and alert-snapshot-scoped alert ids")]
+    public object ListAlerts([ToolParameter(Description = "Maximum number of active alerts to return")] int limit = 40)
+    {
+        return InvokeAlias(Arguments((nameof(limit), limit)));
+    }
+
+    [Tool("rimworld/activate_alert", Description = "Activate one alert by alert id returned from rimworld/list_alerts, mirroring a normal left-click on the alert readout")]
+    public object ActivateAlert([ToolParameter(Description = "Alert id returned by rimworld/list_alerts")] string alertId)
+    {
+        return InvokeAlias(Arguments((nameof(alertId), alertId)));
+    }
+
     [Tool("rimworld/get_camera_state", Description = "Get the current map camera position, zoom, and visible rect")]
     public object GetCameraState()
     {

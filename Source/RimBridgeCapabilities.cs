@@ -68,6 +68,12 @@ internal static class RimBridgeCapabilities
             aliasMetadataType: typeof(RimBridgeTools),
             source: CapabilitySourceKind.Core));
         registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
+            providerId: "rimbridge.core/notifications",
+            category: "notifications",
+            module: new NotificationCapabilityModule(),
+            aliasMetadataType: typeof(RimBridgeTools),
+            source: CapabilitySourceKind.Core));
+        registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
             providerId: "rimbridge.core/view",
             category: "view",
             module: new ViewCapabilityModule(),

@@ -77,7 +77,10 @@ This is better than parsing logs because many mod-relevant outcomes are user-fac
 
 - `rimworld/list_messages`
 - `rimworld/list_letters`
+- `rimworld/open_letter`
+- `rimworld/dismiss_letter`
 - `rimworld/list_alerts`
+- `rimworld/activate_alert`
 
 ## Intentionally Deferred
 
