@@ -29,6 +29,7 @@ internal static class SmokeScenarioCatalog
     public const string ScriptColonistPrisonScenarioName = "script-colonist-prison";
     public const string ScriptWallSequenceScenarioName = "script-wall-sequence";
     public const string SelectionRoundTripScenarioName = "selection-roundtrip";
+    public const string SemanticDiagnosticsRoundTripScenarioName = "semantic-diagnostics-roundtrip";
     public const string SaveLoadRoundTripScenarioName = "save-load-roundtrip";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
@@ -113,6 +114,12 @@ internal static class SmokeScenarioCatalog
                 Name = SelectionRoundTripScenarioName,
                 Description = "Ensure a playable game exists, then exercise selection and camera tools around a real colonist.",
                 RunAsync = RunSelectionRoundTripAsync
+            },
+            [SemanticDiagnosticsRoundTripScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = SemanticDiagnosticsRoundTripScenarioName,
+                Description = "Ensure a playable game exists, then smoke the newer discovery, stable-id, selection semantics, notification, alert, wait, and observability surfaces in one roundtrip.",
+                RunAsync = RunSemanticDiagnosticsRoundTripAsync
             },
             [SaveLoadRoundTripScenarioName] = new SmokeScenarioDefinition
             {
@@ -767,6 +774,405 @@ internal static class SmokeScenarioCatalog
             "selection.final_bridge_status",
             "selection.collect_operation_events",
             "selection.collect_logs",
+            cancellationToken);
+        context.ApplyObservationWindow(observation);
+    }
+
+    private static async Task RunSemanticDiagnosticsRoundTripAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("semantic.wait_for_long_event_idle", cancellationToken);
+
+        var baselineUiState = await EnsureNoDialogWindowsAsync(context, "semantic.normalize", cancellationToken);
+        var observationWindow = await context.BeginObservationWindowAsync(
+            "semantic.snapshot_bridge_status",
+            cancellationToken,
+            new SmokeObservationWindowOptions
+            {
+                IncludeDiagnosticEvents = true
+            });
+
+        var bridgeStatus = await context.CallGameToolAsync("semantic.bridge_status", "rimbridge/get_bridge_status", new { }, cancellationToken);
+        context.EnsureSucceeded(bridgeStatus, "Reading bridge status for the semantic diagnostics roundtrip");
+        if (JsonNodeHelpers.ReadBoolean(bridgeStatus.StructuredContent, "state", "automationReady") != true)
+            throw new InvalidOperationException("The semantic diagnostics roundtrip requires an automation-ready game.");
+
+        var capabilityList = await context.CallGameToolAsync("semantic.list_capabilities", "rimbridge/list_capabilities", new
+        {
+            query = "notification",
+            includeParameters = true,
+            limit = 32
+        }, cancellationToken);
+        context.EnsureSucceeded(capabilityList, "Listing bridge capabilities for discovery smoke coverage");
+
+        var notificationCapabilities = JsonNodeHelpers.ReadArray(capabilityList.StructuredContent, "capabilities");
+        if (notificationCapabilities.Count < 6)
+            throw new InvalidOperationException("Capability discovery did not return the expected notification-related capabilities.");
+        if (!notificationCapabilities.Any(capability => string.Equals(JsonNodeHelpers.ReadString(capability, "id"), "rimbridge.core/notifications/list-messages", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Capability discovery did not include the list-messages notification capability.");
+        if (!notificationCapabilities.Any(capability => JsonNodeHelpers.ReadArray(capability, "aliases").Any(alias => string.Equals(JsonNodeHelpers.ReadString(alias), "rimworld/activate_alert", StringComparison.Ordinal))))
+            throw new InvalidOperationException("Capability discovery did not include the activate-alert alias.");
+
+        var capabilityDetail = await context.CallGameToolAsync("semantic.get_capability", "rimbridge/get_capability", new
+        {
+            capabilityIdOrAlias = "rimworld/execute_gizmo"
+        }, cancellationToken);
+        context.EnsureSucceeded(capabilityDetail, "Reading a single capability descriptor for alias resolution");
+
+        var resolvedCapabilityId = JsonNodeHelpers.ReadString(capabilityDetail.StructuredContent, "capability", "id");
+        var capabilityParameterNames = JsonNodeHelpers.ReadArray(capabilityDetail.StructuredContent, "capability", "parameters")
+            .Select(parameter => JsonNodeHelpers.ReadString(parameter, "name"))
+            .ToList();
+        if (string.IsNullOrWhiteSpace(resolvedCapabilityId) || !capabilityParameterNames.Contains("gizmoId", StringComparer.Ordinal))
+            throw new InvalidOperationException("Capability detail lookup did not return the expected execute-gizmo descriptor.");
+
+        var colonists = await context.CallGameToolAsync("semantic.list_colonists", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists for stable-id smoke coverage");
+
+        var firstColonist = ResolveFirstColonist(colonists.StructuredContent);
+        var pawnId = ReadRequiredString(firstColonist, "pawnId");
+        var pawnName = ReadRequiredString(firstColonist, "name");
+        var mapId = ReadRequiredString(firstColonist, "mapId");
+        var initialDrafted = JsonNodeHelpers.ReadBoolean(firstColonist, "drafted") == true;
+        context.Report.ColonistCount = JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count");
+
+        var selectPawn = await context.CallGameToolAsync("semantic.select_pawn", "rimworld/select_pawn", new
+        {
+            pawnId,
+            append = false
+        }, cancellationToken);
+        context.EnsureSucceeded(selectPawn, $"Selecting colonist '{pawnName}' by stable pawn id");
+        if (!string.Equals(JsonNodeHelpers.ReadString(selectPawn.StructuredContent, "selected", "pawnId"), pawnId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Selecting a colonist by stable pawn id did not return the expected pawn.");
+
+        var selectionSemantics = await context.CallGameToolAsync("semantic.get_selection_semantics", "rimworld/get_selection_semantics", new { }, cancellationToken);
+        context.EnsureSucceeded(selectionSemantics, "Reading selection semantics for the selected colonist");
+        if (JsonNodeHelpers.ReadBoolean(selectionSemantics.StructuredContent, "hasSelection") != true
+            || JsonNodeHelpers.ReadInt32(selectionSemantics.StructuredContent, "selectedCount") != 1)
+        {
+            throw new InvalidOperationException("Selection semantics did not report exactly one selected object.");
+        }
+
+        var selectedObjects = JsonNodeHelpers.ReadArray(selectionSemantics.StructuredContent, "selectedObjects");
+        if (selectedObjects.Count == 0)
+            throw new InvalidOperationException("Selection semantics did not return a selected object payload.");
+        if (!string.Equals(JsonNodeHelpers.ReadString(selectedObjects[0], "details", "pawnId"), pawnId, StringComparison.Ordinal)
+            || !string.Equals(JsonNodeHelpers.ReadString(selectedObjects[0], "details", "mapId"), mapId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Selection semantics did not preserve the selected pawn's stable identity and map id.");
+        }
+
+        var gizmos = await context.CallGameToolAsync("semantic.list_selected_gizmos", "rimworld/list_selected_gizmos", new { }, cancellationToken);
+        context.EnsureSucceeded(gizmos, "Listing grouped gizmos for the selected colonist");
+
+        var gizmoNodes = JsonNodeHelpers.ReadArray(gizmos.StructuredContent, "gizmos");
+        var draftGizmo = ResolveDraftGizmo(gizmoNodes);
+        var draftGizmoId = ReadRequiredString(draftGizmo, "id");
+        var draftGizmoLabel = ReadRequiredString(draftGizmo, "label");
+
+        var executeGizmo = await context.CallGameToolAsync("semantic.execute_gizmo", "rimworld/execute_gizmo", new
+        {
+            gizmoId = draftGizmoId
+        }, cancellationToken);
+        context.EnsureSucceeded(executeGizmo, $"Executing grouped gizmo '{draftGizmoLabel}'");
+
+        var colonistsAfterGizmo = await context.CallGameToolAsync("semantic.list_colonists_after_gizmo", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonistsAfterGizmo, "Listing colonists after executing the grouped draft gizmo");
+
+        var draftedAfterGizmo = ResolveColonistDrafted(colonistsAfterGizmo.StructuredContent, pawnId);
+        if (draftedAfterGizmo == initialDrafted)
+            throw new InvalidOperationException("Executing the grouped draft gizmo did not change the selected pawn's draft state.");
+
+        var restoreDraft = await context.CallGameToolAsync("semantic.restore_draft_state", "rimworld/set_draft", new
+        {
+            pawnId,
+            drafted = initialDrafted
+        }, cancellationToken);
+        context.EnsureSucceeded(restoreDraft, $"Restoring colonist '{pawnName}' to its original draft state");
+        if (JsonNodeHelpers.ReadBoolean(restoreDraft.StructuredContent, "drafted") != initialDrafted)
+            throw new InvalidOperationException("Restoring the selected pawn's draft state did not succeed.");
+
+        var jumpCamera = await context.CallGameToolAsync("semantic.jump_camera_to_pawn", "rimworld/jump_camera_to_pawn", new
+        {
+            pawnId
+        }, cancellationToken);
+        context.EnsureSucceeded(jumpCamera, $"Jumping the camera to colonist '{pawnName}' by stable pawn id");
+
+        var cameraState = await context.CallGameToolAsync("semantic.get_camera_state", "rimworld/get_camera_state", new { }, cancellationToken);
+        context.EnsureSucceeded(cameraState, "Reading camera state after jumping to the selected colonist");
+        if (!string.Equals(JsonNodeHelpers.ReadString(cameraState.StructuredContent, "mapId"), mapId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Camera state did not stay on the selected pawn's map after jumping by stable pawn id.");
+
+        var baselineMessageIds = ReadIdSet(
+            await context.CallGameToolAsync("semantic.list_messages_before", "rimworld/list_messages", new { limit = 20 }, cancellationToken),
+            "messages");
+        var baselineLetterIds = ReadIdSet(
+            await context.CallGameToolAsync("semantic.list_letters_before", "rimworld/list_letters", new { limit = 40 }, cancellationToken),
+            "letters");
+
+        var screenshotFileName = BuildScreenshotFileName(context.Report.StartedAtUtc) + "_semantic_notifications";
+        var screenshot = await context.CallGameToolAsync("semantic.take_screenshot", "rimworld/take_screenshot", new
+        {
+            fileName = screenshotFileName,
+            includeTargets = false,
+            suppressMessage = false
+        }, cancellationToken);
+        context.EnsureSucceeded(screenshot, "Capturing a screenshot to generate a deterministic live message");
+
+        var messagesAfterScreenshot = await context.CallGameToolAsync("semantic.list_messages_after", "rimworld/list_messages", new
+        {
+            limit = 20
+        }, cancellationToken);
+        context.EnsureSucceeded(messagesAfterScreenshot, "Listing live messages after capturing a screenshot");
+
+        var screenshotMessage = ResolveNewNodeById(messagesAfterScreenshot.StructuredContent, "messages", baselineMessageIds, node =>
+            JsonNodeHelpers.ReadString(node, "text").IndexOf(screenshotFileName, StringComparison.OrdinalIgnoreCase) >= 0);
+        var screenshotMessageId = ReadRequiredString(screenshotMessage, "id");
+
+        var wandererJoin = await context.CallGameToolAsync("semantic.debug_action_wanderer_join", "rimworld/execute_debug_action", new
+        {
+            path = @"Actions\Do incident\WandererJoin"
+        }, cancellationToken);
+        context.EnsureSucceeded(wandererJoin, "Executing the WandererJoin debug action to create a deterministic choice letter");
+
+        var lettersAfterChoice = await context.CallGameToolAsync("semantic.list_letters_after_choice", "rimworld/list_letters", new
+        {
+            limit = 40
+        }, cancellationToken);
+        context.EnsureSucceeded(lettersAfterChoice, "Listing letters after the WandererJoin debug action");
+
+        var choiceLetter = ResolveNewNodeById(lettersAfterChoice.StructuredContent, "letters", baselineLetterIds, node =>
+            JsonNodeHelpers.ReadInt32(node, "choiceCount").GetValueOrDefault() > 0
+            && JsonNodeHelpers.ReadBoolean(node, "canDismissWithRightClick") == false);
+        var choiceLetterId = ReadRequiredString(choiceLetter, "id");
+        var choiceLetterLabel = ReadRequiredString(choiceLetter, "label");
+        if (JsonNodeHelpers.ReadInt32(choiceLetter, "choiceCount").GetValueOrDefault() <= 0
+            || string.IsNullOrWhiteSpace(JsonNodeHelpers.ReadString(choiceLetter, "text")))
+        {
+            throw new InvalidOperationException("The deterministic choice letter did not expose its semantic text and options.");
+        }
+
+        var openLetter = await context.CallGameToolAsync("semantic.open_letter", "rimworld/open_letter", new
+        {
+            letterId = choiceLetterId
+        }, cancellationToken);
+        context.EnsureSucceeded(openLetter, $"Opening choice letter '{choiceLetterLabel}'");
+
+        if (JsonNodeHelpers.ReadInt32(openLetter.StructuredContent, "effects", "windowCountDelta").GetValueOrDefault() <= 0
+            && JsonNodeHelpers.ReadBoolean(openLetter.StructuredContent, "effects", "topWindowChanged") != true)
+        {
+            throw new InvalidOperationException("Opening the choice letter did not visibly change the RimWorld window stack.");
+        }
+
+        var openedLetterWindowType = JsonNodeHelpers.ReadString(openLetter.StructuredContent, "stateAfter", "uiState", "FocusedWindowType");
+        if (!string.IsNullOrWhiteSpace(openedLetterWindowType))
+        {
+            var closeLetterWindow = await context.CallGameToolAsync("semantic.close_choice_letter_window", "rimworld/close_window", new
+            {
+                windowType = openedLetterWindowType
+            }, cancellationToken);
+            context.EnsureSucceeded(closeLetterWindow, $"Closing the opened choice letter window '{openedLetterWindowType}'");
+        }
+
+        await EnsureNoDialogWindowsAsync(context, "semantic.after_open_letter", cancellationToken);
+
+        var letterIdsAfterChoice = ReadIdSet(lettersAfterChoice, "letters");
+        var traderCaravan = await context.CallGameToolAsync("semantic.debug_action_trader_caravan", "rimworld/execute_debug_action", new
+        {
+            path = @"Actions\Do incident\TraderCaravanArrival"
+        }, cancellationToken);
+        context.EnsureSucceeded(traderCaravan, "Executing the TraderCaravanArrival debug action to create a dismissible standard letter");
+
+        var lettersAfterStandard = await context.CallGameToolAsync("semantic.list_letters_after_standard", "rimworld/list_letters", new
+        {
+            limit = 40
+        }, cancellationToken);
+        context.EnsureSucceeded(lettersAfterStandard, "Listing letters after the trader caravan debug action");
+
+        var dismissibleLetter = ResolveNewNodeById(lettersAfterStandard.StructuredContent, "letters", letterIdsAfterChoice, node =>
+            JsonNodeHelpers.ReadBoolean(node, "canDismissWithRightClick") == true);
+        var dismissibleLetterId = ReadRequiredString(dismissibleLetter, "id");
+        var dismissibleLetterLabel = ReadRequiredString(dismissibleLetter, "label");
+
+        var dismissLetter = await context.CallGameToolAsync("semantic.dismiss_letter", "rimworld/dismiss_letter", new
+        {
+            letterId = dismissibleLetterId
+        }, cancellationToken);
+        context.EnsureSucceeded(dismissLetter, $"Dismissing standard letter '{dismissibleLetterLabel}'");
+        if (JsonNodeHelpers.ReadBoolean(dismissLetter.StructuredContent, "dismissed") != true)
+            throw new InvalidOperationException("Dismissing the standard letter did not remove it from the letter stack.");
+
+        var lettersAfterDismiss = await context.CallGameToolAsync("semantic.list_letters_after_dismiss", "rimworld/list_letters", new
+        {
+            limit = 40
+        }, cancellationToken);
+        context.EnsureSucceeded(lettersAfterDismiss, "Listing letters after dismissing the standard letter");
+        if (ReadIdSet(lettersAfterDismiss, "letters").Contains(dismissibleLetterId))
+            throw new InvalidOperationException("The dismissed standard letter still appeared in the letter stack.");
+
+        await EnsureNoDialogWindowsAsync(context, "semantic.before_alerts", cancellationToken);
+
+        ToolInvocationResult alerts = await context.CallGameToolAsync("semantic.list_alerts_initial", "rimworld/list_alerts", new
+        {
+            limit = 20
+        }, cancellationToken);
+        context.EnsureSucceeded(alerts, "Listing active alerts before alert activation");
+
+        for (var attempt = 1; JsonNodeHelpers.ReadInt32(alerts.StructuredContent, "returnedCount").GetValueOrDefault() == 0 && attempt <= 8; attempt++)
+        {
+            context.Note($"No alerts were active yet. Letting the colony run briefly before retrying alert activation (attempt {attempt}).");
+
+            var unpause = await context.CallGameToolAsync($"semantic.unpause_for_alerts_{attempt}", "rimworld/pause_game", new
+            {
+                pause = false
+            }, cancellationToken);
+            context.EnsureSucceeded(unpause, "Unpausing the game to surface startup-delayed alerts");
+
+            await Task.Delay(3000, cancellationToken);
+
+            var repause = await context.CallGameToolAsync($"semantic.repause_after_alerts_{attempt}", "rimworld/pause_game", new
+            {
+                pause = true
+            }, cancellationToken);
+            context.EnsureSucceeded(repause, "Re-pausing the game after allowing alerts to populate");
+
+            alerts = await context.CallGameToolAsync($"semantic.list_alerts_retry_{attempt}", "rimworld/list_alerts", new
+            {
+                limit = 20
+            }, cancellationToken);
+            context.EnsureSucceeded(alerts, "Listing active alerts after advancing in-game time");
+        }
+
+        var alertNodes = JsonNodeHelpers.ReadArray(alerts.StructuredContent, "alerts");
+        var alert = alertNodes.FirstOrDefault(node =>
+            JsonNodeHelpers.ReadBoolean(node, "activatable") == true
+            && JsonNodeHelpers.ReadBoolean(node, "anyCulpritValid") == true)
+            ?? alertNodes.FirstOrDefault(node => JsonNodeHelpers.ReadBoolean(node, "activatable") == true);
+        if (alert == null)
+            throw new InvalidOperationException("No activatable alert was available to smoke the alert activation surface.");
+
+        var alertId = ReadRequiredString(alert, "id");
+        var alertLabel = ReadRequiredString(alert, "label");
+        var activateAlert = await context.CallGameToolAsync("semantic.activate_alert", "rimworld/activate_alert", new
+        {
+            alertId
+        }, cancellationToken);
+        context.EnsureSucceeded(activateAlert, $"Activating alert '{alertLabel}'");
+
+        var threatPoints = await context.CallGameToolAsync("semantic.debug_action_current_threat_points", "rimworld/execute_debug_action", new
+        {
+            path = @"Outputs\Current Threat Points"
+        }, cancellationToken);
+        context.EnsureSucceeded(threatPoints, "Executing the Current Threat Points debug action for observability coverage");
+
+        var threatPointsOperationId = context.RequireOperationId(threatPoints, "Executing the Current Threat Points debug action");
+        await context.WaitForOperationAsync("semantic.wait_for_threat_points_operation", threatPointsOperationId, cancellationToken);
+
+        var trackedOperation = await context.CallGameToolAsync("semantic.get_operation", "rimbridge/get_operation", new
+        {
+            operationId = threatPointsOperationId
+        }, cancellationToken);
+        context.EnsureSucceeded(trackedOperation, $"Reading retained operation '{threatPointsOperationId}'");
+        if (!string.Equals(JsonNodeHelpers.ReadString(trackedOperation.StructuredContent, "trackedOperation", "OperationId"), threatPointsOperationId, StringComparison.Ordinal)
+            || JsonNodeHelpers.ReadBoolean(trackedOperation.StructuredContent, "trackedOperation", "Success") != true
+            || !HasCompletedOperationStatus(trackedOperation.StructuredContent, "trackedOperation", "Status"))
+        {
+            throw new InvalidOperationException("The retained operation lookup did not return the completed debug-action operation.");
+        }
+
+        var recentOperations = await context.CallGameToolAsync("semantic.list_operations", "rimbridge/list_operations", new
+        {
+            limit = 20,
+            includeResults = true
+        }, cancellationToken);
+        context.EnsureSucceeded(recentOperations, "Listing recent operations with retained result payloads");
+
+        var operationNodes = JsonNodeHelpers.ReadArray(recentOperations.StructuredContent, "operations");
+        var listedOperation = operationNodes.FirstOrDefault(operation =>
+            string.Equals(JsonNodeHelpers.ReadString(operation, "OperationId"), threatPointsOperationId, StringComparison.Ordinal));
+        if (listedOperation == null
+            || JsonNodeHelpers.ReadBoolean(listedOperation, "HasResult") != true
+            || string.IsNullOrWhiteSpace(JsonNodeHelpers.ReadString(listedOperation, "CapabilityId")))
+        {
+            throw new InvalidOperationException("The recent operations listing did not retain the expected completed debug-action operation.");
+        }
+
+        var operationEvents = await context.CallGameToolAsync("semantic.list_operation_events", "rimbridge/list_operation_events", new
+        {
+            operationId = threatPointsOperationId,
+            limit = 20
+        }, cancellationToken);
+        context.EnsureSucceeded(operationEvents, "Listing operation events for the debug-action operation");
+
+        var operationEventNodes = JsonNodeHelpers.ReadArray(operationEvents.StructuredContent, "events");
+        if (!operationEventNodes.Any(operationEvent =>
+            string.Equals(JsonNodeHelpers.ReadString(operationEvent, "OperationId"), threatPointsOperationId, StringComparison.Ordinal)
+            && string.Equals(JsonNodeHelpers.ReadString(operationEvent, "EventType"), "operation.completed", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("The operation event journal did not include a completion event for the debug-action operation.");
+        }
+
+        var logs = await context.CallGameToolAsync("semantic.list_logs", "rimbridge/list_logs", new
+        {
+            operationId = threatPointsOperationId,
+            limit = 20,
+            minimumLevel = "info"
+        }, cancellationToken);
+        context.EnsureSucceeded(logs, "Listing correlated logs for the debug-action operation");
+
+        var logNodes = JsonNodeHelpers.ReadArray(logs.StructuredContent, "logs");
+        if (!logNodes.Any(log =>
+            string.Equals(JsonNodeHelpers.ReadString(log, "OperationId"), threatPointsOperationId, StringComparison.Ordinal)
+            && string.Equals(JsonNodeHelpers.ReadString(log, "CapabilityId"), "rimbridge.core/debug_actions/execute-debug-action", StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(JsonNodeHelpers.ReadString(log, "Message")) == false))
+        {
+            throw new InvalidOperationException("The correlated log journal did not return the expected debug-action log entry.");
+        }
+
+        context.SetSummaryValue("selectedPawn", pawnName);
+        context.SetSummaryValue("selectedPawnId", pawnId);
+        context.SetSummaryValue("selectedMapId", mapId);
+        context.SetSummaryValue("draftGizmoLabel", draftGizmoLabel);
+        context.SetSummaryValue("screenshotMessageId", screenshotMessageId);
+        context.SetSummaryValue("choiceLetterId", choiceLetterId);
+        context.SetSummaryValue("dismissedLetterId", dismissibleLetterId);
+        context.SetSummaryValue("activatedAlertId", alertId);
+        context.SetSummaryValue("observedOperationId", threatPointsOperationId);
+        context.SetSummaryValue("baselineWindowCount", JsonNodeHelpers.ReadString(baselineUiState, "windowCount"));
+        context.SetSummaryValue("finalAlertCount", JsonNodeHelpers.ReadString(alerts.StructuredContent, "returnedCount"));
+
+        context.SetScenarioData("bridgeStatus", bridgeStatus.StructuredContent);
+        context.SetScenarioData("capabilityList", capabilityList.StructuredContent);
+        context.SetScenarioData("capabilityDetail", capabilityDetail.StructuredContent);
+        context.SetScenarioData("colonists", colonists.StructuredContent);
+        context.SetScenarioData("selectionSemantics", selectionSemantics.StructuredContent);
+        context.SetScenarioData("selectedGizmos", gizmos.StructuredContent);
+        context.SetScenarioData("executeGizmo", executeGizmo.StructuredContent);
+        context.SetScenarioData("cameraState", cameraState.StructuredContent);
+        context.SetScenarioData("messagesAfterScreenshot", messagesAfterScreenshot.StructuredContent);
+        context.SetScenarioData("lettersAfterChoice", lettersAfterChoice.StructuredContent);
+        context.SetScenarioData("openLetter", openLetter.StructuredContent);
+        context.SetScenarioData("lettersAfterStandard", lettersAfterStandard.StructuredContent);
+        context.SetScenarioData("dismissLetter", dismissLetter.StructuredContent);
+        context.SetScenarioData("alerts", alerts.StructuredContent);
+        context.SetScenarioData("trackedOperation", trackedOperation.StructuredContent);
+        context.SetScenarioData("recentOperations", recentOperations.StructuredContent);
+        context.SetScenarioData("operationEventsByOperation", operationEvents.StructuredContent);
+        context.SetScenarioData("logsByOperation", logs.StructuredContent);
+
+        var clearSelection = await context.CallGameToolAsync("semantic.clear_selection", "rimworld/clear_selection", new { }, cancellationToken);
+        context.EnsureSucceeded(clearSelection, "Clearing the selection at the end of the semantic diagnostics roundtrip");
+
+        var observation = await observationWindow.CaptureAsync(
+            "semantic.final_bridge_status",
+            "semantic.collect_operation_events",
+            "semantic.collect_logs",
             cancellationToken);
         context.ApplyObservationWindow(observation);
     }
@@ -2470,15 +2876,7 @@ internal static class SmokeScenarioCatalog
 
     private static string ResolveFirstColonistName(JsonNode? structuredContent)
     {
-        var colonists = JsonNodeHelpers.ReadArray(structuredContent, "colonists");
-        foreach (var colonist in colonists)
-        {
-            var name = JsonNodeHelpers.ReadString(colonist, "name");
-            if (!string.IsNullOrWhiteSpace(name))
-                return name;
-        }
-
-        throw new InvalidOperationException("The current map did not expose any colonists that could be used for the selection roundtrip scenario.");
+        return ReadRequiredString(ResolveFirstColonist(structuredContent), "name");
     }
 
     private static (int X, int Z) ResolvePawnPosition(JsonNode? structuredContent, string pawnName)
@@ -2496,6 +2894,98 @@ internal static class SmokeScenarioCatalog
         }
 
         throw new InvalidOperationException($"Could not resolve a current-map position for colonist '{pawnName}'.");
+    }
+
+    private static JsonNode? ResolveFirstColonist(JsonNode? structuredContent)
+    {
+        var colonists = JsonNodeHelpers.ReadArray(structuredContent, "colonists");
+        foreach (var colonist in colonists)
+        {
+            if (!string.IsNullOrWhiteSpace(JsonNodeHelpers.ReadString(colonist, "pawnId")))
+                return colonist;
+        }
+
+        throw new InvalidOperationException("The current map did not expose any colonists that could be used for the smoke scenario.");
+    }
+
+    private static bool ResolveColonistDrafted(JsonNode? structuredContent, string pawnId)
+    {
+        var colonists = JsonNodeHelpers.ReadArray(structuredContent, "colonists");
+        foreach (var colonist in colonists)
+        {
+            if (string.Equals(JsonNodeHelpers.ReadString(colonist, "pawnId"), pawnId, StringComparison.Ordinal))
+                return JsonNodeHelpers.ReadBoolean(colonist, "drafted") == true;
+        }
+
+        throw new InvalidOperationException($"Could not find colonist '{pawnId}' in the colonist list response.");
+    }
+
+    private static JsonNode? ResolveDraftGizmo(IReadOnlyList<JsonNode?> gizmos)
+    {
+        foreach (var gizmo in gizmos)
+        {
+            if (JsonNodeHelpers.ReadBoolean(gizmo, "disabled") == true)
+                continue;
+
+            var label = JsonNodeHelpers.ReadString(gizmo, "label");
+            var description = JsonNodeHelpers.ReadString(gizmo, "description");
+            if (label.IndexOf("draft", StringComparison.OrdinalIgnoreCase) >= 0
+                || description.IndexOf("draft", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return gizmo;
+            }
+        }
+
+        throw new InvalidOperationException("Could not find an enabled draft gizmo for the selected colonist.");
+    }
+
+    private static HashSet<string> ReadIdSet(ToolInvocationResult result, string arrayPropertyName)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in JsonNodeHelpers.ReadArray(result.StructuredContent, arrayPropertyName))
+        {
+            var id = JsonNodeHelpers.ReadString(node, "id");
+            if (!string.IsNullOrWhiteSpace(id))
+                set.Add(id);
+        }
+
+        return set;
+    }
+
+    private static JsonNode? ResolveNewNodeById(
+        JsonNode? structuredContent,
+        string arrayPropertyName,
+        ISet<string> baselineIds,
+        Func<JsonNode?, bool> predicate)
+    {
+        foreach (var node in JsonNodeHelpers.ReadArray(structuredContent, arrayPropertyName))
+        {
+            var id = JsonNodeHelpers.ReadString(node, "id");
+            if (string.IsNullOrWhiteSpace(id) || baselineIds.Contains(id))
+                continue;
+            if (predicate(node))
+                return node;
+        }
+
+        throw new InvalidOperationException($"Could not find a new '{arrayPropertyName}' entry that matched the smoke-test predicate.");
+    }
+
+    private static string ReadRequiredString(JsonNode? node, params string[] path)
+    {
+        var value = JsonNodeHelpers.ReadString(node, path);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            var location = path.Length == 0 ? "<root>" : string.Join(".", path);
+            throw new InvalidOperationException($"Expected a non-empty string at '{location}' in the smoke scenario response payload.");
+        }
+
+        return value;
+    }
+
+    private static bool HasCompletedOperationStatus(JsonNode? node, params string[] path)
+    {
+        return JsonNodeHelpers.ReadInt32(node, path) == 2
+            || string.Equals(JsonNodeHelpers.ReadString(node, path), "Completed", StringComparison.Ordinal);
     }
 
     private static (int X, int Z) ResolveColonistSearchOrigin(JsonNode? structuredContent)
