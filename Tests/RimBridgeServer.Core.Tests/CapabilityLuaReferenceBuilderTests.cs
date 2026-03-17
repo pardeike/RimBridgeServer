@@ -53,6 +53,8 @@ public class CapabilityLuaReferenceBuilderTests
         var examples = ReadArray(document, "examples");
         Assert.Contains(examples, item => ReadString(ReadObject(item), "name") == "minimal");
         Assert.Contains(examples, item => ReadString(ReadObject(item), "name") == "poll_and_assert");
+        Assert.Contains(examples, item => ReadString(ReadObject(item), "name") == "wait_for_entry_scene");
+        Assert.Contains(examples, item => ReadString(ReadObject(item), "name") == "bounded_search_and_validate");
         Assert.Contains(examples, item => ReadString(ReadObject(item), "name") == "foreach_selection");
     }
 
@@ -64,6 +66,21 @@ public class CapabilityLuaReferenceBuilderTests
         var runtimeModel = ReadObject(document, "runtimeModel");
         Assert.Equal("rimbridge/run_script", ReadString(runtimeModel, "loweringTargetTool"));
         Assert.Equal("rimbridge/get_script_reference", ReadString(runtimeModel, "runtimeReferenceTool"));
+    }
+
+    [Fact]
+    public void CreateDocumentIncludesPollingGuidanceAndPatterns()
+    {
+        var document = CapabilityLuaReferenceBuilder.CreateDocument();
+
+        var pollingGuidance = ReadObject(document, "pollingGuidance");
+        var bestPractices = ReadArray(pollingGuidance, "bestPractices");
+        Assert.Contains(bestPractices, item => Assert.IsType<string>(item).Contains("Prefer rb.poll against a read-only capability"));
+
+        var patterns = ReadArray(pollingGuidance, "patterns");
+        Assert.Contains(patterns, item => ReadString(ReadObject(item), "name") == "wait_for_entry_scene");
+        Assert.Contains(patterns, item => ReadString(ReadObject(item), "name") == "wait_for_colonists_in_area");
+        Assert.Contains(patterns, item => ReadString(ReadObject(item), "name") == "bounded_search_and_validate");
     }
 
     private static Dictionary<string, object> ReadObject(Dictionary<string, object> source, string key)

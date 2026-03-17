@@ -39,6 +39,59 @@ public static class CapabilityLuaReferenceBuilder
                 rb.assert(grouped.attempts >= 1, "Expected at least one poll attempt.")
                 return grouped.result
                 """));
+        var bridgeStatePollingExample = Obj(
+            ("name", "wait_for_entry_scene"),
+            ("description", "Poll bridge state until RimWorld is back at the main menu entry scene."),
+            ("luaSource", """
+                local entry = rb.poll("rimbridge/get_bridge_status", {}, {
+                  timeoutMs = 30000,
+                  pollIntervalMs = 100,
+                  condition = {
+                    all = {
+                      { path = "result.state.inEntryScene", equals = true },
+                      { path = "result.state.hasCurrentGame", equals = false },
+                      { path = "result.state.longEventPending", equals = false }
+                    }
+                  }
+                })
+
+                return entry.result.state
+                """));
+        var planningExample = Obj(
+            ("name", "bounded_search_and_validate"),
+            ("description", "Use a bounded while loop, generic map search, and dry-run validation to plan before acting."),
+            ("luaSource", """
+                local searchRadius = 4
+                local planningAttempts = 0
+                local chosen = nil
+
+                while chosen == nil and planningAttempts < 6 do
+                  planningAttempts = planningAttempts + 1
+
+                  local candidate = rb.call("rimworld/find_random_cell_near", {
+                    x = 120,
+                    z = 120,
+                    startingSearchRadius = searchRadius,
+                    maxSearchRadius = searchRadius + 8,
+                    width = 3,
+                    height = 3,
+                    footprintAnchor = "center",
+                    requireWalkable = true,
+                    requireStandable = true,
+                    requireNoImpassableThings = true
+                  })
+
+                  if candidate.result.success == true then
+                    chosen = candidate
+                  end
+
+                  searchRadius = searchRadius + 2
+                end
+
+                rb.assert(chosen ~= nil, "Expected to find a candidate cell.")
+                rb.print("planning_attempts", planningAttempts)
+                return chosen.result.cell
+                """));
         var foreachExample = Obj(
             ("name", "foreach_selection"),
             ("description", "Use ipairs, static field access, and boolean expressions in call arguments."),
@@ -197,12 +250,46 @@ public static class CapabilityLuaReferenceBuilder
                     Field("error", "object", required: false, defaultValue: null, description: "Top-level compile or runtime error."),
                     Field("output", "output[]", required: true, defaultValue: Arr(), description: "Structured trace rows emitted by print/rb.print."),
                     Field("script", "report", required: false, defaultValue: null, description: "Shared script runner report after successful compilation."))))),
+            ("pollingGuidance", Obj(
+                ("summary", "Preferred waiting model for run_lua v1: issue a mutating action once, then poll a read-only capability or explicit wait tool until bounded state conditions match."),
+                ("bestPractices", Arr(
+                    "Prefer rb.poll against a read-only capability that exposes the exact state you care about, such as rimbridge/get_bridge_status, rimworld/list_colonists, or rimworld/get_designator_state.",
+                    "Use explicit wait tools such as rimbridge/wait_for_game_loaded or rimbridge/wait_for_long_event_idle when the bridge already exposes a bounded lifecycle wait.",
+                    "Mutate first, then poll. Do not loop a mutating capability unless retries are part of the intended behavior.",
+                    "Emit rb.print rows for the derived values or poll attempt counts that will matter when the script fails.",
+                    "Keep conditions narrow and state-based. Prefer structured fields such as position, drafted, selectedDesignatorId, or inEntryScene over UI timing assumptions."
+                )),
+                ("patterns", Arr(
+                    Obj(
+                        ("name", "wait_for_entry_scene"),
+                        ("description", "Poll bridge status until RimWorld is back at the main menu."),
+                        ("preferredCapabilities", Arr("rimbridge/get_bridge_status")),
+                        ("whenToUse", "Use when a script must confirm the entry scene before starting a new game or validating menu state."),
+                        ("luaSource", bridgeStatePollingExample["luaSource"])
+                    ),
+                    Obj(
+                        ("name", "wait_for_colonists_in_area"),
+                        ("description", "Poll list_colonists until the expected pawns are inside a target area and have settled on compatible jobs."),
+                        ("preferredCapabilities", Arr("rimworld/list_colonists")),
+                        ("whenToUse", "Use after issuing movement or draft commands when the next step depends on pawn positions or jobs."),
+                        ("luaSource", pollingExample["luaSource"])
+                    ),
+                    Obj(
+                        ("name", "bounded_search_and_validate"),
+                        ("description", "Use a bounded while loop for planning when one search call is not enough and each candidate must be validated."),
+                        ("preferredCapabilities", Arr("rimworld/find_random_cell_near", "rimworld/apply_architect_designator")),
+                        ("whenToUse", "Use for generic planning tasks such as finding enough space or validating a future footprint before mutating the map."),
+                        ("luaSource", planningExample["luaSource"])
+                    )
+                ))
+            )),
             ("authoringTips", Arr(
                 "Call rimbridge/get_script_reference as well when you need the exact runtime condition model or lowered JSON result shape.",
                 "Use rimbridge/compile_lua first when bringing up a new scenario so you can inspect the lowered JSON script.",
                 "Prefer rb.print and rb.assert when building test-like scripts with explicit trace output and a clean failure boundary.",
-                "Assign rb.poll(...) to a local when you need both the final result and step metadata such as attempts.")),
-            ("examples", Arr(minimalExample, pollingExample, foreachExample)));
+                "Assign rb.poll(...) to a local when you need both the final result and step metadata such as attempts.",
+                "Prefer state polling over event-dependent scripting in v1 unless a dedicated wait tool already exists for that lifecycle seam.")),
+            ("examples", Arr(minimalExample, pollingExample, bridgeStatePollingExample, planningExample, foreachExample)));
     }
 
     private static Dictionary<string, object> HostFunction(string name, string description, string signature, params object[] parameters)

@@ -307,6 +307,10 @@ Fresh clients do not need to infer the Lua subset from this README alone. Call `
 
 Use `rimbridge/compile_lua` when you want to inspect the lowered JSON without executing anything. That is the debugging seam for Lua lowering problems and the easiest way to confirm that Lua remains a front-end over the existing runner rather than a separate runtime.
 
+For waiting and synchronization, prefer a polling-first model. In `run_lua` v1 the intended pattern is: issue a mutating action once, then use `rb.poll(...)` against a read-only capability until a bounded structured condition matches. Good polling targets include `rimbridge/get_bridge_status`, `rimworld/list_colonists`, and `rimworld/get_designator_state`. This keeps scripts state-driven instead of relying on UI timing or host-side event delivery.
+
+Use the explicit wait tools when the bridge already exposes a bounded lifecycle seam such as `rimbridge/wait_for_game_loaded`, `rimbridge/wait_for_long_event_idle`, or `rimbridge/wait_for_operation`. Those can still be called from Lua through `rb.call(...)`, but for gameplay state the general rule is simpler: mutate once, then poll the state you actually care about.
+
 Supported `run_lua` v1 features:
 
 - `local` variables and scoped shadowing
@@ -358,6 +362,41 @@ end
 
 rb.assert(snapshot.result.count > 0, "Expected at least one colonist.")
 return snapshot.result.count
+```
+
+Planning example:
+
+```lua
+local searchRadius = 4
+local planningAttempts = 0
+local chosen = nil
+
+while chosen == nil and planningAttempts < 6 do
+  planningAttempts = planningAttempts + 1
+
+  local candidate = rb.call("rimworld/find_random_cell_near", {
+    x = 120,
+    z = 120,
+    startingSearchRadius = searchRadius,
+    maxSearchRadius = searchRadius + 8,
+    width = 3,
+    height = 3,
+    footprintAnchor = "center",
+    requireWalkable = true,
+    requireStandable = true,
+    requireNoImpassableThings = true
+  })
+
+  if candidate.result.success == true then
+    chosen = candidate
+  end
+
+  searchRadius = searchRadius + 2
+end
+
+rb.assert(chosen ~= nil, "Expected to find a candidate cell.")
+rb.print("planning_attempts", planningAttempts)
+return chosen.result.cell
 ```
 
 Reference example:

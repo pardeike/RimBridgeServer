@@ -88,7 +88,7 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
-    [Tool("rimbridge/get_lua_reference", Description = "Get a machine-readable authoring reference for rimbridge/run_lua, including the supported Lua subset, rb.* host API, compile errors, limits, and examples")]
+    [Tool("rimbridge/get_lua_reference", Description = "Get a machine-readable authoring reference for rimbridge/run_lua, including the supported Lua subset, rb.* host API, polling/planning patterns, compile errors, limits, and examples")]
     public object GetLuaReference()
     {
         return InvokeAlias();
