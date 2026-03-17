@@ -759,7 +759,7 @@ Parameters:
 - `targetPawnId` (`string`, `optional`, default `null`): Optional stable target pawn id from rimworld/list_colonists.
 - `x` (`int`, `optional`, default `0`): Target cell x coordinate when no pawn name or id is given
 - `z` (`int`, `optional`, default `0`): Target cell z coordinate when no pawn name or id is given
-- `mode` (`string`, `optional`, default `"vanilla"`): Compatibility hint. `vanilla`, `auto`, and `live` are accepted; the tool always routes through the live play-UI click path.
+- `mode` (`string`, `optional`, default `"vanilla"`): Compatibility hint. 'vanilla', 'auto', and 'live' are accepted; the tool always routes through the live play-UI click path.
 
 ### `rimworld/right_click_cell`
 
