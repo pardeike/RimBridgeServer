@@ -1,9 +1,9 @@
-name: Release RimBridgeServer Mod
+name: Release Mod
 
 "on":
   push:
     branches:
-      - main
+      - "**"
     paths:
       - Directory.Build.props
 
@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   verify-tag-package-and-release:
+    if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
 
     steps:
@@ -25,11 +26,48 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Determine mod metadata
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          props = ET.parse("Directory.Build.props")
+          root = props.getroot()
+
+          def read_value(name: str) -> str:
+              node = root.find(f".//{name}")
+              return (node.text or "").strip() if node is not None and node.text else ""
+
+          mod_name = read_value("ModName")
+          mod_file_name = read_value("ModFileName")
+          if not mod_file_name:
+              raise SystemExit("Directory.Build.props is missing ModFileName.")
+
+          candidates = sorted(
+              path for path in Path(".").rglob(f"{mod_file_name}.csproj")
+              if "bin" not in path.parts and "obj" not in path.parts
+          )
+
+          if len(candidates) != 1:
+              names = ", ".join(str(path) for path in candidates) or "none"
+              raise SystemExit(
+                  f"Expected exactly one project named {mod_file_name}.csproj, found {len(candidates)}: {names}"
+              )
+
+          print(f"MOD_NAME={mod_name or mod_file_name}")
+          print(f"MOD_FILE_NAME={mod_file_name}")
+          print(f"MOD_PROJECT={candidates[0].as_posix()}")
+          PY
+
       - name: Determine release version
         run: |
           set -euo pipefail
 
-          MOD_VERSION="$(dotnet msbuild Source/RimBridgeServer.csproj -nologo -getProperty:Version)"
+          MOD_VERSION="$(dotnet msbuild "$MOD_PROJECT" -nologo -getProperty:Version)"
           RELEASE_TAG="v$MOD_VERSION"
 
           echo "MOD_VERSION=$MOD_VERSION" >> "$GITHUB_ENV"
@@ -61,21 +99,21 @@ jobs:
       - name: Build mod
         env:
           RIMWORLD_MOD_DIR: ""
-        run: dotnet build RimBridgeServer.sln -c Release
+        run: dotnet build "$MOD_PROJECT" -c Release
 
       - name: Package mod zip
         run: |
           set -euo pipefail
 
           PACKAGE_ROOT="$RUNNER_TEMP/mod-package"
-          PACKAGE_DIR="$PACKAGE_ROOT/RimBridgeServer"
-          STAGE_DIR="dist/RimBridgeServer"
-          ARCHIVE_NAME="RimBridgeServer-${RELEASE_TAG}.zip"
+          PACKAGE_DIR="$PACKAGE_ROOT/$MOD_FILE_NAME"
+          STAGE_DIR="dist/$MOD_FILE_NAME"
+          ARCHIVE_NAME="${MOD_FILE_NAME}.zip"
 
           rm -rf "$PACKAGE_ROOT" dist
           mkdir -p dist "$STAGE_DIR"
 
-          dotnet build Source/RimBridgeServer.csproj -c Release --no-restore -p:RIMWORLD_MOD_DIR="$PACKAGE_ROOT"
+          dotnet build "$MOD_PROJECT" -c Release --no-restore -p:RIMWORLD_MOD_DIR="$PACKAGE_ROOT"
 
           cp -R "$PACKAGE_DIR"/. "$STAGE_DIR"/
 
@@ -93,7 +131,7 @@ jobs:
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create \
               "$RELEASE_TAG" \
-              --title "RimBridgeServer $RELEASE_TAG" \
+              --title "$MOD_NAME $RELEASE_TAG" \
               --generate-notes
           fi
 
@@ -103,7 +141,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          LEGACY_ARCHIVE_NAME="${MOD_FILE_NAME}-${RELEASE_TAG}.zip"
+
+          if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | grep -Fxq "$LEGACY_ARCHIVE_NAME"; then
+            gh release delete-asset "$RELEASE_TAG" "$LEGACY_ARCHIVE_NAME" --yes
+          fi
+
           gh release upload \
             "$RELEASE_TAG" \
-            "dist/RimBridgeServer-${RELEASE_TAG}.zip" \
+            "dist/${MOD_FILE_NAME}.zip" \
             --clobber
