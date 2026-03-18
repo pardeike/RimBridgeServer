@@ -135,6 +135,11 @@ internal static class RimWorldState
         return ResolvePawn(pawnName, pawnId, AllPlayerColonists(), "player-controlled colonist");
     }
 
+    public static Pawn ResolveCurrentMapColonist(string pawnName = null, string pawnId = null)
+    {
+        return ResolvePawn(pawnName, pawnId, CurrentMapColonists(CurrentMapOrThrow()), "current-map colonist");
+    }
+
     public static Pawn ResolveCurrentMapPawn(string pawnName = null, string pawnId = null)
     {
         return ResolvePawn(pawnName, pawnId, AllCurrentMapPawns(CurrentMapOrThrow()), "current-map pawn");

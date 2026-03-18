@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `100` tools total
+- `102` tools total
 - `18` `rimbridge/*` tools
-- `82` `rimworld/*` tools
+- `84` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -116,7 +116,7 @@ Parameters: none.
 
 ### `rimbridge/get_lua_reference`
 
-Get a machine-readable authoring reference for rimbridge/run_lua and rimbridge/run_lua_file, including the supported Lua subset, params binding, polling/planning patterns, compile errors, limits, and examples
+Get a machine-readable authoring reference for the lowered rimbridge/run_lua subset, including quick-start rules, common pitfalls, params binding, compile errors, limits, and examples
 
 Parameters: none.
 
@@ -130,16 +130,16 @@ Parameters:
 
 ### `rimbridge/run_lua`
 
-Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry; supports an injected read-only params table and points discoverers at rimbridge/get_lua_reference
+Compile a small lowered Lua subset, not general-purpose Lua, into the shared script runner and execute it through the normal capability registry; start with rimbridge/get_lua_reference or rimbridge/compile_lua
 
 Parameters:
-- `luaSource` (`string`, `required`): Lua source using the supported rimbridge/run_lua subset. Call rimbridge/get_lua_reference for the full machine-readable language reference and rimbridge/compile_lua to inspect the lowered JSON script.
+- `luaSource` (`string`, `required`): Lua source using the supported rimbridge/run_lua subset. Start with local bindings, rb.call/rb.poll, static field access, and static one-based indexes such as names[1]. Call rimbridge/get_lua_reference for the full machine-readable language reference and rimbridge/compile_lua to inspect the lowered JSON script.
 - `parameters` (`Dictionary<string, object>`, `optional`, default `null`): Optional object-style parameters exposed to the script as a read-only global params table. Example: {"screenshotFileName":"demo_capture","maxPlanningAttempts":8}
 - `includeStepResults` (`bool`, `optional`, default `true`): Include each successful call step's result payload in the returned script report
 
 ### `rimbridge/run_lua_file`
 
-Load a .lua file from disk, expose an optional read-only params table, compile it through the shared Lua frontend, and execute it through the normal capability registry
+Load a .lua file, treat it as the same lowered Lua subset used by rimbridge/run_lua, and execute it through the shared script runner
 
 Parameters:
 - `scriptPath` (`string`, `required`): Absolute path or current-working-directory-relative path to a .lua file
@@ -148,15 +148,15 @@ Parameters:
 
 ### `rimbridge/compile_lua`
 
-Compile supported Lua source into the lowered JSON script model without executing capability calls; supports an injected read-only params table
+Compile the supported lowered Lua subset, not general-purpose Lua, into the JSON script model without executing capability calls; use this first for new script shapes
 
 Parameters:
-- `luaSource` (`string`, `required`): Lua source using the supported rimbridge/run_lua subset. Call rimbridge/get_lua_reference for the full machine-readable language reference.
+- `luaSource` (`string`, `required`): Lua source using the supported rimbridge/run_lua subset. Prefer local bindings, rb.call/rb.poll, static field access, and static one-based indexes. Call rimbridge/get_lua_reference for the full machine-readable language reference.
 - `parameters` (`Dictionary<string, object>`, `optional`, default `null`): Optional object-style parameters exposed to the script as a read-only global params table
 
 ### `rimbridge/compile_lua_file`
 
-Load a .lua file from disk and compile it into the lowered JSON script model without executing capability calls
+Load a .lua file and compile it as the same lowered Lua subset used by rimbridge/run_lua without executing capability calls
 
 Parameters:
 - `scriptPath` (`string`, `required`): Absolute path or current-working-directory-relative path to a .lua file
@@ -192,6 +192,17 @@ Parameters:
 - `path` (`string`, `required`): Stable debug action path returned by the discovery tools
 - `includeHidden` (`bool`, `optional`, default `false`): Include child nodes that are currently hidden in the active game state
 
+### `rimworld/search_debug_actions`
+
+Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time
+
+Parameters:
+- `query` (`string`, `required`): Case-insensitive search text such as Toggle Job Logging or Log Job Details
+- `limit` (`int`, `optional`, default `50`): Maximum number of matches to return
+- `includeHidden` (`bool`, `optional`, default `false`): Include nodes that are currently hidden in the active game state
+- `supportedOnly` (`bool`, `optional`, default `false`): Only return nodes whose execution metadata reports supported=true
+- `requiredTargetKind` (`string`, `optional`, default `null`): Optional required target kind filter such as pawn
+
 ### `rimworld/get_debug_action`
 
 Get metadata for one RimWorld debug action path and, optionally, its immediate children
@@ -217,6 +228,15 @@ Set a RimWorld debug setting toggle by stable path to a deterministic on/off sta
 Parameters:
 - `path` (`string`, `required`): Stable debug setting path returned by the discovery tools
 - `enabled` (`bool`, `required`): Desired enabled state
+
+### `rimworld/set_colonist_job_logging`
+
+Deterministically enable or disable job-tracker logging for one current-map colonist and return a log cursor plus recommended rimbridge/list_logs arguments for consuming future job lines
+
+Parameters:
+- `pawnName` (`string`, `optional`, default `null`): Optional current-map colonist name, short name, or full name
+- `pawnId` (`string`, `optional`, default `null`): Optional stable current-map colonist pawn id from rimworld/list_colonists
+- `enabled` (`bool`, `optional`, default `true`): Desired job-logging state
 
 ### `rimworld/list_mods`
 

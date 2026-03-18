@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using RimBridgeServer.Core;
 using RimBridgeServer.Contracts;
 
@@ -10,6 +12,8 @@ internal static class RimBridgeCapabilities
     public static OperationJournal Journal { get; private set; }
 
     public static LogJournal LogJournal { get; private set; }
+
+    public static IReadOnlyList<AnnotatedExtensionCapabilityProvider.DiscoveredTool> ExtensionTools { get; private set; } = [];
 
     public static void Initialize()
     {
@@ -97,9 +101,25 @@ internal static class RimBridgeCapabilities
             module: new ContextMenuCapabilityModule(),
             aliasMetadataType: typeof(RimBridgeTools),
             source: CapabilitySourceKind.Optional));
+        var extensionProviders = RimBridgeExtensionDiscovery.DiscoverProviders();
+        var extensionTools = new List<AnnotatedExtensionCapabilityProvider.DiscoveredTool>();
+
+        foreach (var provider in extensionProviders)
+        {
+            try
+            {
+                registry.RegisterProvider(provider);
+                extensionTools.AddRange(provider.Tools);
+            }
+            catch (Exception ex)
+            {
+                Verse.Log.Error($"[RimBridge] Failed to register annotated extension provider '{provider.ProviderId}': {ex}");
+            }
+        }
 
         Journal = journal;
         LogJournal = logJournal;
+        ExtensionTools = extensionTools;
         Registry = registry;
         LegacyToolExecution.Initialize(registry);
     }

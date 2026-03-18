@@ -1,0 +1,114 @@
+using System;
+using Lib.GAB.Server;
+using Verse;
+
+namespace RimBridgeServer;
+
+internal static class RimBridgeStartup
+{
+    private static readonly object Sync = new();
+    private static bool _modConstructed;
+    private static bool _modsInitialized;
+    private static bool _started;
+    private static GabpServer _server;
+
+    public static void OnModConstructed()
+    {
+        lock (Sync)
+        {
+            _modConstructed = true;
+        }
+
+        TryStart();
+    }
+
+    public static void OnAllModsInitialized()
+    {
+        lock (Sync)
+        {
+            _modsInitialized = true;
+        }
+
+        TryStart();
+    }
+
+    public static void RegisterExtensionTools(GabpServer server)
+    {
+        if (server == null)
+            throw new ArgumentNullException(nameof(server));
+
+        foreach (var tool in RimBridgeCapabilities.ExtensionTools)
+        {
+            if (server.Tools.HasTool(tool.Alias))
+            {
+                Log.Warning($"[RimBridge] Skipping annotated extension tool '{tool.Alias}' because a tool with that name is already registered.");
+                continue;
+            }
+
+            server.Tools.RegisterTool(
+                tool.Alias,
+                parameters => TaskShim.FromResult<object>(LegacyToolExecution.InvokeAlias(tool.Alias, ReflectedCapabilityBinding.NormalizeInvocationArguments(parameters))),
+                tool.ToolInfo);
+        }
+    }
+
+    private static void TryStart()
+    {
+        lock (Sync)
+        {
+            if (!_modConstructed || !_modsInitialized || _started)
+                return;
+
+            _started = true;
+        }
+
+        try
+        {
+            RimBridgeCapabilities.Initialize();
+            RimBridgeLogs.Initialize(RimBridgeCapabilities.LogJournal);
+
+            var tools = new RimBridgeTools();
+            var version = typeof(RimBridgeServerMod).Assembly.GetName().Version?.ToString() ?? "0.1.0.0";
+            _server = Lib.GAB.Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", version, tools, fallbackPort: 5174);
+            RegisterExtensionTools(_server);
+            RimBridgeEventRelay.Initialize(_server.Events, RimBridgeCapabilities.Journal, RimBridgeCapabilities.LogJournal);
+
+            _server.StartAsync().ContinueWith(task =>
+            {
+                if (task.IsFaulted)
+                {
+                    Log.Error($"[RimBridge] Failed to start server: {task.Exception}");
+                    return;
+                }
+
+                if (Lib.GAB.Gabp.IsRunningUnderGabs())
+                {
+                    Log.Message($"[RimBridge] GABP server connected to GABS on port {_server.Port}");
+                }
+                else
+                {
+                    Log.Message($"[RimBridge] GABP server running standalone on port {_server.Port}");
+                    Log.Message($"[RimBridge] Bridge token: {_server.Token}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            lock (Sync)
+            {
+                _started = false;
+            }
+
+            Log.Error($"[RimBridge] STARTUP_INIT_FAILURE: {ex}");
+            Log.Error($"[RimBridge] Failed to initialize server: {ex}");
+        }
+    }
+
+    private static class TaskShim
+    {
+        public static System.Threading.Tasks.Task<T> FromResult<T>(T value)
+        {
+            return System.Threading.Tasks.Task.FromResult(value);
+        }
+    }
+}

@@ -47,4 +47,45 @@ public class JsonNodeHelpersTests
         Assert.Equal("operation.started", JsonNodeHelpers.ReadString(values[0], "EventType"));
         Assert.NotSame(JsonNodeHelpers.GetPath(node, "events"), values[0]?.Parent);
     }
+
+    [Fact]
+    public void NormalizesStructuredPayloadFromJsonText()
+    {
+        var normalized = JsonNodeHelpers.NormalizeStructuredPayload(null, """
+            {
+              "success": true,
+              "children": [
+                { "path": "Actions\\T: Log Job Details" }
+              ]
+            }
+            """);
+
+        Assert.True(JsonNodeHelpers.ReadBoolean(normalized, "success"));
+        var children = JsonNodeHelpers.ReadArray(normalized, "children");
+        Assert.Single(children);
+        Assert.Equal(@"Actions\T: Log Job Details", JsonNodeHelpers.ReadString(children[0], "path"));
+    }
+
+    [Fact]
+    public void NormalizesStructuredPayloadFromWrapperContentArray()
+    {
+        var wrapper = JsonNode.Parse("""
+            {
+              "tool": "games.call_tool",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "{\"success\":true,\"matches\":[{\"path\":\"Actions\\\\T: Toggle Job Logging\"}]}"
+                }
+              ]
+            }
+            """);
+
+        var normalized = JsonNodeHelpers.NormalizeStructuredPayload(wrapper, string.Empty);
+
+        Assert.True(JsonNodeHelpers.ReadBoolean(normalized, "success"));
+        var matches = JsonNodeHelpers.ReadArray(normalized, "matches");
+        Assert.Single(matches);
+        Assert.Equal(@"Actions\T: Toggle Job Logging", JsonNodeHelpers.ReadString(matches[0], "path"));
+    }
 }

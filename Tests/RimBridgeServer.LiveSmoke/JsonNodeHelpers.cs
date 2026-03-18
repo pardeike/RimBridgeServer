@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json;
 
 namespace RimBridgeServer.LiveSmoke;
 
@@ -139,5 +140,70 @@ internal static class JsonNodeHelpers
             .ToList();
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    public static JsonNode? NormalizeStructuredPayload(JsonNode? structuredContent, string? textContent)
+    {
+        return NormalizeStructuredPayload(structuredContent, textContent, depth: 0);
+    }
+
+    private static JsonNode? NormalizeStructuredPayload(JsonNode? structuredContent, string? textContent, int depth)
+    {
+        if (depth > 4)
+            return CloneNode(structuredContent);
+
+        if (TryParseEmbeddedJsonValue(structuredContent, out var parsedValue))
+            return parsedValue;
+
+        if (structuredContent is JsonObject wrapper)
+        {
+            var nestedStructuredContent = GetPath(wrapper, "structuredContent");
+            var nestedTextContent = ReadTextContent(wrapper);
+            if (nestedStructuredContent != null || string.IsNullOrWhiteSpace(nestedTextContent) == false)
+            {
+                var normalizedNested = NormalizeStructuredPayload(nestedStructuredContent, nestedTextContent, depth + 1);
+                if (normalizedNested != null)
+                    return normalizedNested;
+            }
+        }
+
+        if (structuredContent != null)
+            return CloneNode(structuredContent);
+
+        return TryParseJsonText(textContent, out var parsedText) ? parsedText : null;
+    }
+
+    public static bool TryParseJsonText(string? text, out JsonNode? parsed)
+    {
+        parsed = null;
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var trimmed = text.Trim();
+        if (!(trimmed.StartsWith("{", StringComparison.Ordinal)
+              || trimmed.StartsWith("[", StringComparison.Ordinal)
+              || trimmed.StartsWith("\"", StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        try
+        {
+            parsed = JsonNode.Parse(trimmed);
+            return parsed != null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryParseEmbeddedJsonValue(JsonNode? node, out JsonNode? parsed)
+    {
+        parsed = null;
+        if (node is not JsonValue value)
+            return false;
+
+        return value.TryGetValue(out string? stringValue) && TryParseJsonText(stringValue, out parsed);
     }
 }

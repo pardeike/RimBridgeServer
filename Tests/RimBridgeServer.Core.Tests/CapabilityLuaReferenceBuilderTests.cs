@@ -56,6 +56,7 @@ public class CapabilityLuaReferenceBuilderTests
 
         var compileErrors = ReadObject(document, "compileErrors");
         var failureCodes = ReadArray(compileErrors, "failureCodes");
+        Assert.Contains(failureCodes, item => ReadString(ReadObject(item), "code") == "lua.invalid_parameters");
         Assert.Contains(failureCodes, item => ReadString(ReadObject(item), "code") == "lua.syntax_error");
         Assert.Contains(failureCodes, item => ReadString(ReadObject(item), "code") == "lua.unsupported_expression");
 
@@ -107,6 +108,27 @@ public class CapabilityLuaReferenceBuilderTests
         Assert.Contains(patterns, item => ReadString(ReadObject(item), "name") == "wait_for_entry_scene");
         Assert.Contains(patterns, item => ReadString(ReadObject(item), "name") == "wait_for_colonists_in_area");
         Assert.Contains(patterns, item => ReadString(ReadObject(item), "name") == "bounded_search_and_validate");
+    }
+
+    [Fact]
+    public void CreateDocumentIncludesQuickStartAndCommonPitfalls()
+    {
+        var document = CapabilityLuaReferenceBuilder.CreateDocument();
+
+        var quickStart = ReadObject(document, "quickStart");
+        Assert.Contains("not as full Lua", ReadString(quickStart, "summary"));
+
+        var workflow = ReadArray(quickStart, "recommendedWorkflow");
+        Assert.Contains(workflow, item => Assert.IsType<string>(item).Contains("rimbridge/compile_lua"));
+
+        var firstRules = ReadArray(quickStart, "firstRules");
+        Assert.Contains(firstRules, item => Assert.IsType<string>(item).Contains("Dynamic indexing"));
+        Assert.Contains("rb.call", ReadString(quickStart, "starterTemplate"));
+
+        var commonPitfalls = ReadArray(document, "commonPitfalls");
+        Assert.Contains(commonPitfalls, item => ReadString(ReadObject(item), "pattern") == "count = 1");
+        Assert.Contains(commonPitfalls, item => ReadString(ReadObject(item), "pattern") == "names[i]");
+        Assert.Contains(commonPitfalls, item => ReadString(ReadObject(item), "pattern") == "rb.call(aliasVar, args)");
     }
 
     private static Dictionary<string, object> ReadObject(Dictionary<string, object> source, string key)

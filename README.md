@@ -81,10 +81,44 @@ If you only need the shortest possible mental model, use this:
 4. Wait until the bridge is connected.
 5. Use tools like `rimbridge/get_bridge_status`, `rimworld/start_debug_game`, `rimworld/get_ui_layout`, `rimworld/take_screenshot`, `rimworld/list_mods`, and `rimworld/update_mod_settings` to drive and validate the game.
 
+## Third-Party Extension Tools
+
+Third-party mods can expose bridge tools by referencing the `RimBridgeServer.Annotations` NuGet package and annotating ordinary public methods. RimBridgeServer delays its own GAB startup until RimWorld has finished initializing all loaded mods, then scans every loaded mod assembly exactly once, registers all discovered annotated tools exactly once, and exposes them through the same capability registry and top-level GAB tool surface as built-in tools.
+
+Practical rules:
+
+- use `RimBridgeServer.Annotations` as the only shared dependency
+- annotate public static methods, public instance methods on your `Verse.Mod` class, or public instance methods on a type with a public parameterless constructor
+- use `[ToolParameter]` for argument docs and `[ToolResponse]` for response field docs when useful
+- expect per-mod fault isolation: one broken mod should not block discovery for other mods
+
+Minimal example:
+
+```csharp
+using RimBridgeServer.Annotations;
+
+public sealed class MyModBridgeTools
+{
+    [Tool("mymod/ping", Description = "Example tool exposed through RimBridgeServer")]
+    public object Ping(
+        [ToolParameter(Description = "Optional label")] string label = null)
+    {
+        return new
+        {
+            success = true,
+            label = label ?? "pong"
+        };
+    }
+}
+```
+
 ## Tool Surface
 
 The current public tool surface is grouped below by function.
 For the generated parameter-level reference pulled straight from the annotated source and kept fresh by CI, see [docs/tool-reference.md](docs/tool-reference.md).
+
+Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, not general-purpose Lua. Start with `rimbridge/get_lua_reference` and `rimbridge/compile_lua`; prefer `local` bindings, `rb.call`/`rb.poll`, static field access, and static one-based indexes such as `names[1]`. Dynamic indexing such as `names[i]`, arbitrary global assignment, and most broader Lua features are rejected in v1.
+
 <!-- BEGIN GENERATED:tool-surface -->
 
 ### Bridge Diagnostics
@@ -105,21 +139,23 @@ For the generated parameter-level reference pulled straight from the annotated s
 ### Scripting
 
 - `rimbridge/get_script_reference` - Get a machine-readable authoring reference for `rimbridge/run_script`, including statement types, expressions, conditions, limits, and examples
-- `rimbridge/get_lua_reference` - Get a machine-readable authoring reference for `rimbridge/run_lua` and `rimbridge/run_lua_file`, including the supported Lua subset, `params` binding, polling/planning patterns, compile errors, limits, and examples
+- `rimbridge/get_lua_reference` - Get a machine-readable authoring reference for the lowered `rimbridge/run_lua` subset, including quick-start rules, common pitfalls, `params` binding, compile errors, limits, and examples
 - `rimbridge/run_script` - Execute a JSON script containing ordered capability calls and generic control statements; call `rimbridge/get_script_reference` for the machine-readable language reference
-- `rimbridge/run_lua` - Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry; supports an injected read-only `params` table and points discoverers at `rimbridge/get_lua_reference`
-- `rimbridge/run_lua_file` - Load a `.lua` file from disk, expose an optional read-only `params` table, compile it through the shared Lua frontend, and execute it through the normal capability registry
-- `rimbridge/compile_lua` - Compile supported Lua source into the lowered JSON script model without executing capability calls; supports an injected read-only `params` table
-- `rimbridge/compile_lua_file` - Load a `.lua` file from disk and compile it into the lowered JSON script model without executing capability calls
+- `rimbridge/run_lua` - Compile a small lowered Lua subset, not general-purpose Lua, into the shared script runner and execute it through the normal capability registry; start with `rimbridge/get_lua_reference` or `rimbridge/compile_lua`
+- `rimbridge/run_lua_file` - Load a `.lua` file, treat it as the same lowered Lua subset used by `rimbridge/run_lua`, and execute it through the shared script runner
+- `rimbridge/compile_lua` - Compile the supported lowered Lua subset, not general-purpose Lua, into the JSON script model without executing capability calls; use this first for new script shapes
+- `rimbridge/compile_lua_file` - Load a `.lua` file and compile it as the same lowered Lua subset used by `rimbridge/run_lua` without executing capability calls
 
 ### Debug Actions And Mods
 
 - `rimworld/pause_game` - Pause or unpause the game
 - `rimworld/list_debug_action_roots` - List top-level RimWorld debug action roots using stable internal debug-action paths
 - `rimworld/list_debug_action_children` - List direct children of a RimWorld debug action path
+- `rimworld/search_debug_actions` - Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time
 - `rimworld/get_debug_action` - Get metadata for one RimWorld debug action path and, optionally, its immediate children
 - `rimworld/execute_debug_action` - Execute a supported RimWorld debug action leaf by stable path, including pawn-target actions when pawnName or pawnId is provided
 - `rimworld/set_debug_setting` - Set a RimWorld debug setting toggle by stable path to a deterministic on/off state
+- `rimworld/set_colonist_job_logging` - Deterministically enable or disable job-tracker logging for one current-map colonist and return a log cursor plus recommended `rimbridge/list_logs` arguments for consuming future job lines
 - `rimworld/list_mods` - List installed RimWorld mods, whether each one is enabled in the current configuration, and whether it matches the currently loaded session
 - `rimworld/get_mod_configuration_status` - Read semantic mod-configuration status for the current active load order, including warnings, ordering issues, and whether a restart is required to match the loaded session
 - `rimworld/set_mod_enabled` - Enable or disable one installed mod by stable mod id, package id, name, or folder name, optionally persisting the updated `ModsConfig.xml` immediately

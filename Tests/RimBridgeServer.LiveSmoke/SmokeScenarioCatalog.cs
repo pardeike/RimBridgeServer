@@ -63,7 +63,7 @@ internal static class SmokeScenarioCatalog
             [DebugActionPawnTargetScenarioName] = new SmokeScenarioDefinition
             {
                 Name = DebugActionPawnTargetScenarioName,
-                Description = "Ensure a playable game exists, then execute pawn-target debug actions such as Toggle Job Logging and Log Job Details by stable path.",
+                Description = "Ensure a playable game exists, then globally search for pawn-target debug actions such as Toggle Job Logging and Log Job Details before executing them by stable path.",
                 RunAsync = RunDebugActionPawnTargetAsync
             },
             [ArchitectFloorDropdownScenarioName] = new SmokeScenarioDefinition
@@ -1055,25 +1055,31 @@ internal static class SmokeScenarioCatalog
 
         var observationWindow = await context.BeginObservationWindowAsync("debug_actions_pawn.snapshot_bridge_status", cancellationToken);
 
-        var roots = await context.CallGameToolAsync("debug_actions_pawn.list_roots", "rimworld/list_debug_action_roots", new
+        var toggleSearch = await context.CallGameToolAsync("debug_actions_pawn.search_toggle", "rimworld/search_debug_actions", new
         {
-            includeHidden = false
+            query = "Toggle Job Logging",
+            limit = 10,
+            includeHidden = false,
+            supportedOnly = true,
+            requiredTargetKind = "pawn"
         }, cancellationToken);
-        context.EnsureSucceeded(roots, "Listing RimWorld debug-action roots for the pawn-target scenario");
+        context.EnsureSucceeded(toggleSearch, "Searching globally for the Toggle Job Logging debug action");
 
-        var rootArray = JsonNodeHelpers.ReadArray(roots.StructuredContent, "roots");
-        var actionsRootPath = ResolveDebugActionRootPath(rootArray, "Actions");
+        var toggleMatches = JsonNodeHelpers.ReadArray(toggleSearch.StructuredContent, "matches");
+        var toggleJobLoggingPath = ResolveDebugActionSearchPath(toggleMatches, @"Actions\T: Toggle Job Logging");
 
-        var actionChildren = await context.CallGameToolAsync("debug_actions_pawn.list_action_children", "rimworld/list_debug_action_children", new
+        var detailsSearch = await context.CallGameToolAsync("debug_actions_pawn.search_log_job_details", "rimworld/search_debug_actions", new
         {
-            path = actionsRootPath,
-            includeHidden = false
+            query = "Log Job Details",
+            limit = 10,
+            includeHidden = false,
+            supportedOnly = true,
+            requiredTargetKind = "pawn"
         }, cancellationToken);
-        context.EnsureSucceeded(actionChildren, $"Listing debug-action children under '{actionsRootPath}'");
+        context.EnsureSucceeded(detailsSearch, "Searching globally for the Log Job Details debug action");
 
-        var actionChildArray = JsonNodeHelpers.ReadArray(actionChildren.StructuredContent, "children");
-        var toggleJobLoggingPath = ResolveDebugActionPath(actionChildArray, @"Actions\T: Toggle Job Logging");
-        var logJobDetailsPath = ResolveDebugActionPath(actionChildArray, @"Actions\T: Log Job Details");
+        var detailsMatches = JsonNodeHelpers.ReadArray(detailsSearch.StructuredContent, "matches");
+        var logJobDetailsPath = ResolveDebugActionSearchPath(detailsMatches, @"Actions\T: Log Job Details");
 
         var colonists = await context.CallGameToolAsync("debug_actions_pawn.list_colonists", "rimworld/list_colonists", new
         {
@@ -1136,13 +1142,14 @@ internal static class SmokeScenarioCatalog
             if (detailLogArray.Count == 0)
                 throw new InvalidOperationException($"Debug action '{logJobDetailsPath}' did not emit any captured logs for '{pawnName}'.");
 
-            context.SetSummaryValue("actionsRootPath", actionsRootPath);
             context.SetSummaryValue("targetPawn", pawnName);
             context.SetSummaryValue("toggleJobLoggingPath", toggleJobLoggingPath);
             context.SetSummaryValue("logJobDetailsPath", logJobDetailsPath);
+            context.SetSummaryValue("toggleSearchCount", toggleMatches.Count.ToString());
+            context.SetSummaryValue("detailsSearchCount", detailsMatches.Count.ToString());
             context.SetSummaryValue("jobDetailLogCount", detailLogArray.Count.ToString());
-            context.SetScenarioData("roots", new JsonArray(rootArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
-            context.SetScenarioData("actionChildren", new JsonArray(actionChildArray.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("toggleSearch", new JsonArray(toggleMatches.Select(JsonNodeHelpers.CloneNode).ToArray()));
+            context.SetScenarioData("detailsSearch", new JsonArray(detailsMatches.Select(JsonNodeHelpers.CloneNode).ToArray()));
             context.SetScenarioData("toggleNode", toggleNode.StructuredContent);
             context.SetScenarioData("enableToggle", enableToggle.StructuredContent);
             context.SetScenarioData("logJobDetails", logJobDetails.StructuredContent);
@@ -4316,6 +4323,36 @@ internal static class SmokeScenarioCatalog
         }
 
         throw new InvalidOperationException($"Could not resolve debug action '{preferredPath}' from the returned child nodes.");
+    }
+
+    private static string ResolveDebugActionSearchPath(IReadOnlyList<JsonNode?> matches, string preferredPath)
+    {
+        foreach (var match in matches)
+        {
+            var path = JsonNodeHelpers.ReadString(match, "path");
+            if (string.Equals(path, preferredPath, StringComparison.Ordinal))
+                return path;
+        }
+
+        foreach (var match in matches)
+        {
+            var nodePath = JsonNodeHelpers.ReadString(match, "node", "path");
+            if (string.Equals(nodePath, preferredPath, StringComparison.Ordinal))
+                return nodePath;
+        }
+
+        foreach (var match in matches)
+        {
+            var path = JsonNodeHelpers.ReadString(match, "path");
+            if (!string.IsNullOrWhiteSpace(path))
+                return path;
+
+            var nodePath = JsonNodeHelpers.ReadString(match, "node", "path");
+            if (!string.IsNullOrWhiteSpace(nodePath))
+                return nodePath;
+        }
+
+        throw new InvalidOperationException($"Could not resolve debug action '{preferredPath}' from the returned search matches.");
     }
 
     private static string ResolveSafeDebugSettingPath(IReadOnlyList<JsonNode?> children)

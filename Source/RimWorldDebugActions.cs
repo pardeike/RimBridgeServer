@@ -64,6 +64,47 @@ internal static class RimWorldDebugActions
         };
     }
 
+    public static object SearchDebugActionsResponse(string query, int limit = 50, bool includeHidden = false, bool supportedOnly = false, string requiredTargetKind = null)
+    {
+        var normalizedQuery = query?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedQuery))
+            return Failure("A non-empty query is required.");
+
+        if (limit <= 0)
+            limit = 50;
+
+        var matches = EnumerateDebugActionNodes(includeHidden)
+            .Select(node => TryCreateSearchMatch(node, normalizedQuery, supportedOnly, requiredTargetKind))
+            .Where(match => match != null)
+            .OrderByDescending(match => match.Score)
+            .ThenBy(match => match.Path, StringComparer.Ordinal)
+            .ToList();
+
+        var totalMatchCount = matches.Count;
+        var limitedMatches = matches.Take(limit).ToList();
+
+        return new
+        {
+            success = true,
+            devModeEnabled = Prefs.DevMode,
+            query = normalizedQuery,
+            includeHidden,
+            supportedOnly,
+            requiredTargetKind = string.IsNullOrWhiteSpace(requiredTargetKind) ? null : requiredTargetKind.Trim(),
+            limit,
+            matchCount = limitedMatches.Count,
+            totalMatchCount,
+            truncated = totalMatchCount > limitedMatches.Count,
+            matches = limitedMatches.Select(match => new
+            {
+                score = match.Score,
+                matchFields = match.MatchFields,
+                path = match.Path,
+                node = DescribeNode(match.Node)
+            }).ToList()
+        };
+    }
+
     public static object GetDebugActionResponse(string path, bool includeChildren = true, bool includeHiddenChildren = false)
     {
         if (!TryResolveNode(path, out var node, out var normalizedPath, out var error))
@@ -271,6 +312,79 @@ internal static class RimWorldDebugActions
         };
     }
 
+    public static object SetColonistJobLoggingResponse(string pawnName = null, string pawnId = null, bool enabled = true)
+    {
+        Pawn pawn;
+        try
+        {
+            pawn = RimWorldState.ResolveCurrentMapColonist(pawnName, pawnId);
+        }
+        catch (Exception ex)
+        {
+            return new
+            {
+                success = false,
+                message = $"Could not resolve current-map colonist for job logging: {ex.Message}",
+                requestedPawnName = pawnName,
+                requestedPawnId = pawnId,
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        if (pawn.jobs == null)
+        {
+            return new
+            {
+                success = false,
+                message = $"Colonist '{pawn.Name?.ToStringShort ?? pawn.LabelShort}' does not expose a job tracker.",
+                pawn = RimWorldState.DescribePawn(pawn),
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        var previousValue = pawn.jobs.debugLog;
+        pawn.jobs.debugLog = enabled;
+        var currentValue = pawn.jobs.debugLog;
+        var logCursor = RimBridgeCapabilities.LogJournal?.LatestSequence ?? 0;
+
+        return new
+        {
+            success = true,
+            changed = currentValue != previousValue,
+            enabled = currentValue,
+            pawn = RimWorldState.DescribePawn(pawn),
+            state = RimWorldState.ToolStateSnapshot(),
+            logCursor,
+            consumeLogs = new
+            {
+                tool = "rimbridge/list_logs",
+                recommendedArguments = new
+                {
+                    afterSequence = logCursor,
+                    minimumLevel = "info",
+                    limit = 200
+                },
+                expectedBehavior = currentValue
+                    ? "Job logging is now enabled for this colonist. Future pawn job transitions and related tracker events can appear in the normal bridge log journal as they happen. This tool does not wait for the next job change and may not produce an immediate log line."
+                    : "Job logging is now disabled for this colonist. No new job-tracker lines are expected for this pawn after the returned cursor unless another tool or debug action enables it again.",
+                usageHint = currentValue
+                    ? "Poll rimbridge/list_logs with afterSequence from this response while the colonist works. Treat the returned cursor as the starting point for future job logs, not as proof that a new line was already emitted."
+                    : "If you were already tailing rimbridge/list_logs for this colonist, you can stop after this cursor unless you are consuming unrelated logs."
+            }
+        };
+    }
+
+    private sealed class DebugActionSearchMatch
+    {
+        public DebugActionNode Node { get; set; }
+
+        public string Path { get; set; }
+
+        public int Score { get; set; }
+
+        public List<string> MatchFields { get; set; } = [];
+    }
+
     private static bool TryResolveNode(string path, out DebugActionNode node, out string normalizedPath, out string error)
     {
         node = null;
@@ -319,6 +433,49 @@ internal static class RimWorldDebugActions
         PrepareNode(node);
     }
 
+    private static IEnumerable<DebugActionNode> EnumerateDebugActionNodes(bool includeHidden)
+    {
+        EnsureNodeGraph();
+
+        var seenPaths = new HashSet<string>(StringComparer.Ordinal);
+        var roots = Dialog_Debug.roots?
+            .Where(entry => entry.Value != null)
+            .Select(entry => entry.Value)
+            .ToList()
+            ?? [];
+
+        foreach (var root in roots)
+        {
+            foreach (var node in EnumerateDebugActionNodes(root, includeHidden, seenPaths))
+                yield return node;
+        }
+    }
+
+    private static IEnumerable<DebugActionNode> EnumerateDebugActionNodes(DebugActionNode node, bool includeHidden, ISet<string> seenPaths)
+    {
+        if (node == null)
+            yield break;
+
+        PrepareNode(node);
+
+        var path = node.Path?.Trim();
+        var shouldInclude = !string.IsNullOrWhiteSpace(path) && (includeHidden || node.VisibleNow);
+        if (shouldInclude && seenPaths.Add(path))
+            yield return node;
+
+        if (node.children == null || node.children.Count == 0)
+            yield break;
+
+        foreach (var child in node.children)
+        {
+            if (child == null)
+                continue;
+
+            foreach (var nested in EnumerateDebugActionNodes(child, includeHidden, seenPaths))
+                yield return nested;
+        }
+    }
+
     private static List<DebugActionNode> GetChildren(DebugActionNode node, bool includeHidden)
     {
         PrepareNode(node);
@@ -345,6 +502,91 @@ internal static class RimWorldDebugActions
     {
         PrepareNode(node);
         return node.children != null && node.children.Count > 0;
+    }
+
+    private static DebugActionSearchMatch TryCreateSearchMatch(DebugActionNode node, string query, bool supportedOnly, string requiredTargetKind)
+    {
+        PrepareNode(node);
+
+        var assessment = DebugActionExecutionPolicy.Evaluate(
+            HasChildren(node),
+            node.actionType.ToString(),
+            node.action != null,
+            node.pawnAction != null);
+
+        if (supportedOnly && !assessment.Supported)
+            return null;
+
+        var normalizedTargetKind = requiredTargetKind?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedTargetKind) == false
+            && !string.Equals(assessment.RequiredTargetKind, normalizedTargetKind, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var queryLower = query.Trim().ToLowerInvariant();
+        var matchFields = new List<string>();
+        var score = 0;
+
+        score += ScoreField(node.Path, query, queryLower, "path", 400, 1000, matchFields);
+        score += ScoreField(node.LabelNow, query, queryLower, "label", 350, 900, matchFields);
+        score += ScoreField(node.category, query, queryLower, "category", 200, 500, matchFields);
+        score += ScoreField(node.sourceAttribute?.name, query, queryLower, "source.name", 180, 450, matchFields);
+        score += ScoreField(node.sourceAttribute?.category, query, queryLower, "source.category", 160, 425, matchFields);
+        score += ScoreField(node.actionType.ToString(), query, queryLower, "actionType", 120, 300, matchFields);
+        score += ScoreField(assessment.Kind.ToString(), query, queryLower, "execution.kind", 120, 300, matchFields);
+        score += ScoreField(assessment.RequiredTargetKind, query, queryLower, "execution.requiredTargetKind", 110, 275, matchFields);
+
+        var combinedText = string.Join(" ",
+            new[]
+            {
+                node.Path,
+                node.LabelNow,
+                node.category,
+                node.sourceAttribute?.name,
+                node.sourceAttribute?.category,
+                node.actionType.ToString(),
+                assessment.Kind.ToString(),
+                assessment.RequiredTargetKind
+            }.Where(text => string.IsNullOrWhiteSpace(text) == false));
+
+        var queryTokens = queryLower.Split(new[] { ' ', '\t', '-', '_', '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+        if (queryTokens.Length > 1 && queryTokens.All(token => combinedText.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0))
+        {
+            score += 150;
+            matchFields.Add("allTokens");
+        }
+
+        return score <= 0
+            ? null
+            : new DebugActionSearchMatch
+            {
+                Node = node,
+                Path = node.Path ?? string.Empty,
+                Score = score,
+                MatchFields = matchFields
+            };
+    }
+
+    private static int ScoreField(string value, string rawQuery, string queryLower, string fieldName, int containsScore, int exactScore, ICollection<string> matchFields)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return 0;
+
+        var trimmed = value.Trim();
+        if (string.Equals(trimmed, rawQuery, StringComparison.OrdinalIgnoreCase))
+        {
+            matchFields.Add(fieldName + ".exact");
+            return exactScore;
+        }
+
+        if (trimmed.IndexOf(queryLower, StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            matchFields.Add(fieldName);
+            return containsScore;
+        }
+
+        return 0;
     }
 
     private static object DescribeNode(DebugActionNode node, string tabDefName = null)

@@ -125,8 +125,8 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
-    [ReadmeTool("Scripting", "Get a machine-readable authoring reference for rimbridge/run_lua and rimbridge/run_lua_file, including the supported Lua subset, params binding, polling/planning patterns, compile errors, limits, and examples")]
-    [Tool("rimbridge/get_lua_reference", Description = "Get a machine-readable authoring reference for rimbridge/run_lua and rimbridge/run_lua_file, including the supported Lua subset, params binding, polling/planning patterns, compile errors, limits, and examples")]
+    [ReadmeTool("Scripting", "Get a machine-readable authoring reference for the lowered rimbridge/run_lua subset, including quick-start rules, common pitfalls, params binding, compile errors, limits, and examples")]
+    [Tool("rimbridge/get_lua_reference", Description = "Get a machine-readable authoring reference for the lowered rimbridge/run_lua subset, including quick-start rules, common pitfalls, params binding, compile errors, limits, and examples")]
     public object GetLuaReference()
     {
         return InvokeAlias();
@@ -141,18 +141,18 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(scriptJson), scriptJson), (nameof(includeStepResults), includeStepResults)));
     }
 
-    [ReadmeTool("Scripting", "Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry; supports an injected read-only params table and points discoverers at rimbridge/get_lua_reference")]
-    [Tool("rimbridge/run_lua", Description = "Compile a narrow Lua scripting subset into the shared script runner and execute it through the normal capability registry; supports an injected read-only params table and points discoverers at rimbridge/get_lua_reference")]
+    [ReadmeTool("Scripting", "Compile a small lowered Lua subset, not general-purpose Lua, into the shared script runner and execute it through the normal capability registry; start with rimbridge/get_lua_reference or rimbridge/compile_lua")]
+    [Tool("rimbridge/run_lua", Description = "Compile a small lowered Lua subset, not general-purpose Lua, into the shared script runner and execute it through the normal capability registry; start with rimbridge/get_lua_reference or rimbridge/compile_lua")]
     public object RunLua(
-        [ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Call rimbridge/get_lua_reference for the full machine-readable language reference and rimbridge/compile_lua to inspect the lowered JSON script.")] string luaSource,
+        [ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Start with local bindings, rb.call/rb.poll, static field access, and static one-based indexes such as names[1]. Call rimbridge/get_lua_reference for the full machine-readable language reference and rimbridge/compile_lua to inspect the lowered JSON script.")] string luaSource,
         [ToolParameter(Description = "Optional object-style parameters exposed to the script as a read-only global params table. Example: {\"screenshotFileName\":\"demo_capture\",\"maxPlanningAttempts\":8}")] Dictionary<string, object> parameters = null,
         [ToolParameter(Description = "Include each successful call step's result payload in the returned script report")] bool includeStepResults = true)
     {
         return InvokeAlias(Arguments((nameof(luaSource), luaSource), (nameof(parameters), parameters), (nameof(includeStepResults), includeStepResults)));
     }
 
-    [ReadmeTool("Scripting", "Load a .lua file from disk, expose an optional read-only params table, compile it through the shared Lua frontend, and execute it through the normal capability registry")]
-    [Tool("rimbridge/run_lua_file", Description = "Load a .lua file from disk, expose an optional read-only params table, compile it through the shared Lua frontend, and execute it through the normal capability registry")]
+    [ReadmeTool("Scripting", "Load a .lua file, treat it as the same lowered Lua subset used by rimbridge/run_lua, and execute it through the shared script runner")]
+    [Tool("rimbridge/run_lua_file", Description = "Load a .lua file, treat it as the same lowered Lua subset used by rimbridge/run_lua, and execute it through the shared script runner")]
     public object RunLuaFile(
         [ToolParameter(Description = "Absolute path or current-working-directory-relative path to a .lua file")] string scriptPath,
         [ToolParameter(Description = "Optional object-style parameters exposed to the script as a read-only global params table")] Dictionary<string, object> parameters = null,
@@ -161,17 +161,17 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(scriptPath), scriptPath), (nameof(parameters), parameters), (nameof(includeStepResults), includeStepResults)));
     }
 
-    [ReadmeTool("Scripting", "Compile supported Lua source into the lowered JSON script model without executing capability calls; supports an injected read-only params table")]
-    [Tool("rimbridge/compile_lua", Description = "Compile supported Lua source into the lowered JSON script model without executing capability calls; supports an injected read-only params table")]
+    [ReadmeTool("Scripting", "Compile the supported lowered Lua subset, not general-purpose Lua, into the JSON script model without executing capability calls; use this first for new script shapes")]
+    [Tool("rimbridge/compile_lua", Description = "Compile the supported lowered Lua subset, not general-purpose Lua, into the JSON script model without executing capability calls; use this first for new script shapes")]
     public object CompileLua(
-        [ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Call rimbridge/get_lua_reference for the full machine-readable language reference.")] string luaSource,
+        [ToolParameter(Description = "Lua source using the supported rimbridge/run_lua subset. Prefer local bindings, rb.call/rb.poll, static field access, and static one-based indexes. Call rimbridge/get_lua_reference for the full machine-readable language reference.")] string luaSource,
         [ToolParameter(Description = "Optional object-style parameters exposed to the script as a read-only global params table")] Dictionary<string, object> parameters = null)
     {
         return InvokeAlias(Arguments((nameof(luaSource), luaSource), (nameof(parameters), parameters)));
     }
 
-    [ReadmeTool("Scripting", "Load a .lua file from disk and compile it into the lowered JSON script model without executing capability calls")]
-    [Tool("rimbridge/compile_lua_file", Description = "Load a .lua file from disk and compile it into the lowered JSON script model without executing capability calls")]
+    [ReadmeTool("Scripting", "Load a .lua file and compile it as the same lowered Lua subset used by rimbridge/run_lua without executing capability calls")]
+    [Tool("rimbridge/compile_lua_file", Description = "Load a .lua file and compile it as the same lowered Lua subset used by rimbridge/run_lua without executing capability calls")]
     public object CompileLuaFile(
         [ToolParameter(Description = "Absolute path or current-working-directory-relative path to a .lua file")] string scriptPath,
         [ToolParameter(Description = "Optional object-style parameters exposed to the script as a read-only global params table")] Dictionary<string, object> parameters = null)
@@ -202,6 +202,18 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(path), path), (nameof(includeHidden), includeHidden)));
     }
 
+    [ReadmeTool("Debug Actions And Mods", "Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time")]
+    [Tool("rimworld/search_debug_actions", Description = "Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time")]
+    public object SearchDebugActions(
+        [ToolParameter(Description = "Case-insensitive search text such as Toggle Job Logging or Log Job Details")] string query,
+        [ToolParameter(Description = "Maximum number of matches to return")] int limit = 50,
+        [ToolParameter(Description = "Include nodes that are currently hidden in the active game state")] bool includeHidden = false,
+        [ToolParameter(Description = "Only return nodes whose execution metadata reports supported=true")] bool supportedOnly = false,
+        [ToolParameter(Description = "Optional required target kind filter such as pawn")] string requiredTargetKind = null)
+    {
+        return InvokeAlias(Arguments((nameof(query), query), (nameof(limit), limit), (nameof(includeHidden), includeHidden), (nameof(supportedOnly), supportedOnly), (nameof(requiredTargetKind), requiredTargetKind)));
+    }
+
     [ReadmeTool("Debug Actions And Mods", "Get metadata for one RimWorld debug action path and, optionally, its immediate children")]
     [Tool("rimworld/get_debug_action", Description = "Get metadata for one RimWorld debug action path and, optionally, its immediate children")]
     public object GetDebugAction(
@@ -229,6 +241,16 @@ public class RimBridgeTools
         [ToolParameter(Description = "Desired enabled state")] bool enabled)
     {
         return InvokeAlias(Arguments((nameof(path), path), (nameof(enabled), enabled)));
+    }
+
+    [ReadmeTool("Debug Actions And Mods", "Deterministically enable or disable job-tracker logging for one current-map colonist and return a log cursor plus recommended rimbridge/list_logs arguments for consuming future job lines")]
+    [Tool("rimworld/set_colonist_job_logging", Description = "Deterministically enable or disable job-tracker logging for one current-map colonist and return a log cursor plus recommended rimbridge/list_logs arguments for consuming future job lines")]
+    public object SetColonistJobLogging(
+        [ToolParameter(Description = "Optional current-map colonist name, short name, or full name")] string pawnName = null,
+        [ToolParameter(Description = "Optional stable current-map colonist pawn id from rimworld/list_colonists")] string pawnId = null,
+        [ToolParameter(Description = "Desired job-logging state")] bool enabled = true)
+    {
+        return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(pawnId), pawnId), (nameof(enabled), enabled)));
     }
 
     [ReadmeTool("Debug Actions And Mods", "List installed RimWorld mods, whether each one is enabled in the current configuration, and whether it matches the currently loaded session")]

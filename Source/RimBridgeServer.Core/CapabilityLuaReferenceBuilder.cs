@@ -123,30 +123,48 @@ public static class CapabilityLuaReferenceBuilder
         return Obj(
             ("success", true),
             ("version", "lua-script-v1"),
-            ("summary", "Machine-readable authoring reference for rimbridge/run_lua and rimbridge/run_lua_file."),
+            ("summary", "Machine-readable authoring reference for the lowered rimbridge/run_lua subset. This is a small Lua-shaped front-end over the shared script runner, not general-purpose Lua."),
+            ("quickStart", Obj(
+                ("summary", "Treat rimbridge/run_lua as a lowered DSL with Lua syntax, not as full Lua."),
+                ("recommendedWorkflow", Arr(
+                    "Call rimbridge/get_lua_reference before inventing a new script shape.",
+                    "Use rimbridge/compile_lua first for fresh inline scripts so you can inspect the lowered JSON before executing mutations.",
+                    "Start from local variables plus rb.call/rb.poll/rb.print/rb.assert and only add more control flow once that smaller shape compiles.")),
+                ("firstRules", Arr(
+                    "Declare variables with local before assigning to them. Assignment without local only updates an already-declared binding.",
+                    "Use only the supported host helpers: rb.call, rb.poll, rb.print, rb.assert, rb.fail, print, and ipairs.",
+                    "Use static field access such as snapshot.result.count and static one-based indexes such as names[1]. Dynamic indexing such as names[i] is rejected in v1.",
+                    "Host calls may only appear as standalone statements or as the sole right-hand side of an assignment or return.")),
+                ("starterTemplate", """
+                    local snapshot = rb.call("rimworld/list_colonists", { currentMapOnly = true })
+                    local colonists = snapshot.result.colonists
+
+                    rb.assert(colonists ~= nil, "Expected colonists.")
+                    return colonists[1]
+                    """))),
             ("tool", Obj(
                 ("name", "rimbridge/run_lua"),
                 ("companionTool", "rimbridge/get_lua_reference"),
                 ("compileTool", "rimbridge/compile_lua"),
-                ("description", "Compile a narrow Lua subset into the shared script runner and execute it through the normal capability registry."),
+                ("description", "Compile a small lowered Lua subset into the shared script runner and execute it through the normal capability registry. This is not general-purpose Lua."),
                 ("arguments", Arr(
-                    Field("luaSource", "string", required: true, defaultValue: null, description: "Lua source using the supported rimbridge/run_lua subset documented here."),
+                    Field("luaSource", "string", required: true, defaultValue: null, description: "Lua source using the supported rimbridge/run_lua subset documented here. Start with local bindings, rb.call/rb.poll, static field access, and static one-based indexes such as names[1]."),
                     Field("parameters", "object", required: false, defaultValue: null, description: "Optional object-style parameters exposed to the script as the read-only global params table."),
                     Field("includeStepResults", "bool", required: false, defaultValue: true, description: "Include result payloads for successful call steps in the returned script report."))))),
             ("fileTool", Obj(
                 ("name", "rimbridge/run_lua_file"),
                 ("companionTool", "rimbridge/get_lua_reference"),
                 ("compileTool", "rimbridge/compile_lua_file"),
-                ("description", "Load a .lua file from disk, expose the optional read-only params table, compile it through the shared Lua frontend, and execute it through the normal capability registry."),
+                ("description", "Load a .lua file, treat it as the same lowered Lua subset used by rimbridge/run_lua, and execute it through the shared script runner."),
                 ("arguments", Arr(
                     Field("scriptPath", "string", required: true, defaultValue: null, description: "Absolute path or current-working-directory-relative path to a .lua file."),
                     Field("parameters", "object", required: false, defaultValue: null, description: "Optional object-style parameters exposed to the script as the read-only global params table."),
                     Field("includeStepResults", "bool", required: false, defaultValue: true, description: "Include result payloads for successful call steps in the returned script report."))))),
             ("compileTool", Obj(
                 ("name", "rimbridge/compile_lua"),
-                ("description", "Compile supported Lua source into the lowered JSON script model without executing capability calls."),
+                ("description", "Compile the supported lowered Lua subset, not general-purpose Lua, into the JSON script model without executing capability calls. Use this first for new script shapes."),
                 ("arguments", Arr(
-                    Field("luaSource", "string", required: true, defaultValue: null, description: "Lua source using the supported rimbridge/run_lua subset documented here."),
+                    Field("luaSource", "string", required: true, defaultValue: null, description: "Lua source using the supported rimbridge/run_lua subset documented here. Prefer local bindings, rb.call/rb.poll, static field access, and static one-based indexes."),
                     Field("parameters", "object", required: false, defaultValue: null, description: "Optional object-style parameters exposed to the script as the read-only global params table."))),
                 ("returns", Arr(
                     Field("success", "bool", required: true, defaultValue: null, description: "Whether compilation succeeded."),
@@ -156,7 +174,7 @@ public static class CapabilityLuaReferenceBuilder
                     Field("error", "compileError", required: false, defaultValue: null, description: "Compile error object when compilation fails."))))),
             ("compileFileTool", Obj(
                 ("name", "rimbridge/compile_lua_file"),
-                ("description", "Load a .lua file from disk and compile it into the lowered JSON script model without executing capability calls."),
+                ("description", "Load a .lua file and compile it as the same lowered Lua subset used by rimbridge/run_lua without executing capability calls."),
                 ("arguments", Arr(
                     Field("scriptPath", "string", required: true, defaultValue: null, description: "Absolute path or current-working-directory-relative path to a .lua file."),
                     Field("parameters", "object", required: false, defaultValue: null, description: "Optional object-style parameters exposed to the script as the read-only global params table."))),
@@ -211,6 +229,27 @@ public static class CapabilityLuaReferenceBuilder
                     "local creates a new scoped variable in the current block.",
                     "Assignment without local updates an existing scoped variable and fails when the variable does not already exist.",
                     "Nested local shadowing is supported and lowers into the shared script scope model.")))),
+            ("commonPitfalls", Arr(
+                Obj(
+                    ("pattern", "count = 1"),
+                    ("whyItFails", "run_lua v1 rejects arbitrary global assignment. A new binding must be declared with local."),
+                    ("preferredForm", "local count = 1")),
+                Obj(
+                    ("pattern", "names[i]"),
+                    ("whyItFails", "run_lua v1 only supports static one-based indexes such as names[1]. Dynamic indexing is not lowered."),
+                    ("preferredForm", "Use 'for i, name in ipairs(names) do' when iterating, or use a fixed index such as names[1].")),
+                Obj(
+                    ("pattern", "rb.call(aliasVar, args)"),
+                    ("whyItFails", "Capability aliases must be literal strings so the compiler can lower them into the shared script model."),
+                    ("preferredForm", "rb.call(\"rimworld/list_colonists\", args)")),
+                Obj(
+                    ("pattern", "local count = rb.call(\"rimworld/list_colonists\", {}).result.count"),
+                    ("whyItFails", "Host calls cannot be nested inside larger expressions. They must stand alone or be the sole right-hand side of an assignment or return."),
+                    ("preferredForm", "local snapshot = rb.call(\"rimworld/list_colonists\", {})\nlocal count = snapshot.result.count")),
+                Obj(
+                    ("pattern", "rb.assert(condition, messageVar)"),
+                    ("whyItFails", "rb.assert and rb.fail messages must be literal strings in v1."),
+                    ("preferredForm", "rb.assert(condition, \"Expected condition to hold.\")")))),
             ("hostApi", Arr(
                 HostFunction(
                     "rb.call",
@@ -281,6 +320,7 @@ public static class CapabilityLuaReferenceBuilder
                     Field("details", "object", required: false, defaultValue: null, description: "Optional structured details such as nodeType."))),
                 ("failureCodes", Arr(
                     FailureCode("lua.invalid_source", "The luaSource payload was empty."),
+                    FailureCode("lua.invalid_parameters", "The provided parameters payload could not be normalized into the read-only params binding."),
                     FailureCode("lua.compile_error", "Compilation failed before or during lowering."),
                     FailureCode("lua.syntax_error", "MoonSharp rejected the Lua source as invalid syntax."),
                     FailureCode("lua.unsupported_statement", "The Lua source used a statement not supported by rimbridge/run_lua v1."),
@@ -339,6 +379,7 @@ public static class CapabilityLuaReferenceBuilder
                 "Use rimbridge/run_lua_file and rimbridge/compile_lua_file for reusable script fixtures that should live on disk instead of inside a tool call string.",
                 "Prefer rb.print and rb.assert when building test-like scripts with explicit trace output and a clean failure boundary.",
                 "Assign rb.poll(...) to a local when you need both the final result and step metadata such as attempts.",
+                "If a first probe fails, simplify toward the starter template instead of widening the script shape. Most failures come from treating v1 as general-purpose Lua.",
                 "Prefer state polling over event-dependent scripting in v1 unless a dedicated wait tool already exists for that lifecycle seam.")),
             ("examples", Arr(minimalExample, pollingExample, bridgeStatePollingExample, planningExample, foreachExample, paramsExample)));
     }

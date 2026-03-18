@@ -74,8 +74,9 @@ internal sealed class McpStdioClient : IAsyncDisposable
         }, cancellationToken);
 
         var isError = JsonNodeHelpers.ReadBoolean(resultNode, "isError") ?? false;
-        var structuredContent = JsonNodeHelpers.CloneNode(JsonNodeHelpers.GetPath(resultNode, "structuredContent"));
+        var rawStructuredContent = JsonNodeHelpers.CloneNode(JsonNodeHelpers.GetPath(resultNode, "structuredContent"));
         var text = JsonNodeHelpers.ReadTextContent(resultNode);
+        var structuredContent = JsonNodeHelpers.NormalizeStructuredPayload(rawStructuredContent, text);
         var message = JsonNodeHelpers.ReadString(structuredContent, "message");
         if (string.IsNullOrWhiteSpace(message))
             message = string.IsNullOrWhiteSpace(text) ? toolName : text;
@@ -83,6 +84,8 @@ internal sealed class McpStdioClient : IAsyncDisposable
         if (!isError)
         {
             var successFlag = JsonNodeHelpers.ReadBoolean(structuredContent, "success");
+            if (!successFlag.HasValue)
+                successFlag = JsonNodeHelpers.ReadBoolean(rawStructuredContent, "success");
             if (successFlag.HasValue && successFlag.Value == false)
                 isError = true;
         }

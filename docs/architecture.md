@@ -28,7 +28,7 @@ That progress is useful, but the architectural risks this document was written t
 - async behavior is mostly implicit, with ad hoc waiting in specific tools like screenshots
 - there is still substantial coupling between the host assembly and first-party capability modules
 - capability discovery now exists internally, but the external documentation surface is still too hand-maintained
-- optional mod integrations currently rely on reflection, even though RimWorld itself is already available through a publicized reference assembly
+- third-party extension discovery now exists through shared annotations plus a one-sweep reflected mod scan, but some optional mod integrations still rely on reflection where no compile-time dependency is desired
 
 ## Non-Negotiable Constraints
 
@@ -542,29 +542,27 @@ The current concrete recommendation for that next layer is documented in [`docs/
 
 ## Extension Strategy
 
-The extension system should begin with explicit registration, not automatic scanning magic.
+The bridge now uses annotation-based discovery for third-party tools instead of a second manual registration model.
 
-Recommended first model:
+Current model:
 
-- define `RimBridgeServer.Extensions.Abstractions`
-- expose an interface such as `IRimBridgeCapabilityProvider`
-- providers register descriptors and handlers during mod startup
-- each extension uses a namespace like `mod.<modid>/...`
+- third-party mods reference `RimBridgeServer.Annotations`
+- RimBridgeServer delays GAB startup until `LoadedModManager.InitializeMods` has completed
+- once all mods are initialized, the host scans each loaded mod assembly exactly once for annotated public tool methods
+- discovered tools are registered once into both the capability registry and the live GAB tool surface
+- each mod is isolated by `try/catch`, so one failing scan does not block other mods
 
-The same interface should be used by first-party packages, for example:
+Supported authoring shapes:
 
-- `rimbridge.core/diagnostics/...`
-- `rimbridge.core/lifecycle/...`
-- `rimbridge.core/debug_actions/...`
-- `rimbridge.optional/ui/...`
+- public static methods on any loaded mod assembly type
+- public instance methods on a loaded `Verse.Mod` handle type
+- public instance methods on a public parameterless tool class
 
-Only after the explicit model is working should we consider discovery helpers.
+Design constraints:
 
-For third-party mods:
-
-- prefer compile-time adapters if the dependency is stable and acceptable
-- otherwise isolate reflection into one adapter assembly per mod
-- never let reflection leak into core execution or contract code
+- keep the shared package annotation-only so participating mods do not need a heavy runtime dependency
+- keep discovery one-shot and startup-bound rather than re-scanning during live execution
+- continue to prefer publicized RimWorld APIs for actual game access; reflection is for extension discovery and optional third-party adapters, not routine game logic
 
 ## Testing Strategy
 
@@ -809,13 +807,13 @@ Notes:
 Deliverables:
 
 - extension abstraction package
-- registration lifecycle
+- annotation package and startup-bound discovery lifecycle
 - extension discovery endpoint
 - first sample extension
 
 Tests:
 
-- registration
+- discovery
 - namespacing
 - script access through extension capabilities
 
@@ -837,7 +835,7 @@ Tests:
 - prefer internal direct execution over UI simulation when the goal is functionality testing
 - prefer UI simulation when the goal is UX validation
 - prefer JSON scripts over a custom DSL in v1
-- prefer explicit extension registration over auto-discovery in v1
+- prefer annotation-based one-sweep extension discovery after all mods initialize over ad hoc per-tool reflection
 - prefer stable ids over repeated fuzzy name lookup
 - prefer publicized RimWorld APIs over reflection
 - prefer reflection only in isolated third-party adapters

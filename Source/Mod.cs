@@ -1,6 +1,4 @@
 using System;
-using System.Reflection;
-using Lib.GAB.Server;
 using UnityEngine;
 using Verse;
 
@@ -8,7 +6,6 @@ namespace RimBridgeServer;
 
 public class RimBridgeServerMod : Mod
 {
-    private readonly GabpServer _server;
     private readonly RimBridgeServerSettings _settings;
 
     public RimBridgeServerMod(ModContentPack content)
@@ -18,33 +15,8 @@ public class RimBridgeServerMod : Mod
         {
             _settings = GetSettings<RimBridgeServerSettings>();
             RimBridgeMainThread.Initialize();
-            RimBridgeCapabilities.Initialize();
-            RimBridgeLogs.Initialize(RimBridgeCapabilities.LogJournal);
             RimBridgePatches.Apply();
-
-            var tools = new RimBridgeTools();
-            var version = typeof(RimBridgeServerMod).Assembly.GetName().Version?.ToString() ?? "0.1.0.0";
-            _server = Lib.GAB.Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", version, tools, fallbackPort: 5174);
-            RimBridgeEventRelay.Initialize(_server.Events, RimBridgeCapabilities.Journal, RimBridgeCapabilities.LogJournal);
-
-            _server.StartAsync().ContinueWith(task =>
-            {
-                if (task.IsFaulted)
-                {
-                    Log.Error($"[RimBridge] Failed to start server: {task.Exception}");
-                    return;
-                }
-
-                if (Lib.GAB.Gabp.IsRunningUnderGabs())
-                {
-                    Log.Message($"[RimBridge] GABP server connected to GABS on port {_server.Port}");
-                }
-                else
-                {
-                    Log.Message($"[RimBridge] GABP server running standalone on port {_server.Port}");
-                    Log.Message($"[RimBridge] Bridge token: {_server.Token}");
-                }
-            });
+            RimBridgeStartup.OnModConstructed();
         }
         catch (Exception ex)
         {
