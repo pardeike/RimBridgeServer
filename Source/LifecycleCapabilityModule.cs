@@ -30,6 +30,39 @@ internal sealed class LifecycleCapabilityModule
         };
     }
 
+    public object SetTimeSpeed(string speed = "Normal")
+    {
+        if (Current.Game == null || Find.TickManager == null)
+        {
+            return new
+            {
+                success = false,
+                message = "No game is currently loaded.",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        if (Enum.TryParse<TimeSpeed>(speed, ignoreCase: true, out var parsed) == false)
+        {
+            return new
+            {
+                success = false,
+                message = $"Unknown time speed '{speed}'. Supported values: {string.Join(", ", Enum.GetNames(typeof(TimeSpeed)))}.",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        Find.TickManager.CurTimeSpeed = parsed;
+        return new
+        {
+            success = true,
+            timeSpeed = Find.TickManager.CurTimeSpeed.ToString(),
+            paused = Find.TickManager.Paused,
+            message = $"Time speed set to {Find.TickManager.CurTimeSpeed}.",
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
     public object StartDebugGame()
     {
         if (LongEventHandler.AnyEventNowOrWaiting)

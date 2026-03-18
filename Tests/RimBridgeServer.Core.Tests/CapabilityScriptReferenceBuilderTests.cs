@@ -80,6 +80,19 @@ public class CapabilityScriptReferenceBuilderTests
     }
 
     [Fact]
+    public void CreateDocumentDescribesOperandReturningLogicalExpressions()
+    {
+        var document = CapabilityScriptReferenceBuilder.CreateDocument();
+        var expressionForms = ReadArray(document, "expressionForms");
+
+        var andExpression = ReadObject(expressionForms.Find(item => ReadString(ReadObject(item), "name") == "$and"));
+        var orExpression = ReadObject(expressionForms.Find(item => ReadString(ReadObject(item), "name") == "$or"));
+
+        Assert.Contains("first falsey operand", ReadString(andExpression, "description"));
+        Assert.Contains("first truthy operand", ReadString(orExpression, "description"));
+    }
+
+    [Fact]
     public void CreateDocumentIncludesAttemptsInReferenceRootFields()
     {
         var document = CapabilityScriptReferenceBuilder.CreateDocument();

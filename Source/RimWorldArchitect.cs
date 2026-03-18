@@ -318,6 +318,41 @@ internal static class RimWorldArchitect
         };
     }
 
+    public static object GetCellsInfoResponse(int x, int z, int width = 1, int height = 1)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+        if (width <= 0 || height <= 0)
+            return Failure("Width and height must be positive.");
+
+        const int maxCells = 1024;
+        var requestedCellCount = (long)width * height;
+        if (requestedCellCount > maxCells)
+            return Failure($"Requested rectangle contains {requestedCellCount} cells, which exceeds the limit of {maxCells}.");
+
+        var requestedCells = EnumerateCells(x, z, width, height).ToList();
+        foreach (var cell in requestedCells)
+        {
+            if (!cell.InBounds(map))
+                return Failure($"Cell ({cell.x}, {cell.z}) is out of bounds for the current map.");
+        }
+
+        return new
+        {
+            success = true,
+            rect = new
+            {
+                x,
+                z,
+                width,
+                height
+            },
+            cellCount = requestedCells.Count,
+            cells = requestedCells.Select(cell => CreateCellInfoPayload(map, cell)).ToList(),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
     public static object FindRandomCellNearResponse(
         int x,
         int z,

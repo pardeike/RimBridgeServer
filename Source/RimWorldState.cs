@@ -20,6 +20,7 @@ internal static class RimWorldState
             bool hasCurrentGame,
             bool longEventPending,
             bool paused,
+            string timeSpeed,
             bool screenFading,
             float fadeOverlayAlpha)
         {
@@ -28,6 +29,7 @@ internal static class RimWorldState
             HasCurrentGame = hasCurrentGame;
             LongEventPending = longEventPending;
             Paused = paused;
+            TimeSpeed = timeSpeed;
             ScreenFading = screenFading;
             FadeOverlayAlpha = fadeOverlayAlpha;
         }
@@ -41,6 +43,8 @@ internal static class RimWorldState
         public bool LongEventPending { get; }
 
         public bool Paused { get; }
+
+        public string TimeSpeed { get; }
 
         public bool ScreenFading { get; }
 
@@ -59,6 +63,7 @@ internal static class RimWorldState
     {
         var hasCurrentGame = Current.Game != null;
         var paused = hasCurrentGame && Find.TickManager?.Paused == true;
+        var timeSpeed = hasCurrentGame ? Find.TickManager?.CurTimeSpeed.ToString() : null;
         var screenFading = ScreenFader.IsFading();
         var fadeOverlayAlpha = Mathf.Clamp01(ScreenFader.CurrentInstantColor().a);
 
@@ -68,6 +73,7 @@ internal static class RimWorldState
             hasCurrentGame,
             LongEventHandler.AnyEventNowOrWaiting,
             paused,
+            timeSpeed,
             screenFading,
             fadeOverlayAlpha);
     }
@@ -86,6 +92,7 @@ internal static class RimWorldState
             currentMapIndex = currentMap?.Index,
             longEventPending = status.LongEventPending,
             paused = status.Paused,
+            timeSpeed = status.TimeSpeed,
             screenFading = status.ScreenFading,
             fadeOverlayAlpha = Math.Round(status.FadeOverlayAlpha, 4),
             screenFadeClear = readiness.ScreenFadeClear,

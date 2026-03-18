@@ -202,6 +202,7 @@ public static class CapabilityLuaReferenceBuilder
                 ("notes", Arr(
                     "Use params.field and static one-based indexing such as params.names[1] to read values.",
                     "params is always present and defaults to an empty object when the caller omits parameters.",
+                    "Missing params fields and static indexes resolve as nil so normal Lua defaulting patterns such as params.retryLimit or 6 work.",
                     "Reassigning or shadowing params is rejected at compile time.")))),
             ("supportedSubset", Obj(
                 ("statements", Arr(
@@ -223,7 +224,7 @@ public static class CapabilityLuaReferenceBuilder
                     "unary minus and unary not",
                     "binary arithmetic",
                     "binary comparisons",
-                    "boolean and / or")),
+                    "boolean and / or with Lua-style operand return values")),
                 ("hostFunctions", Arr("rb.call", "rb.poll", "rb.print", "rb.assert", "rb.fail", "print", "ipairs")),
                 ("scopeRules", Arr(
                     "local creates a new scoped variable in the current block.",

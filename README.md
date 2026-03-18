@@ -149,6 +149,7 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 ### Debug Actions And Mods
 
 - `rimworld/pause_game` - Pause or unpause the game
+- `rimworld/set_time_speed` - Set RimWorld's current time speed directly
 - `rimworld/list_debug_action_roots` - List top-level RimWorld debug action roots using stable internal debug-action paths
 - `rimworld/list_debug_action_children` - List direct children of a RimWorld debug action path
 - `rimworld/search_debug_actions` - Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time
@@ -183,6 +184,7 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/delete_area` - Delete a mutable area such as a custom allowed area
 - `rimworld/delete_zone` - Delete an existing zone by id
 - `rimworld/get_cell_info` - Inspect one map cell, including things, blueprints, frames, designations, zones, and areas
+- `rimworld/get_cells_info` - Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas
 - `rimworld/find_random_cell_near` - Use RimWorld's expanding-radius random cell search to find a nearby cell or footprint that satisfies generic map criteria
 - `rimworld/flood_fill_cells` - Analyze a contiguous area from one root cell using RimWorld's generic cell flood-fill algorithm and the same reusable footprint criteria as find_random_cell_near
 

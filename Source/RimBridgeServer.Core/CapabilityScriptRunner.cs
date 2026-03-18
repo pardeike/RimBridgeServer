@@ -1616,13 +1616,13 @@ public sealed class CapabilityScriptRunner
 
         if (expression.Count == 1 && expression.TryGetValue("$and", out var andValue))
         {
-            value = ResolveLogicalOperands(andValue, currentStepId, state).All(IsTruthy);
+            value = ResolveAndExpression(andValue, currentStepId, state);
             return true;
         }
 
         if (expression.Count == 1 && expression.TryGetValue("$or", out var orValue))
         {
-            value = ResolveLogicalOperands(orValue, currentStepId, state).Any(IsTruthy);
+            value = ResolveOrExpression(orValue, currentStepId, state);
             return true;
         }
 
@@ -1709,21 +1709,43 @@ public sealed class CapabilityScriptRunner
         return resolved;
     }
 
-    private static IEnumerable<object> ResolveLogicalOperands(object operandValue, string currentStepId, ScriptExecutionState state)
+    private static IEnumerable<object> EnumerateLogicalOperands(object operandValue)
     {
-        IEnumerable<object> rawOperands = operandValue switch
+        var rawOperands = operandValue switch
         {
             IEnumerable<object> typedItems when operandValue is not string => typedItems,
             IEnumerable enumerable when operandValue is not string => enumerable.Cast<object>().ToList(),
             _ => throw new InvalidOperationException("Logical expressions require an array of operands.")
         };
 
-        var resolved = rawOperands
-            .Select(item => ResolveValue(item, currentStepId, state))
-            .ToList();
-
-        if (resolved.Count == 0)
+        if (!rawOperands.Any())
             throw new InvalidOperationException("Logical expressions require at least one operand.");
+
+        return rawOperands;
+    }
+
+    private static object ResolveAndExpression(object operandValue, string currentStepId, ScriptExecutionState state)
+    {
+        object resolved = null;
+        foreach (var operand in EnumerateLogicalOperands(operandValue))
+        {
+            resolved = ResolveValue(operand, currentStepId, state);
+            if (!IsTruthy(resolved))
+                return resolved;
+        }
+
+        return resolved;
+    }
+
+    private static object ResolveOrExpression(object operandValue, string currentStepId, ScriptExecutionState state)
+    {
+        object resolved = null;
+        foreach (var operand in EnumerateLogicalOperands(operandValue))
+        {
+            resolved = ResolveValue(operand, currentStepId, state);
+            if (IsTruthy(resolved))
+                return resolved;
+        }
 
         return resolved;
     }

@@ -285,11 +285,12 @@ mentions_rimworld = "RimWorld" in readme
 
 if mentions_rimworld:
     description = (
-        f"Use when working with {title}, the live RimWorld bridge, especially through GABS "
-        "or a direct bridge connection, and the task requires dynamic tool discovery, "
-        "inspection, automation, or validation against a running game."
+        f"Use when a task needs to discover or call live {title} tools against a running "
+        "RimWorld session through GABS or a direct bridge connection. Do not use it just "
+        f"because the current repository is {title}; for source-only edits or reviews with "
+        "no live bridge interaction, work directly in the codebase."
     )
-    short_description = "Drive live RimWorld bridge tools"
+    short_description = "Use live RimWorld bridge tools"
 else:
     description = (
         f"Use when working with {title}, especially through GABS or a direct bridge "
@@ -298,8 +299,8 @@ else:
     short_description = "Discover and use live bridge tools"
 
 default_prompt = (
-    f"Use ${skill_name} to discover the live {title} tool surface and choose the right "
-    "GABS or direct bridge calls for this task."
+    f"Use ${skill_name} when the task requires discovering or calling live {title} tools "
+    "against a running game through GABS or a direct bridge connection."
 )
 
 count_line = ""
@@ -329,23 +330,24 @@ if mentions_rimworld:
     overview_line = (
         "RimBridgeServer turns a running RimWorld session into a live automation bridge. "
         "Use this skill when the goal is to inspect, drive, verify, or script RimWorld "
-        "through that bridge."
+        "through that bridge. Do not use it for source-only editing of RimBridgeServer itself."
     )
 
 quick_start_lines = [
-    "1. Prefer the GABS connector in Codex when it is available, because it gives you a stable discovery and call surface even when the mirrored game tools change at runtime.",
-    "2. Start by checking session state with `mcp__gabs__games_status` and then use `mcp__gabs__games_connect` when RimWorld is running but not yet attached.",
-    "3. Discover the live mirrored tool names with `mcp__gabs__games_tool_names` and inspect only the few candidates you might use with `mcp__gabs__games_tool_detail`.",
-    "4. Call the discovered mirrored tool through `mcp__gabs__games_call_tool`. Do not guess how direct tool ids were mirrored, normalized, or prefixed.",
+    "1. Use this skill only when the task actually needs live bridge or in-game interaction; for source-only repo work, do not load it.",
+    "2. Prefer the GABS connector in Codex when it is available, because it gives you a stable discovery and call surface even when the mirrored game tools change at runtime.",
+    "3. Start by checking session state with `mcp__gabs__games_status` and then use `mcp__gabs__games_connect` when RimWorld is running but not yet attached.",
+    "4. Discover the live mirrored tool names with `mcp__gabs__games_tool_names` and inspect only the few candidates you might use with `mcp__gabs__games_tool_detail`.",
+    "5. Call the discovered mirrored tool through `mcp__gabs__games_call_tool`. Do not guess how direct tool ids were mirrored, normalized, or prefixed.",
 ]
 
 if has_direct:
     quick_start_lines.append(
-        "5. If a direct RimBridgeServer MCP connector is already installed in the current Codex session, start with its own status and discovery tools such as `rimbridge/get_bridge_status`, `rimbridge/list_capabilities`, and `rimbridge/wait_for_game_loaded`."
+        "6. If a direct RimBridgeServer MCP connector is already installed in the current Codex session, start with its own status and discovery tools such as `rimbridge/get_bridge_status`, `rimbridge/list_capabilities`, and `rimbridge/wait_for_game_loaded`."
     )
 else:
     quick_start_lines.append(
-        "5. If you are not using GABS, look for the server's direct discovery and status tools before attempting any domain action."
+        "6. If you are not using GABS, look for the server's direct discovery and status tools before attempting any domain action."
     )
 
 skill_md = [
@@ -371,6 +373,7 @@ skill_md.extend(
         "",
         "## Discovery rules",
         "",
+        "- Do not invoke this skill just because the current repository is RimBridgeServer. Use it only when the task needs live game or bridge interaction.",
         "- Treat the live tool surface as dynamic. Re-discover after reconnects, game restarts, or mod changes instead of relying on stale names.",
         "- Through GABS, use `mcp__gabs__games_tool_names -> mcp__gabs__games_tool_detail -> mcp__gabs__games_call_tool` as the default pattern.",
         "- Through a direct bridge connection, prefer bridge-native discovery and status tools before calling task-specific tools.",
@@ -380,10 +383,11 @@ skill_md.extend(
         "",
         "## Workflow",
         "",
-        "1. Establish whether you are using GABS or a direct bridge connection.",
-        "2. Verify session health and wait for the game to be fully usable before acting.",
-        "3. Discover candidate tools for the user's goal and inspect exact parameter contracts for only the few tools you plan to call.",
-        "4. Take the highest-level semantic path available, then verify the result with state reads, layout snapshots, screenshots, logs, or operation status.",
+        "1. Decide whether the task actually requires live bridge interaction. If the work is source-only editing, review, or refactoring inside RimBridgeServer, do not use this skill.",
+        "2. Establish whether you are using GABS or a direct bridge connection.",
+        "3. Verify session health and wait for the game to be fully usable before acting.",
+        "4. Discover candidate tools for the user's goal and inspect exact parameter contracts for only the few tools you plan to call.",
+        "5. Take the highest-level semantic path available, then verify the result with state reads, layout snapshots, screenshots, logs, or operation status.",
         "",
         "## Task map",
         "",

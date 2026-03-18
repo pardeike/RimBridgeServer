@@ -146,6 +146,34 @@ public class LuaScriptCompilerTests
     }
 
     [Fact]
+    public void MissingParamsFieldsResolveAsNilSoLuaDefaultsCanApply()
+    {
+        var compiler = new LuaScriptCompiler();
+        var definition = compiler.Compile("""
+            local saveName = params.saveName or "pr93"
+            local retryLimit = params.retryLimit or 6
+            local firstPawn = params.pawnNames[1] or "none"
+
+            return {
+              saveName = saveName,
+              retryLimit = retryLimit,
+              firstPawn = firstPawn
+            }
+            """);
+
+        var runner = new CapabilityScriptRunner(new CapabilityRegistry());
+        var report = runner.Execute(definition);
+
+        Assert.True(report.Success);
+        Assert.True(report.Returned);
+
+        var result = Assert.IsType<Dictionary<string, object>>(report.Result);
+        Assert.Equal("pr93", Assert.IsType<string>(result["saveName"]));
+        Assert.Equal(6, Convert.ToInt32(result["retryLimit"]));
+        Assert.Equal("none", Assert.IsType<string>(result["firstPawn"]));
+    }
+
+    [Fact]
     public void RejectsReassigningParamsBinding()
     {
         var compiler = new LuaScriptCompiler();

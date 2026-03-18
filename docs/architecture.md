@@ -14,7 +14,7 @@ The immediate design goal is to turn the current proof-of-useful-tools into a pl
 
 ## Current State
 
-As of 2026-03-17, the repository has moved beyond the first vertical slice. It now has:
+As of 2026-03-19, the repository has moved beyond the first vertical slice. It now has:
 
 - a working GABP host and internal capability registry
 - bridge diagnostics, journaling, and event/log surfaces
@@ -27,7 +27,7 @@ That progress is useful, but the architectural risks this document was written t
 - the tool surface is monolithic and mixes transport, orchestration, game access, UI state, and serialization
 - async behavior is mostly implicit, with ad hoc waiting in specific tools like screenshots
 - there is still substantial coupling between the host assembly and first-party capability modules
-- capability discovery now exists internally, but the external documentation surface is still too hand-maintained
+- capability discovery now exists internally, and the tool surface is now annotation-driven, but longer-form design docs like this one are still hand-maintained and can drift
 - third-party extension discovery now exists through shared annotations plus a one-sweep reflected mod scan, but some optional mod integrations still rely on reflection where no compile-time dependency is desired
 
 ## Non-Negotiable Constraints
@@ -150,9 +150,9 @@ This reduces ambiguity and repeated lookup cost.
 
 Everything not inherently tied to RimWorld runtime objects should live in shared, testable libraries.
 
-## Target Project Layout
+## Possible Future Project Layout
 
-The long-term structure should move toward this split:
+This is an aspirational split, not the current repository layout. The repo still uses a flatter `Source/` structure plus focused shared libraries, but this is the direction a larger refactor could move toward:
 
 ```text
 Source/

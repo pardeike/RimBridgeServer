@@ -428,6 +428,66 @@ public class CapabilityScriptRunnerTests
     }
 
     [Fact]
+    public void LogicalAndAndOrReturnOperandValuesAndShortCircuit()
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new ScriptTestProvider());
+        var runner = new CapabilityScriptRunner(registry);
+
+        var report = runner.Execute(new CapabilityScriptDefinition
+        {
+            Steps =
+            [
+                new CapabilityScriptStep
+                {
+                    Id = "echo",
+                    Call = "test/echo",
+                    Arguments = new Dictionary<string, object>
+                    {
+                        ["andValue"] = new Dictionary<string, object>
+                        {
+                            ["$and"] = new object[] { true, "final-value" }
+                        },
+                        ["andShortCircuit"] = new Dictionary<string, object>
+                        {
+                            ["$and"] = new object[]
+                            {
+                                false,
+                                new Dictionary<string, object>
+                                {
+                                    ["$ref"] = "missing-step"
+                                }
+                            }
+                        },
+                        ["orValue"] = new Dictionary<string, object>
+                        {
+                            ["$or"] = new object[] { false, "fallback-value" }
+                        },
+                        ["orShortCircuit"] = new Dictionary<string, object>
+                        {
+                            ["$or"] = new object[]
+                            {
+                                "first-truthy",
+                                new Dictionary<string, object>
+                                {
+                                    ["$ref"] = "missing-step"
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        });
+
+        Assert.True(report.Success);
+        var result = Assert.IsType<Dictionary<string, object>>(report.Steps[0].Result);
+        Assert.Equal("final-value", Assert.IsType<string>(result["andValue"]));
+        Assert.False(Assert.IsType<bool>(result["andShortCircuit"]));
+        Assert.Equal("fallback-value", Assert.IsType<string>(result["orValue"]));
+        Assert.Equal("first-truthy", Assert.IsType<string>(result["orShortCircuit"]));
+    }
+
+    [Fact]
     public void FailsWhenContinueConditionTimesOut()
     {
         var registry = new CapabilityRegistry();

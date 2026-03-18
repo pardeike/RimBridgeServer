@@ -844,7 +844,9 @@ public sealed class LuaScriptCompiler
         if (!state.IsDeclared(rootName))
             return false;
 
-        reference = VariableReference(rootName, string.Concat(segments));
+        var path = string.Concat(segments);
+        var required = rootName != ParamsVariableName || string.IsNullOrWhiteSpace(path);
+        reference = VariableReference(rootName, path, required);
         return true;
     }
 
@@ -1331,7 +1333,7 @@ public sealed class LuaScriptCompiler
         return property?.GetValue(instance);
     }
 
-    private static Dictionary<string, object> VariableReference(string variableName, string path = "")
+    private static Dictionary<string, object> VariableReference(string variableName, string path = "", bool required = true)
     {
         var reference = new Dictionary<string, object>(StringComparer.Ordinal)
         {
@@ -1340,6 +1342,9 @@ public sealed class LuaScriptCompiler
 
         if (!string.IsNullOrWhiteSpace(path))
             reference["path"] = path.TrimStart('.');
+
+        if (!required)
+            reference["required"] = false;
 
         return reference;
     }

@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `102` tools total
+- `104` tools total
 - `18` `rimbridge/*` tools
-- `84` `rimworld/*` tools
+- `86` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -176,6 +176,13 @@ Pause or unpause the game
 
 Parameters:
 - `pause` (`bool`, `optional`, default `true`): True to pause, false to unpause
+
+### `rimworld/set_time_speed`
+
+Set RimWorld's current time speed directly
+
+Parameters:
+- `speed` (`string`, `optional`, default `"Normal"`): Desired time speed: Paused, Normal, Fast, Superfast, or Ultrafast
 
 ### `rimworld/list_debug_action_roots`
 
@@ -430,6 +437,16 @@ Inspect one map cell, including things, blueprints, frames, designations, zones,
 Parameters:
 - `x` (`int`, `required`): Target cell x coordinate
 - `z` (`int`, `required`): Target cell z coordinate
+
+### `rimworld/get_cells_info`
+
+Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas
+
+Parameters:
+- `x` (`int`, `required`): Top-left cell x coordinate
+- `z` (`int`, `required`): Top-left cell z coordinate
+- `width` (`int`, `optional`, default `1`): Rectangle width in cells; width * height must not exceed 1024
+- `height` (`int`, `optional`, default `1`): Rectangle height in cells; width * height must not exceed 1024
 
 ### `rimworld/find_random_cell_near`
 

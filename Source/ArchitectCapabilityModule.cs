@@ -77,6 +77,11 @@ internal sealed class ArchitectCapabilityModule
         return RimWorldArchitect.GetCellInfoResponse(x, z);
     }
 
+    public object GetCellsInfo(int x, int z, int width = 1, int height = 1)
+    {
+        return RimWorldArchitect.GetCellsInfoResponse(x, z, width, height);
+    }
+
     public object FindRandomCellNear(
         int x,
         int z,

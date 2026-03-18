@@ -186,6 +186,13 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pause), pause)));
     }
 
+    [ReadmeTool("Debug Actions And Mods", "Set RimWorld's current time speed directly")]
+    [Tool("rimworld/set_time_speed", Description = "Set RimWorld's current time speed directly")]
+    public object SetTimeSpeed([ToolParameter(Description = "Desired time speed: Paused, Normal, Fast, Superfast, or Ultrafast")] string speed = "Normal")
+    {
+        return InvokeAlias(Arguments((nameof(speed), speed)));
+    }
+
     [ReadmeTool("Debug Actions And Mods", "List top-level RimWorld debug action roots using stable internal debug-action paths")]
     [Tool("rimworld/list_debug_action_roots", Description = "List top-level RimWorld debug action roots using stable internal debug-action paths")]
     public object ListDebugActionRoots([ToolParameter(Description = "Include roots that are currently hidden in the active game state")] bool includeHidden = false)
@@ -460,6 +467,17 @@ public class RimBridgeTools
         [ToolParameter(Description = "Target cell z coordinate")] int z)
     {
         return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z)));
+    }
+
+    [ReadmeTool("Architect And Map State", "Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas")]
+    [Tool("rimworld/get_cells_info", Description = "Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas")]
+    public object GetCellsInfo(
+        [ToolParameter(Description = "Top-left cell x coordinate")] int x,
+        [ToolParameter(Description = "Top-left cell z coordinate")] int z,
+        [ToolParameter(Description = "Rectangle width in cells; width * height must not exceed 1024")] int width = 1,
+        [ToolParameter(Description = "Rectangle height in cells; width * height must not exceed 1024")] int height = 1)
+    {
+        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height)));
     }
 
     [ReadmeTool("Architect And Map State", "Use RimWorld's expanding-radius random cell search to find a nearby cell or footprint that satisfies generic map criteria")]
