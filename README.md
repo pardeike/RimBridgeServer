@@ -161,9 +161,12 @@ For the generated parameter-level reference pulled straight from the annotated s
 - `rimworld/set_hover_target` - Set a persistent virtual hover target for UI review and screenshots, using either an actionable `ui-element` target id or a current-map cell, pawn, or thing
 - `rimworld/clear_hover_target` - Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state
 - `rimworld/press_accept` - Send semantic accept input to the active RimWorld window stack without requiring OS focus
+- `rimworld/list_languages` - List installed RimWorld languages, including a recommended ASCII-safe switch query for each language and the currently active language
 - `rimworld/press_cancel` - Send semantic cancel input to the active RimWorld window stack without requiring OS focus
 - `rimworld/close_window` - Close an open RimWorld window by type name or, if omitted, the topmost window
+- `rimworld/open_window_by_type` - Open a RimWorld window by short or full .NET type name when the window exposes a public parameterless constructor
 - `rimworld/click_screen_target` - Semantically click a known actionable target id returned by `rimworld/get_screen_targets` without requiring OS focus
+- `rimworld/switch_language` - Switch RimWorld to an installed language by the recommendedQuery from `rimworld/list_languages` or another exact language name match, mirroring the main-menu language picker and saving prefs
 - `rimworld/start_debug_game` - Start RimWorld's built-in quick test colony from the main menu
 - `rimworld/go_to_main_menu` - Return to the RimWorld main menu entry scene, or no-op if already there
 

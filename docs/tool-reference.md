@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `97` tools total
+- `100` tools total
 - `18` `rimbridge/*` tools
-- `79` `rimworld/*` tools
+- `82` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -519,6 +519,12 @@ Send semantic accept input to the active RimWorld window stack without requiring
 
 Parameters: none.
 
+### `rimworld/list_languages`
+
+List installed RimWorld languages, including a recommended ASCII-safe switch query for each language and the currently active language
+
+Parameters: none.
+
 ### `rimworld/press_cancel`
 
 Send semantic cancel input to the active RimWorld window stack without requiring OS focus
@@ -532,12 +538,27 @@ Close an open RimWorld window by type name or, if omitted, the topmost window
 Parameters:
 - `windowType` (`string`, `optional`, default `null`): Optional short or full .NET type name of the target window
 
+### `rimworld/open_window_by_type`
+
+Open a RimWorld window by short or full .NET type name when the window exposes a public parameterless constructor
+
+Parameters:
+- `windowType` (`string`, `required`): Short or full .NET type name for a Verse.Window subtype, such as AchtungMod.SettingsToggles
+- `replaceExisting` (`bool`, `optional`, default `true`): Close already-open windows of the same type before opening a fresh instance
+
 ### `rimworld/click_screen_target`
 
 Semantically click a known actionable target id returned by rimworld/get_screen_targets without requiring OS focus
 
 Parameters:
 - `targetId` (`string`, `required`): Actionable target id such as a context-menu option target or window dismiss target
+
+### `rimworld/switch_language`
+
+Switch RimWorld to an installed language by the recommendedQuery from rimworld/list_languages or another exact language name match, mirroring the main-menu language picker and saving prefs
+
+Parameters:
+- `language` (`string`, `required`): Prefer the recommendedQuery from rimworld/list_languages; exact language ids and exact display/native/English names also work
 
 ### `rimworld/start_debug_game`
 
