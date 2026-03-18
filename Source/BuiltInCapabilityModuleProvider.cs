@@ -302,6 +302,7 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             "rimworld/go_to_main_menu" => CapabilityExecutionKind.LongEventBound,
             "rimworld/start_debug_game" => CapabilityExecutionKind.LongEventBound,
             "rimworld/load_game" => CapabilityExecutionKind.LongEventBound,
+            "rimworld/switch_language" => CapabilityExecutionKind.LongEventBound,
             "rimworld/take_screenshot" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/get_ui_layout" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/click_ui_target" => CapabilityExecutionKind.BackgroundObserved,

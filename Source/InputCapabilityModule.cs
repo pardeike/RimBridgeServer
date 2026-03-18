@@ -22,9 +22,24 @@ internal sealed class InputCapabilityModule
         return RimWorldInput.CloseWindowResponse(windowType);
     }
 
+    public object OpenWindowByType(string windowType, bool replaceExisting = true)
+    {
+        return RimWorldInput.OpenWindowByTypeResponse(windowType, replaceExisting);
+    }
+
     public object ClickScreenTarget(string targetId)
     {
         return RimWorldInput.ClickScreenTargetResponse(targetId);
+    }
+
+    public object ListLanguages()
+    {
+        return RimWorldLanguages.ListLanguagesResponse();
+    }
+
+    public object SwitchLanguage(string language)
+    {
+        return RimWorldLanguages.SwitchLanguageResponse(language);
     }
 
     public object ListMainTabs(bool includeHidden = false)

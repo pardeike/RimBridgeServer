@@ -585,6 +585,13 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
+    [ReadmeTool("UI And Input", "List installed RimWorld languages, including a recommended ASCII-safe switch query for each language and the currently active language")]
+    [Tool("rimworld/list_languages", Description = "List installed RimWorld languages, including a recommended ASCII-safe switch query for each language and the currently active language")]
+    public object ListLanguages()
+    {
+        return InvokeAlias();
+    }
+
     [ReadmeTool("UI And Input", "Send semantic cancel input to the active RimWorld window stack without requiring OS focus")]
     [Tool("rimworld/press_cancel", Description = "Send semantic cancel input to the active RimWorld window stack without requiring OS focus")]
     public object PressCancel()
@@ -599,11 +606,27 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(windowType), windowType)));
     }
 
+    [ReadmeTool("UI And Input", "Open a RimWorld window by short or full .NET type name when the window exposes a public parameterless constructor")]
+    [Tool("rimworld/open_window_by_type", Description = "Open a RimWorld window by short or full .NET type name when the window exposes a public parameterless constructor")]
+    public object OpenWindowByType(
+        [ToolParameter(Description = "Short or full .NET type name for a Verse.Window subtype, such as AchtungMod.SettingsToggles")] string windowType,
+        [ToolParameter(Description = "Close already-open windows of the same type before opening a fresh instance")] bool replaceExisting = true)
+    {
+        return InvokeAlias(Arguments((nameof(windowType), windowType), (nameof(replaceExisting), replaceExisting)));
+    }
+
     [ReadmeTool("UI And Input", "Semantically click a known actionable target id returned by rimworld/get_screen_targets without requiring OS focus")]
     [Tool("rimworld/click_screen_target", Description = "Semantically click a known actionable target id returned by rimworld/get_screen_targets without requiring OS focus")]
     public object ClickScreenTarget([ToolParameter(Description = "Actionable target id such as a context-menu option target or window dismiss target")] string targetId)
     {
         return InvokeAlias(Arguments((nameof(targetId), targetId)));
+    }
+
+    [ReadmeTool("UI And Input", "Switch RimWorld to an installed language by the recommendedQuery from rimworld/list_languages or another exact language name match, mirroring the main-menu language picker and saving prefs")]
+    [Tool("rimworld/switch_language", Description = "Switch RimWorld to an installed language by the recommendedQuery from rimworld/list_languages or another exact language name match, mirroring the main-menu language picker and saving prefs")]
+    public object SwitchLanguage([ToolParameter(Description = "Prefer the recommendedQuery from rimworld/list_languages; exact language ids and exact display/native/English names also work")] string language)
+    {
+        return InvokeAlias(Arguments((nameof(language), language)));
     }
 
     [ReadmeTool("UI And Input", "Start RimWorld's built-in quick test colony from the main menu")]

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using RimWorld;
 using RimBridgeServer.Core;
 using Verse;
@@ -160,6 +161,11 @@ internal static class RimWorldInput
         return ToToolResponse(CloseWindow(windowType));
     }
 
+    public static object OpenWindowByTypeResponse(string windowType, bool replaceExisting = true)
+    {
+        return ToToolResponse(OpenWindowByType(windowType, replaceExisting));
+    }
+
     public static object ClickScreenTargetResponse(string targetId)
     {
         return ToToolResponse(ClickScreenTarget(targetId));
@@ -251,6 +257,96 @@ internal static class RimWorldInput
         var after = GetUiState();
         var targetType = target.GetType().FullName ?? target.GetType().Name;
         return BuildCommandResult("close_window", before, after, $"Closed RimWorld window '{targetType}'.");
+    }
+
+    public static UiCommandResult OpenWindowByType(string windowType, bool replaceExisting = true)
+    {
+        var before = GetUiState();
+        var windowStack = Find.WindowStack;
+        if (windowStack == null)
+        {
+            return new UiCommandResult
+            {
+                Success = false,
+                Command = "open_window_by_type",
+                Message = "RimWorld window stack is not available.",
+                Before = before,
+                After = before
+            };
+        }
+
+        var trimmed = windowType?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return new UiCommandResult
+            {
+                Success = false,
+                Command = "open_window_by_type",
+                Message = "A short or full .NET type name is required.",
+                Before = before,
+                After = before
+            };
+        }
+
+        if (!TryResolveWindowType(trimmed, out var resolvedType, out var resolutionError))
+        {
+            return new UiCommandResult
+            {
+                Success = false,
+                Command = "open_window_by_type",
+                Message = resolutionError,
+                Before = before,
+                After = before
+            };
+        }
+
+        var existingWindows = windowStack.Windows?
+            .OfType<Window>()
+            .Where(window => window.GetType() == resolvedType)
+            .ToList() ?? [];
+
+        if (existingWindows.Count > 0 && !replaceExisting)
+        {
+            return new UiCommandResult
+            {
+                Success = true,
+                Command = "open_window_by_type",
+                Changed = false,
+                WindowCountDelta = 0,
+                Message = $"Window '{resolvedType.FullName ?? resolvedType.Name}' is already open.",
+                Before = before,
+                After = before
+            };
+        }
+
+        foreach (var existing in existingWindows)
+            windowStack.TryRemove(existing, doCloseSound: false);
+
+        Window createdWindow;
+        try
+        {
+            createdWindow = Activator.CreateInstance(resolvedType) as Window;
+            if (createdWindow == null)
+                throw new InvalidOperationException($"Type '{resolvedType.FullName ?? resolvedType.Name}' did not create a Verse.Window instance.");
+        }
+        catch (Exception ex)
+        {
+            var message = ex is TargetInvocationException invocation && invocation.InnerException != null
+                ? invocation.InnerException.Message
+                : ex.Message;
+            return new UiCommandResult
+            {
+                Success = false,
+                Command = "open_window_by_type",
+                Message = $"Opening window type '{resolvedType.FullName ?? resolvedType.Name}' failed: {message}",
+                Before = before,
+                After = before
+            };
+        }
+
+        windowStack.Add(createdWindow);
+        var after = GetUiState();
+        return BuildCommandResult("open_window_by_type", before, after, $"Opened RimWorld window '{resolvedType.FullName ?? resolvedType.Name}'.");
     }
 
     public static ScreenTargetCommandResult ClickScreenTarget(string targetId)
@@ -542,6 +638,52 @@ internal static class RimWorldInput
                 return window.ID == windowId
                     && string.Equals(fullName, windowType, StringComparison.Ordinal);
             });
+    }
+
+    private static bool TryResolveWindowType(string windowType, out Type resolvedType, out string error)
+    {
+        resolvedType = null;
+        error = string.Empty;
+
+        var matches = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(assembly => assembly != null && !assembly.IsDynamic)
+            .SelectMany(SafeGetTypes)
+            .Where(type =>
+                type != null
+                && typeof(Window).IsAssignableFrom(type)
+                && !type.IsAbstract
+                && type.GetConstructor(Type.EmptyTypes) != null
+                && (string.Equals(type.Name, windowType, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(type.FullName, windowType, StringComparison.OrdinalIgnoreCase)))
+            .Distinct()
+            .ToList();
+
+        if (matches.Count == 1)
+        {
+            resolvedType = matches[0];
+            return true;
+        }
+
+        if (matches.Count > 1)
+        {
+            error = $"Window type query '{windowType}' matched multiple loaded types: {string.Join(", ", matches.Select(type => type.FullName ?? type.Name).OrderBy(name => name, StringComparer.OrdinalIgnoreCase))}. Use the full .NET type name.";
+            return false;
+        }
+
+        error = $"Could not resolve a loaded Verse.Window type matching '{windowType}' with a public parameterless constructor.";
+        return false;
+    }
+
+    private static IEnumerable<Type> SafeGetTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(type => type != null);
+        }
     }
 
     internal static object DescribeUiState(UiStateSnapshot state)
