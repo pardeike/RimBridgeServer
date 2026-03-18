@@ -36,5 +36,4 @@ Source/*.reloaded
 
 
 ## Mod assemblies
-1.6/Assemblies/*.dll
 1.6/Assemblies/*.pdb
