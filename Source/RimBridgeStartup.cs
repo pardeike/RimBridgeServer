@@ -8,7 +8,7 @@ internal static class RimBridgeStartup
 {
     private static readonly object Sync = new();
     private static bool _modConstructed;
-    private static bool _modsInitialized;
+    private static bool _runtimeReady;
     private static bool _started;
     private static GabpServer _server;
 
@@ -22,12 +22,21 @@ internal static class RimBridgeStartup
         TryStart();
     }
 
-    public static void OnAllModsInitialized()
+    public static void OnRuntimeReady()
     {
+        var shouldLog = false;
+
         lock (Sync)
         {
-            _modsInitialized = true;
+            if (!_runtimeReady)
+            {
+                _runtimeReady = true;
+                shouldLog = true;
+            }
         }
+
+        if (shouldLog)
+            Log.Message("[RimBridge] Startup conditions satisfied after play-data load; initializing bridge services.");
 
         TryStart();
     }
@@ -56,7 +65,7 @@ internal static class RimBridgeStartup
     {
         lock (Sync)
         {
-            if (!_modConstructed || !_modsInitialized || _started)
+            if (!_modConstructed || !_runtimeReady || _started)
                 return;
 
             _started = true;

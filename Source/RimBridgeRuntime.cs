@@ -61,9 +61,6 @@ internal static class RimBridgePatches
             harmony.Patch(
                 original: AccessTools.Method(typeof(Root), nameof(Root.Update)),
                 postfix: new HarmonyMethod(typeof(Root_Update_Patch), nameof(Root_Update_Patch.Postfix)));
-            harmony.Patch(
-                original: AccessTools.Method(typeof(LoadedModManager), nameof(LoadedModManager.InitializeMods)),
-                postfix: new HarmonyMethod(typeof(LoadedModManager_InitializeMods_RimBridgeStartup_Patch), nameof(LoadedModManager_InitializeMods_RimBridgeStartup_Patch.Postfix)));
             _essentialApplied = true;
             Log.Message("[RimBridge] Applied essential Harmony patches.");
         }
@@ -79,7 +76,6 @@ internal static class RimBridgePatches
         var optionalPatchTypes = typeof(RimBridgePatches).Assembly
             .GetTypes()
             .Where(type => type != typeof(Root_Update_Patch))
-            .Where(type => type != typeof(LoadedModManager_InitializeMods_RimBridgeStartup_Patch))
             .Where(type => type.GetCustomAttributes(typeof(HarmonyPatch), inherit: false).Length > 0)
             .OrderBy(type => type.FullName, StringComparer.Ordinal)
             .ToList();
@@ -118,14 +114,8 @@ internal static class Root_Update_Patch
     {
         RimBridgeMainThread.Pump();
         RimBridgeUiWorkbench.AdvanceFrame(Time.frameCount);
-    }
-}
-
-internal static class LoadedModManager_InitializeMods_RimBridgeStartup_Patch
-{
-    public static void Postfix()
-    {
-        RimBridgeStartup.OnAllModsInitialized();
+        if (PlayDataLoader.Loaded && !LongEventHandler.AnyEventNowOrWaiting && Find.UIRoot != null)
+            RimBridgeStartup.OnRuntimeReady();
     }
 }
 
