@@ -1,71 +1,108 @@
 name: Release RimBridgeServer Mod
 
-on:
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Release tag to publish, for example v0.1.0.0
-        required: false
-        type: string
-  release:
-    types: [published]
+"on":
+  push:
+    branches:
+      - main
+    paths:
+      - Directory.Build.props
 
 permissions:
   contents: write
 
 jobs:
-  verify-and-package:
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+  verify-tag-package-and-release:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
 
-      - name: Verify release tag matches mod version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
-        run: |
-          MOD_VERSION="$(dotnet msbuild Source/RimBridgeServer.csproj -nologo -getProperty:Version)"
-          if [ "$RELEASE_TAG" != "v$MOD_VERSION" ]; then
-            echo "Release tag $RELEASE_TAG does not match mod version v$MOD_VERSION" >&2
-            exit 1
-          fi
-
-      - name: Build mod
-        run: dotnet build RimBridgeServer.sln -c Release
-
-      - name: Package mod zip
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+      - name: Determine release version
         run: |
           set -euo pipefail
 
+          MOD_VERSION="$(dotnet msbuild Source/RimBridgeServer.csproj -nologo -getProperty:Version)"
+          RELEASE_TAG="v$MOD_VERSION"
+
+          echo "MOD_VERSION=$MOD_VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+
+      - name: Create or verify release tag
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            TAG_COMMIT="$(git rev-list -n 1 "$RELEASE_TAG")"
+            if [ "$TAG_COMMIT" != "$GITHUB_SHA" ]; then
+              echo "Tag $RELEASE_TAG already exists at $TAG_COMMIT but current commit is $GITHUB_SHA." >&2
+              echo "Update ModVersion in Directory.Build.props before creating another release." >&2
+              exit 1
+            fi
+
+            echo "Tag $RELEASE_TAG already points at this commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG"
+
+      - name: Build mod
+        env:
+          RIMWORLD_MOD_DIR: ""
+        run: dotnet build RimBridgeServer.sln -c Release
+
+      - name: Package mod zip
+        run: |
+          set -euo pipefail
+
+          PACKAGE_ROOT="$RUNNER_TEMP/mod-package"
+          PACKAGE_DIR="$PACKAGE_ROOT/RimBridgeServer"
           STAGE_DIR="dist/RimBridgeServer-${RELEASE_TAG}"
           ARCHIVE_NAME="RimBridgeServer-${RELEASE_TAG}.zip"
 
-          rm -rf "$STAGE_DIR"
-          mkdir -p "$STAGE_DIR"
+          rm -rf "$PACKAGE_ROOT" dist
+          mkdir -p dist "$STAGE_DIR"
 
-          cp -R About "$STAGE_DIR/"
-          cp -R 1.6 "$STAGE_DIR/"
-          cp README.md LICENSE LoadFolders.xml "$STAGE_DIR/"
+          dotnet build Source/RimBridgeServer.csproj -c Release --no-restore -p:RIMWORLD_MOD_DIR="$PACKAGE_ROOT"
+
+          cp -R "$PACKAGE_DIR"/. "$STAGE_DIR"/
 
           (
             cd dist
             zip -qr "$ARCHIVE_NAME" "$(basename "$STAGE_DIR")"
           )
 
+      - name: Create GitHub release if needed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create \
+              "$RELEASE_TAG" \
+              --title "RimBridgeServer $RELEASE_TAG" \
+              --generate-notes
+          fi
+
       - name: Upload mod zip to GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
+          set -euo pipefail
+
           gh release upload \
             "$RELEASE_TAG" \
             "dist/RimBridgeServer-${RELEASE_TAG}.zip" \
