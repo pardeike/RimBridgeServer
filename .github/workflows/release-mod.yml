@@ -69,7 +69,7 @@ jobs:
 
           PACKAGE_ROOT="$RUNNER_TEMP/mod-package"
           PACKAGE_DIR="$PACKAGE_ROOT/RimBridgeServer"
-          STAGE_DIR="dist/RimBridgeServer-${RELEASE_TAG}"
+          STAGE_DIR="dist/RimBridgeServer"
           ARCHIVE_NAME="RimBridgeServer-${RELEASE_TAG}.zip"
 
           rm -rf "$PACKAGE_ROOT" dist
