@@ -110,11 +110,13 @@
 			<CopyAbout Include="..\About\**" />
 			<CopyLoadFolders Include="..\LoadFolders.xml" />
 			<CopyReadme Include="..\README.md" />
+			<CopyLicense Include="..\LICENSE" />
 		</ItemGroup>
 		<Copy SourceFiles="@(Copy_16)" DestinationFolder="$(RIMWORLD_MOD_DIR)\$(ModFileName)\1.6\%(RecursiveDir)" />
 		<Copy SourceFiles="@(CopyAbout)" DestinationFolder="$(RIMWORLD_MOD_DIR)\$(ModFileName)\About\%(RecursiveDir)" />
 		<Copy SourceFiles="@(CopyLoadFolders)" DestinationFolder="$(RIMWORLD_MOD_DIR)\$(ModFileName)" />
 		<Copy SourceFiles="@(CopyReadme)" DestinationFolder="$(RIMWORLD_MOD_DIR)\$(ModFileName)" />
+		<Copy SourceFiles="@(CopyLicense)" DestinationFolder="$(RIMWORLD_MOD_DIR)\$(ModFileName)" />
 	</Target>
 
 	<Target Name="ZipMod" AfterTargets="CopyToRimworld" Condition="'$(RIMWORLD_MOD_DIR)' != ''">
