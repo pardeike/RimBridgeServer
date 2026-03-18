@@ -14,6 +14,19 @@
 		<InformationalVersion>$(ModVersion)</InformationalVersion>
 	</PropertyGroup>
 
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+		<DebugSymbols>false</DebugSymbols>
+		<Optimize>true</Optimize>
+		<DebugType>none</DebugType>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+		<DebugSymbols>true</DebugSymbols>
+		<DefineConstants>TRACE;DEBUG</DefineConstants>
+		<Optimize>false</Optimize>
+		<DebugType>embedded</DebugType>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<ProjectReference Include="..\RimBridgeServer.Contracts\RimBridgeServer.Contracts.csproj" />
 	</ItemGroup>

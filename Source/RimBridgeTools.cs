@@ -316,7 +316,7 @@ public class RimBridgeTools
     [Tool("rimworld/update_mod_settings", Description = "Apply one or more field-path updates to a loaded mod's ModSettings object, with optional immediate persistence through Mod.WriteSettings()")]
     public object UpdateModSettings(
         [ToolParameter(Description = "Stable modId from rimworld/list_mod_settings_surfaces, or an exact package id / settings category / handle type match")] string modId,
-        [ToolParameter(Description = "Object mapping field paths such as SemanticHarnessSmokeToggle or Nested.List[0] to desired values")] Dictionary<string, object> values,
+        [ToolParameter(Description = "Object mapping field paths such as SomeSetting or Nested.List[0] to desired values")] Dictionary<string, object> values,
         [ToolParameter(Description = "True to persist through Mod.WriteSettings() after applying the updates")] bool write = true,
         [ToolParameter(Description = "Maximum object depth to traverse when returning the updated settings snapshot")] int maxDepth = 4,
         [ToolParameter(Description = "Maximum number of children to return for any one list or dictionary node in the updated snapshot")] int maxCollectionEntries = 32)

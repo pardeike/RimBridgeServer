@@ -299,7 +299,7 @@ Apply one or more field-path updates to a loaded mod's ModSettings object, with 
 
 Parameters:
 - `modId` (`string`, `required`): Stable modId from rimworld/list_mod_settings_surfaces, or an exact package id / settings category / handle type match
-- `values` (`Dictionary<string, object>`, `required`): Object mapping field paths such as SemanticHarnessSmokeToggle or Nested.List[0] to desired values
+- `values` (`Dictionary<string, object>`, `required`): Object mapping field paths such as SomeSetting or Nested.List[0] to desired values
 - `write` (`bool`, `optional`, default `true`): True to persist through Mod.WriteSettings() after applying the updates
 - `maxDepth` (`int`, `optional`, default `4`): Maximum object depth to traverse when returning the updated settings snapshot
 - `maxCollectionEntries` (`int`, `optional`, default `32`): Maximum number of children to return for any one list or dictionary node in the updated snapshot

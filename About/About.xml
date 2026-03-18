@@ -6,7 +6,7 @@
     <li>1.6</li>
   </supportedVersions>
   <packageId>brrainz.rimbridgeserver</packageId>
-  <modVersion>0.5.0</modVersion>
+  <modVersion>0.6.0</modVersion>
   <url>https://github.com/pardeike/RimBridgeServer</url>
   <description>RimBridgeServer spins up an MCP server inside RimWorld to enable automated, remote control of a running game. It is designed so AI agents or external tools can rapidly test and validate the mods they are developing by issuing commands and querying state through a stable protocol.
 
