@@ -47,6 +47,17 @@ Basic setup:
 
 Once RimWorld is up, GABS exposes the game-management tools (`games.start`, `games.connect`, `games.call_tool`) and then the live RimBridgeServer tool surface behind them.
 
+## RimWorld Mod Debugging Stack
+
+If you want the same stack used for real mod repro-and-fix sessions, use:
+
+1. `Harmony` plus the mod you are testing
+2. `RimBridgeServer` inside RimWorld for live game inspection and control
+3. [GABS](https://github.com/pardeike/GABS) to launch RimWorld and surface the live tools to your AI client
+4. [DecompilerServer](https://github.com/pardeike/DecompilerServer) to inspect `Assembly-CSharp.dll` and related managed code while debugging
+
+There is a short setup order here: [docs/rimworld-mod-debugging-stack.md](docs/rimworld-mod-debugging-stack.md).
+
 ### Direct Mode
 
 Direct mode still works if you do not want to use GABS.
