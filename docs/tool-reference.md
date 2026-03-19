@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `104` tools total
+- `105` tools total
 - `18` `rimbridge/*` tools
-- `86` `rimworld/*` tools
+- `87` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -647,6 +647,12 @@ Parameters:
 - `pawnName` (`string`, `optional`, default `null`): Optional colonist name
 - `pawnId` (`string`, `optional`, default `null`): Optional stable colonist pawn id from rimworld/list_colonists
 - `drafted` (`bool`, `optional`, default `true`): True to draft, false to undraft
+
+### `rimworld/get_selected_pawn_inventory_state`
+
+Read the selected pawn's carried thing and inventory contents, including Pick Up And Haul tracked items when available
+
+Parameters: none.
 
 ### `rimworld/get_selection_semantics`
 

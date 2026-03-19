@@ -215,6 +215,7 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/select_pawn` - Select a single colonist by name or stable pawn id
 - `rimworld/deselect_pawn` - Deselect a single selected pawn by name or stable pawn id
 - `rimworld/set_draft` - Draft or undraft a colonist by name or stable pawn id
+- `rimworld/get_selected_pawn_inventory_state` - Read the selected pawn's carried thing and inventory contents, including Pick Up And Haul tracked items when available
 
 ### Selection Semantics And Notifications
 

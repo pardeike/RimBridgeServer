@@ -726,6 +726,13 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(pawnId), pawnId), (nameof(drafted), drafted)));
     }
 
+    [ReadmeTool("Selection And Colony State", "Read the selected pawn's carried thing and inventory contents, including Pick Up And Haul tracked items when available")]
+    [Tool("rimworld/get_selected_pawn_inventory_state", Description = "Read the selected pawn's carried thing and inventory contents, including Pick Up And Haul tracked items when available")]
+    public object GetSelectedPawnInventoryState()
+    {
+        return InvokeAlias();
+    }
+
     [ReadmeTool("Selection Semantics And Notifications", "Get structured details for the current selection, including inspect strings, inspect-tab types, and the current selection fingerprint")]
     [Tool("rimworld/get_selection_semantics", Description = "Get structured details for the current selection, including inspect strings, inspect-tab types, and the current selection fingerprint")]
     public object GetSelectionSemantics()
