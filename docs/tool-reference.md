@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `105` tools total
+- `108` tools total
 - `18` `rimbridge/*` tools
-- `87` `rimworld/*` tools
+- `90` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -782,6 +782,17 @@ Parameters:
 - `pawnNamesCsv` (`string`, `optional`, default `null`): Comma-separated pawn names. If omitted together with pawnIdsCsv, uses the current selection.
 - `pawnIdsCsv` (`string`, `optional`, default `null`): Comma-separated stable pawn ids from rimworld/list_colonists. If omitted together with pawnNamesCsv, uses the current selection.
 
+### `rimworld/frame_cell_rect`
+
+Frame a map-cell rectangle with padding and leave the camera at the tightest visible view
+
+Parameters:
+- `x` (`int`, `required`): Top-left cell x coordinate
+- `z` (`int`, `required`): Top-left cell z coordinate
+- `width` (`int`, `optional`, default `1`): Rectangle width in cells
+- `height` (`int`, `optional`, default `1`): Rectangle height in cells
+- `paddingCells` (`int`, `optional`, default `4`): Extra map-cell padding to include around the requested rectangle
+
 ### `rimworld/screenshot_cell_rect`
 
 Frame a map-cell rectangle with padding, capture the tightest visible screenshot, and restore the prior camera immediately after by default
@@ -795,7 +806,7 @@ Parameters:
 - `fileName` (`string`, `optional`, default `null`): Optional screenshot file name without extension
 - `includeTargets` (`bool`, `optional`, default `true`): Include current screen target metadata such as windows and context menus
 - `suppressMessage` (`bool`, `optional`, default `true`): Suppress RimWorld's screenshot-taken message during this automated capture
-- `doNotResetCamera` (`bool`, `optional`, default `false`): Leave the framed camera and temporary low-minimum zoom settings in place after capture instead of restoring them
+- `doNotResetCamera` (`bool`, `optional`, default `false`): True to leave the camera and temporary camera zoom settings at the framed view after capture instead of restoring them
 
 ### `rimworld/take_screenshot`
 
