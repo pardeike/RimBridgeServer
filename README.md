@@ -244,12 +244,14 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 
 - `rimworld/get_camera_state` - Get the current map camera position, zoom, and visible rect
 - `rimworld/get_screen_targets` - Get current screen-space targets such as open windows and active context-menu geometry
+- `rimworld/get_map_target_info` - Resolve a current-map pawn or thing to its map position and occupied cell rectangle
 - `rimworld/jump_camera_to_pawn` - Jump the camera to a pawn by name or stable pawn id
 - `rimworld/jump_camera_to_cell` - Jump the camera to a map cell
 - `rimworld/move_camera` - Move the camera by a cell offset
 - `rimworld/zoom_camera` - Adjust the current camera zoom/root size
 - `rimworld/set_camera_zoom` - Set the current camera root size directly
 - `rimworld/frame_pawns` - Frame a comma-separated list of pawns by name and/or stable pawn id so they fit in view
+- `rimworld/screenshot_cell_rect` - Frame a map-cell rectangle, capture the tightest visible screenshot, and restore the prior camera by default, or leave the framed camera in place when requested
 - `rimworld/take_screenshot` - Take an in-game screenshot and return the saved file path plus optional target metadata
 
 ### Save/Load And Spawning

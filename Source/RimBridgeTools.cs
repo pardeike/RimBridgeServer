@@ -810,6 +810,16 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
+    [ReadmeTool("Camera And Screenshots", "Resolve a current-map pawn or thing to its map position and occupied cell rectangle")]
+    [Tool("rimworld/get_map_target_info", Description = "Resolve a current-map pawn or thing to its map position and occupied cell rectangle")]
+    public object GetMapTargetInfo(
+        [ToolParameter(Description = "Optional stable current-map thing id")] string thingId = null,
+        [ToolParameter(Description = "Optional pawn name on the current map")] string pawnName = null,
+        [ToolParameter(Description = "Optional stable current-map pawn id from rimworld/list_colonists")] string pawnId = null)
+    {
+        return InvokeAlias(Arguments((nameof(thingId), thingId), (nameof(pawnName), pawnName), (nameof(pawnId), pawnId)));
+    }
+
     [ReadmeTool("Camera And Screenshots", "Jump the camera to a pawn by name or stable pawn id")]
     [Tool("rimworld/jump_camera_to_pawn", Description = "Jump the camera to a pawn by name or stable pawn id")]
     public object JumpCameraToPawn(
@@ -858,6 +868,34 @@ public class RimBridgeTools
         [ToolParameter(Description = "Comma-separated stable pawn ids from rimworld/list_colonists. If omitted together with pawnNamesCsv, uses the current selection.")] string pawnIdsCsv = null)
     {
         return InvokeAlias(Arguments((nameof(pawnNamesCsv), pawnNamesCsv), (nameof(pawnIdsCsv), pawnIdsCsv)));
+    }
+
+    [ReadmeTool("Camera And Screenshots", "Frame a map-cell rectangle with padding and leave the camera at the tightest visible view")]
+    [Tool("rimworld/frame_cell_rect", Description = "Frame a map-cell rectangle with padding and leave the camera at the tightest visible view")]
+    public object FrameCellRect(
+        [ToolParameter(Description = "Top-left cell x coordinate")] int x,
+        [ToolParameter(Description = "Top-left cell z coordinate")] int z,
+        [ToolParameter(Description = "Rectangle width in cells")] int width = 1,
+        [ToolParameter(Description = "Rectangle height in cells")] int height = 1,
+        [ToolParameter(Description = "Extra map-cell padding to include around the requested rectangle")] int paddingCells = 4)
+    {
+        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(paddingCells), paddingCells)));
+    }
+
+    [ReadmeTool("Camera And Screenshots", "Frame a map-cell rectangle with padding, capture the tightest visible screenshot, and restore the prior camera immediately after by default")]
+    [Tool("rimworld/screenshot_cell_rect", Description = "Frame a map-cell rectangle with padding, capture the tightest visible screenshot, and restore the prior camera immediately after by default")]
+    public object ScreenshotCellRect(
+        [ToolParameter(Description = "Top-left cell x coordinate")] int x,
+        [ToolParameter(Description = "Top-left cell z coordinate")] int z,
+        [ToolParameter(Description = "Rectangle width in cells")] int width = 1,
+        [ToolParameter(Description = "Rectangle height in cells")] int height = 1,
+        [ToolParameter(Description = "Extra map-cell padding to include around the requested rectangle")] int paddingCells = 4,
+        [ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null,
+        [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true,
+        [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true,
+        [ToolParameter(Description = "True to leave the camera and temporary camera zoom settings at the framed view after capture instead of restoring them")] bool doNotResetCamera = false)
+    {
+        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(paddingCells), paddingCells), (nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(doNotResetCamera), doNotResetCamera)));
     }
 
     [ReadmeTool("Camera And Screenshots", "Take an in-game screenshot and return the saved file path plus optional target metadata")]

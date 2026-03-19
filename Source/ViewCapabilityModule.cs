@@ -11,6 +11,12 @@ namespace RimBridgeServer;
 
 internal sealed class ViewCapabilityModule
 {
+    private const float MinimumPublicCameraRootSize = 8f;
+    // Allow screenshot_cell_rect to fit tiny map rects more tightly than the public camera zoom floor.
+    private const float MinimumScreenshotCameraRootSize = 0.1f;
+    private const float MaximumCameraRootSize = 140f;
+    private const int DefaultScreenshotCellPadding = 4;
+
     private sealed class PendingScreenshotCapture
     {
         public string ExpectedPath { get; set; } = string.Empty;
@@ -45,6 +51,92 @@ internal sealed class ViewCapabilityModule
         public string ErrorMessage { get; set; } = string.Empty;
     }
 
+    private sealed class ScreenshotCaptureResult
+    {
+        public bool Success { get; set; }
+
+        public string Message { get; set; } = string.Empty;
+
+        public string Path { get; set; } = string.Empty;
+
+        public string SourcePath { get; set; } = string.Empty;
+
+        public string FileName { get; set; } = string.Empty;
+
+        public string RequestedFileName { get; set; } = string.Empty;
+
+        public string ScreenshotFolder { get; set; } = string.Empty;
+
+        public long? SizeBytes { get; set; }
+
+        public DateTime? CapturedAtUtc { get; set; }
+
+        public bool SuppressMessage { get; set; }
+
+        public bool Clipped { get; set; }
+
+        public string ClipTargetId { get; set; } = string.Empty;
+
+        public string ClipTargetKind { get; set; } = string.Empty;
+
+        public string ClipTargetLabel { get; set; } = string.Empty;
+
+        public int ClipPadding { get; set; }
+
+        public ScreenshotPixelRect? ClipRect { get; set; }
+
+        public object ScreenTargets { get; set; }
+
+        public string ExpectedPath { get; set; } = string.Empty;
+    }
+
+    private sealed class CameraSnapshot
+    {
+        public IntVec3 MapPosition { get; set; }
+
+        public float RootSize { get; set; }
+
+        public FloatRange SizeRange { get; set; }
+
+        public object Payload { get; set; }
+    }
+
+    private sealed class MapCellRectSnapshot
+    {
+        public int X { get; set; }
+
+        public int Z { get; set; }
+
+        public int Width { get; set; }
+
+        public int Height { get; set; }
+
+        public int MaxX { get; set; }
+
+        public int MaxZ { get; set; }
+    }
+
+    private sealed class CellRectFrameResult
+    {
+        public bool Success { get; set; }
+
+        public string ErrorMessage { get; set; } = string.Empty;
+
+        public MapCellRectSnapshot RequestedRect { get; set; }
+
+        public MapCellRectSnapshot PaddedRect { get; set; }
+
+        public int PaddingCells { get; set; }
+
+        public bool FullyVisible { get; set; }
+
+        public float AppliedRootSize { get; set; }
+
+        public int PreparedFrameCount { get; set; }
+
+        public object Camera { get; set; }
+    }
+
     public object GetCameraState()
     {
         return RimWorldState.DescribeCamera();
@@ -53,6 +145,52 @@ internal sealed class ViewCapabilityModule
     public object GetScreenTargets()
     {
         return RimWorldTargeting.GetScreenTargetsResponse();
+    }
+
+    public object GetMapTargetInfo(string thingId = null, string pawnName = null, string pawnId = null)
+    {
+        var hasThingId = !string.IsNullOrWhiteSpace(thingId);
+        var hasPawnSelector = !string.IsNullOrWhiteSpace(pawnName) || !string.IsNullOrWhiteSpace(pawnId);
+        if (hasThingId == hasPawnSelector)
+        {
+            return new
+            {
+                success = false,
+                message = "Provide either thingId or pawnName/pawnId."
+            };
+        }
+
+        var thing = hasThingId
+            ? RimWorldState.ResolveCurrentMapThing(thingId)
+            : RimWorldState.ResolveCurrentMapPawn(pawnName, pawnId);
+
+        if (!thing.Spawned || !thing.Position.IsValid)
+        {
+            return new
+            {
+                success = false,
+                message = $"Target '{(hasThingId ? thingId?.Trim() : pawnId?.Trim() ?? pawnName?.Trim())}' is not currently spawned on the active map."
+            };
+        }
+
+        var occupiedRect = thing.OccupiedRect();
+        return new
+        {
+            success = true,
+            kind = thing is Pawn ? "pawn" : "thing",
+            label = thing.LabelCap.ToString(),
+            thingId = RimWorldState.GetThingId(thing),
+            pawnId = thing is Pawn pawn ? RimWorldState.GetThingId(pawn) : null,
+            mapId = RimWorldState.GetMapId(thing.MapHeld),
+            mapIndex = thing.MapHeld?.Index,
+            position = new
+            {
+                x = thing.Position.x,
+                z = thing.Position.z
+            },
+            cellRect = CreateMapCellRectPayload(occupiedRect),
+            target = thing is Pawn targetPawn ? RimWorldState.DescribePawn(targetPawn) : RimWorldState.DescribeThing(thing)
+        };
     }
 
     public object JumpCameraToPawn(string pawnName = null, string pawnId = null)
@@ -101,7 +239,7 @@ internal sealed class ViewCapabilityModule
     public object ZoomCamera(float delta)
     {
         var driver = Find.CameraDriver;
-        var newSize = Mathf.Clamp(driver.RootSize + delta, 8f, 140f);
+        var newSize = Mathf.Clamp(driver.RootSize + delta, MinimumPublicCameraRootSize, MaximumCameraRootSize);
         driver.SetRootSize(newSize);
 
         return new { success = true, rootSize = driver.RootSize, camera = RimWorldState.DescribeCamera() };
@@ -110,7 +248,7 @@ internal sealed class ViewCapabilityModule
     public object SetCameraZoom(float rootSize)
     {
         var driver = Find.CameraDriver;
-        driver.SetRootSize(Mathf.Clamp(rootSize, 8f, 140f));
+        driver.SetRootSize(Mathf.Clamp(rootSize, MinimumPublicCameraRootSize, MaximumCameraRootSize));
 
         return new { success = true, rootSize = driver.RootSize, camera = RimWorldState.DescribeCamera() };
     }
@@ -154,7 +292,247 @@ internal sealed class ViewCapabilityModule
         };
     }
 
+    public object FrameCellRect(
+        int x,
+        int z,
+        int width = 1,
+        int height = 1,
+        int paddingCells = DefaultScreenshotCellPadding)
+    {
+        RimBridgeMainThread.Invoke(ApplyScreenshotCameraConfig, timeoutMs: 5000);
+        var frame = RimBridgeMainThread.Invoke(() => FrameCellRectForScreenshot(x, z, width, height, paddingCells), timeoutMs: 5000);
+        if (!frame.Success)
+        {
+            return new
+            {
+                success = false,
+                message = frame.ErrorMessage,
+                requestedRect = CreateRequestedRectPayload(x, z, width, height),
+                paddingCells = Math.Max(paddingCells, 0)
+            };
+        }
+
+        if (!WaitForFrameAdvance(frame.PreparedFrameCount, requiredAdvancedFrames: 2, timeoutMs: 2500, out var renderedCamera))
+        {
+            return new
+            {
+                success = false,
+                message = "Timed out waiting for the reframed camera to render.",
+                requestedRect = CreateMapCellRectPayload(frame.RequestedRect),
+                paddedRect = CreateMapCellRectPayload(frame.PaddedRect),
+                paddingCells = frame.PaddingCells,
+                fullyVisible = frame.FullyVisible,
+                appliedRootSize = frame.AppliedRootSize,
+                preparedFrameCount = frame.PreparedFrameCount,
+                camera = frame.Camera,
+                renderedCamera
+            };
+        }
+
+        return new
+        {
+            success = true,
+            requestedRect = CreateMapCellRectPayload(frame.RequestedRect),
+            paddedRect = CreateMapCellRectPayload(frame.PaddedRect),
+            paddingCells = frame.PaddingCells,
+            fullyVisible = frame.FullyVisible,
+            appliedRootSize = frame.AppliedRootSize,
+            preparedFrameCount = frame.PreparedFrameCount,
+            camera = renderedCamera
+        };
+    }
+
+    public object ScreenshotCellRect(
+        int x,
+        int z,
+        int width = 1,
+        int height = 1,
+        int paddingCells = DefaultScreenshotCellPadding,
+        string fileName = null,
+        bool includeTargets = true,
+        bool suppressMessage = true,
+        bool doNotResetCamera = false)
+    {
+        CameraSnapshot cameraBefore = null;
+        CellRectFrameResult frame = null;
+        ScreenshotCaptureResult capture = null;
+        object cameraRestored = null;
+        object cameraAfterCapture = null;
+        var cameraWasReset = false;
+        string restoreError = string.Empty;
+
+        try
+        {
+            cameraBefore = RimBridgeMainThread.Invoke(CaptureCameraSnapshot, timeoutMs: 5000);
+            RimBridgeMainThread.Invoke(ApplyScreenshotCameraConfig, timeoutMs: 5000);
+            frame = RimBridgeMainThread.Invoke(() => FrameCellRectForScreenshot(x, z, width, height, paddingCells), timeoutMs: 5000);
+            if (!frame.Success)
+            {
+                return new
+                {
+                    success = false,
+                    message = frame.ErrorMessage,
+                    requestedRect = CreateRequestedRectPayload(x, z, width, height),
+                    paddingCells = Math.Max(paddingCells, 0),
+                    cameraBefore = cameraBefore?.Payload
+                };
+            }
+
+            if (!WaitForFrameAdvance(frame.PreparedFrameCount, requiredAdvancedFrames: 2, timeoutMs: 2500, out var renderedCamera))
+            {
+                return new
+                {
+                    success = false,
+                    message = "Timed out waiting for the reframed camera to render before capturing the screenshot.",
+                    requestedRect = CreateMapCellRectPayload(frame.RequestedRect),
+                    paddedRect = CreateMapCellRectPayload(frame.PaddedRect),
+                    paddingCells = frame.PaddingCells,
+                    fullyVisible = frame.FullyVisible,
+                    appliedRootSize = frame.AppliedRootSize,
+                    preparedFrameCount = frame.PreparedFrameCount,
+                    cameraBefore = cameraBefore?.Payload,
+                    cameraDuringCapture = frame.Camera,
+                    renderedCamera
+                };
+            }
+
+            capture = CaptureScreenshotInternal(fileName, includeTargets, suppressMessage, clipTargetId: null, clipPadding: 0);
+        }
+        finally
+        {
+            var shouldRestoreCamera = cameraBefore != null && (!doNotResetCamera || frame == null || !frame.Success);
+            if (shouldRestoreCamera)
+            {
+                try
+                {
+                    cameraRestored = RimBridgeMainThread.Invoke(() =>
+                    {
+                        RestoreCamera(cameraBefore);
+                        return RimWorldState.DescribeCamera();
+                    }, timeoutMs: 5000);
+                    cameraWasReset = true;
+                }
+                catch (Exception ex)
+                {
+                    restoreError = ex.Message;
+                }
+            }
+            else if (frame?.Success == true)
+            {
+                cameraAfterCapture = RimBridgeMainThread.Invoke(RimWorldState.DescribeCamera, timeoutMs: 5000);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(restoreError))
+        {
+            return new
+            {
+                success = false,
+                message = capture?.Success == true
+                    ? $"Captured the screenshot but failed to restore the camera: {restoreError}"
+                    : $"Failed to restore the camera after the screenshot attempt: {restoreError}",
+                captureSucceeded = capture?.Success == true,
+                path = capture?.Path,
+                sourcePath = string.IsNullOrWhiteSpace(capture?.SourcePath) ? null : capture.SourcePath,
+                fileName = capture?.FileName,
+                requestedFileName = capture?.RequestedFileName,
+                screenshotFolder = capture?.ScreenshotFolder,
+                sizeBytes = capture?.SizeBytes,
+                capturedAtUtc = capture?.CapturedAtUtc,
+                doNotResetCamera,
+                cameraWasReset,
+                requestedRect = CreateMapCellRectPayload(frame?.RequestedRect),
+                paddedRect = CreateMapCellRectPayload(frame?.PaddedRect),
+                paddingCells = frame?.PaddingCells ?? Math.Max(paddingCells, 0),
+                fullyVisible = frame?.FullyVisible ?? false,
+                appliedRootSize = frame?.AppliedRootSize,
+                cameraBefore = cameraBefore?.Payload,
+                cameraDuringCapture = frame?.Camera,
+                cameraAfterCapture
+            };
+        }
+
+        if (capture == null)
+        {
+            return new
+            {
+                success = false,
+                message = "The screenshot capture did not complete.",
+                doNotResetCamera,
+                cameraWasReset,
+                requestedRect = CreateMapCellRectPayload(frame?.RequestedRect),
+                paddedRect = CreateMapCellRectPayload(frame?.PaddedRect),
+                paddingCells = frame?.PaddingCells ?? Math.Max(paddingCells, 0),
+                fullyVisible = frame?.FullyVisible ?? false,
+                appliedRootSize = frame?.AppliedRootSize,
+                cameraBefore = cameraBefore?.Payload,
+                cameraDuringCapture = frame?.Camera,
+                cameraAfterCapture,
+                cameraRestored
+            };
+        }
+
+        if (!capture.Success)
+        {
+            return new
+            {
+                success = false,
+                message = capture.Message,
+                path = string.IsNullOrWhiteSpace(capture.Path) ? null : capture.Path,
+                sourcePath = string.IsNullOrWhiteSpace(capture.SourcePath) ? null : capture.SourcePath,
+                fileName = capture.FileName,
+                requestedFileName = capture.RequestedFileName,
+                screenshotFolder = capture.ScreenshotFolder,
+                sizeBytes = capture.SizeBytes,
+                capturedAtUtc = capture.CapturedAtUtc,
+                suppressMessage = capture.SuppressMessage,
+                expectedPath = string.IsNullOrWhiteSpace(capture.ExpectedPath) ? null : capture.ExpectedPath,
+                doNotResetCamera,
+                cameraWasReset,
+                requestedRect = CreateMapCellRectPayload(frame?.RequestedRect),
+                paddedRect = CreateMapCellRectPayload(frame?.PaddedRect),
+                paddingCells = frame?.PaddingCells ?? Math.Max(paddingCells, 0),
+                fullyVisible = frame?.FullyVisible ?? false,
+                appliedRootSize = frame?.AppliedRootSize,
+                cameraBefore = cameraBefore?.Payload,
+                cameraDuringCapture = frame?.Camera,
+                cameraAfterCapture,
+                cameraRestored
+            };
+        }
+
+        return new
+        {
+            success = true,
+            path = capture.Path,
+            sourcePath = null as string,
+            fileName = capture.FileName,
+            requestedFileName = capture.RequestedFileName,
+            screenshotFolder = capture.ScreenshotFolder,
+            sizeBytes = capture.SizeBytes,
+            capturedAtUtc = capture.CapturedAtUtc,
+            suppressMessage = capture.SuppressMessage,
+            clipped = false,
+            doNotResetCamera,
+            cameraWasReset,
+            requestedRect = CreateMapCellRectPayload(frame.RequestedRect),
+            paddedRect = CreateMapCellRectPayload(frame.PaddedRect),
+            paddingCells = frame.PaddingCells,
+            fullyVisible = frame.FullyVisible,
+            appliedRootSize = frame.AppliedRootSize,
+            cameraBefore = cameraBefore?.Payload,
+            cameraDuringCapture = frame.Camera,
+            cameraAfterCapture,
+            cameraRestored
+        };
+    }
+
     public object TakeScreenshot(string fileName = null, bool includeTargets = true, bool suppressMessage = true, string clipTargetId = null, int clipPadding = 8)
+    {
+        return CreateScreenshotResponse(CaptureScreenshotInternal(fileName, includeTargets, suppressMessage, clipTargetId, clipPadding));
+    }
+
+    private static ScreenshotCaptureResult CaptureScreenshotInternal(string fileName, bool includeTargets, bool suppressMessage, string clipTargetId, int clipPadding)
     {
         var safeName = RimWorldState.SanitizeName(fileName, "rimbridge");
         var capture = RimBridgeMainThread.Invoke(() =>
@@ -199,10 +577,10 @@ internal sealed class ViewCapabilityModule
 
         if (!string.IsNullOrWhiteSpace(capture.ErrorMessage))
         {
-            return new
+            return new ScreenshotCaptureResult
             {
-                success = false,
-                message = capture.ErrorMessage
+                Success = false,
+                Message = capture.ErrorMessage
             };
         }
 
@@ -222,13 +600,16 @@ internal sealed class ViewCapabilityModule
                         {
                             if (!TryCropScreenshot(capture.ExpectedPath, capture.ClipRect, capture.OutputPath, capture.ClipTargetId, capture.ClipPadding, out var clippedRect, out var clipError))
                             {
-                                return new
+                                return new ScreenshotCaptureResult
                                 {
-                                    success = false,
-                                    message = clipError,
-                                    path = capture.ExpectedPath,
-                                    sourcePath = capture.ExpectedPath,
-                                    fileName = safeName
+                                    Success = false,
+                                    Message = clipError,
+                                    Path = capture.ExpectedPath,
+                                    SourcePath = capture.ExpectedPath,
+                                    FileName = safeName,
+                                    RequestedFileName = safeName,
+                                    ScreenshotFolder = GenFilePaths.ScreenshotFolderPath,
+                                    SuppressMessage = suppressMessage
                                 };
                             }
 
@@ -237,30 +618,24 @@ internal sealed class ViewCapabilityModule
                             info = new FileInfo(clipPath);
                         }
 
-                        return new
+                        return new ScreenshotCaptureResult
                         {
-                            success = true,
-                            path = clipPath ?? capture.ExpectedPath,
-                            sourcePath = string.IsNullOrWhiteSpace(clipPath) ? null : capture.ExpectedPath,
-                            fileName = string.IsNullOrWhiteSpace(clipPath) ? safeName : capture.OutputFileName,
-                            requestedFileName = safeName,
-                            screenshotFolder = GenFilePaths.ScreenshotFolderPath,
-                            sizeBytes = info.Length,
-                            capturedAtUtc = DateTime.UtcNow,
-                            suppressMessage,
-                            clipped = clipRect.HasValue,
-                            clipTargetId = string.IsNullOrWhiteSpace(capture.ClipTargetId) ? null : capture.ClipTargetId,
-                            clipTargetKind = string.IsNullOrWhiteSpace(capture.ClipTargetKind) ? null : capture.ClipTargetKind,
-                            clipTargetLabel = string.IsNullOrWhiteSpace(capture.ClipTargetLabel) ? null : capture.ClipTargetLabel,
-                            clipPadding = clipRect.HasValue ? capture.ClipPadding : 0,
-                            clipRect = clipRect.HasValue ? new
-                            {
-                                x = clipRect.Value.X,
-                                y = clipRect.Value.Y,
-                                width = clipRect.Value.Width,
-                                height = clipRect.Value.Height
-                            } : null,
-                            screenTargets = capture.ScreenTargets
+                            Success = true,
+                            Path = clipPath ?? capture.ExpectedPath,
+                            SourcePath = clipPath == null ? string.Empty : capture.ExpectedPath,
+                            FileName = clipPath == null ? safeName : capture.OutputFileName,
+                            RequestedFileName = safeName,
+                            ScreenshotFolder = GenFilePaths.ScreenshotFolderPath,
+                            SizeBytes = info.Length,
+                            CapturedAtUtc = DateTime.UtcNow,
+                            SuppressMessage = suppressMessage,
+                            Clipped = clipRect.HasValue,
+                            ClipTargetId = capture.ClipTargetId,
+                            ClipTargetKind = capture.ClipTargetKind,
+                            ClipTargetLabel = capture.ClipTargetLabel,
+                            ClipPadding = clipRect.HasValue ? capture.ClipPadding : 0,
+                            ClipRect = clipRect,
+                            ScreenTargets = capture.ScreenTargets
                         };
                     }
                 }
@@ -268,12 +643,14 @@ internal sealed class ViewCapabilityModule
                 Thread.Sleep(100);
             }
 
-            return new
+            return new ScreenshotCaptureResult
             {
-                success = false,
-                message = "Timed out waiting for RimWorld to finish writing the screenshot file.",
-                expectedPath = capture.ExpectedPath,
-                suppressMessage
+                Success = false,
+                Message = "Timed out waiting for RimWorld to finish writing the screenshot file.",
+                RequestedFileName = safeName,
+                ScreenshotFolder = GenFilePaths.ScreenshotFolderPath,
+                SuppressMessage = suppressMessage,
+                ExpectedPath = capture.ExpectedPath
             };
         }
         finally
@@ -286,6 +663,211 @@ internal sealed class ViewCapabilityModule
                 }, timeoutMs: 5000);
             }
         }
+    }
+
+    private static object CreateScreenshotResponse(ScreenshotCaptureResult capture)
+    {
+        return new
+        {
+            success = capture.Success,
+            message = string.IsNullOrWhiteSpace(capture.Message) ? null : capture.Message,
+            path = string.IsNullOrWhiteSpace(capture.Path) ? null : capture.Path,
+            sourcePath = string.IsNullOrWhiteSpace(capture.SourcePath) ? null : capture.SourcePath,
+            fileName = string.IsNullOrWhiteSpace(capture.FileName) ? null : capture.FileName,
+            requestedFileName = string.IsNullOrWhiteSpace(capture.RequestedFileName) ? null : capture.RequestedFileName,
+            screenshotFolder = string.IsNullOrWhiteSpace(capture.ScreenshotFolder) ? null : capture.ScreenshotFolder,
+            sizeBytes = capture.SizeBytes,
+            capturedAtUtc = capture.CapturedAtUtc,
+            suppressMessage = capture.SuppressMessage,
+            clipped = capture.Clipped,
+            clipTargetId = string.IsNullOrWhiteSpace(capture.ClipTargetId) ? null : capture.ClipTargetId,
+            clipTargetKind = string.IsNullOrWhiteSpace(capture.ClipTargetKind) ? null : capture.ClipTargetKind,
+            clipTargetLabel = string.IsNullOrWhiteSpace(capture.ClipTargetLabel) ? null : capture.ClipTargetLabel,
+            clipPadding = capture.ClipPadding,
+            clipRect = capture.ClipRect.HasValue
+                ? new
+                {
+                    x = capture.ClipRect.Value.X,
+                    y = capture.ClipRect.Value.Y,
+                    width = capture.ClipRect.Value.Width,
+                    height = capture.ClipRect.Value.Height
+                }
+                : null,
+            screenTargets = capture.ScreenTargets,
+            expectedPath = string.IsNullOrWhiteSpace(capture.ExpectedPath) ? null : capture.ExpectedPath
+        };
+    }
+
+    private static CameraSnapshot CaptureCameraSnapshot()
+    {
+        var driver = Find.CameraDriver;
+        return new CameraSnapshot
+        {
+            MapPosition = driver.MapPosition,
+            RootSize = driver.RootSize,
+            SizeRange = driver.config.sizeRange,
+            Payload = RimWorldState.DescribeCamera()
+        };
+    }
+
+    private static void RestoreCamera(CameraSnapshot snapshot)
+    {
+        Find.CameraDriver.config.sizeRange = snapshot.SizeRange;
+        Find.CameraDriver.SetRootPosAndSize(new Vector3(snapshot.MapPosition.x, 0f, snapshot.MapPosition.z), snapshot.RootSize);
+    }
+
+    private static void ApplyScreenshotCameraConfig()
+    {
+        var driver = Find.CameraDriver;
+        var range = driver.config.sizeRange;
+        if (range.min > MinimumScreenshotCameraRootSize)
+            range.min = MinimumScreenshotCameraRootSize;
+        if (range.max < range.min + 1f)
+            range.max = range.min + 1f;
+        driver.config.sizeRange = range;
+    }
+
+    private static CellRectFrameResult FrameCellRectForScreenshot(int x, int z, int width, int height, int paddingCells)
+    {
+        var requestedRect = CreateRequestedRectSnapshot(x, z, width, height);
+        var normalizedPadding = Math.Max(paddingCells, 0);
+        if (width <= 0 || height <= 0)
+        {
+            return new CellRectFrameResult
+            {
+                Success = false,
+                ErrorMessage = "width and height must both be greater than zero.",
+                RequestedRect = requestedRect,
+                PaddingCells = normalizedPadding
+            };
+        }
+
+        var map = RimWorldState.CurrentMapOrThrow();
+        if (x < 0 || z < 0 || requestedRect.MaxX >= map.Size.x || requestedRect.MaxZ >= map.Size.z)
+        {
+            return new CellRectFrameResult
+            {
+                Success = false,
+                ErrorMessage = $"Requested rect ({x}, {z}, {width}, {height}) is out of bounds for the current map.",
+                RequestedRect = requestedRect,
+                PaddingCells = normalizedPadding
+            };
+        }
+
+        var paddedRect = new MapCellRectSnapshot
+        {
+            X = Math.Max(0, x - normalizedPadding),
+            Z = Math.Max(0, z - normalizedPadding),
+            MaxX = Math.Min(map.Size.x - 1, requestedRect.MaxX + normalizedPadding),
+            MaxZ = Math.Min(map.Size.z - 1, requestedRect.MaxZ + normalizedPadding)
+        };
+        paddedRect.Width = paddedRect.MaxX - paddedRect.X + 1;
+        paddedRect.Height = paddedRect.MaxZ - paddedRect.Z + 1;
+
+        var center = new Vector3(
+            (paddedRect.X + paddedRect.MaxX + 1) / 2f,
+            0f,
+            (paddedRect.Z + paddedRect.MaxZ + 1) / 2f);
+        var driver = Find.CameraDriver;
+        var fittedRootSize = ComputeRootSizeForCellRect(paddedRect);
+        driver.SetRootPosAndSize(center, fittedRootSize);
+
+        return new CellRectFrameResult
+        {
+            Success = true,
+            RequestedRect = requestedRect,
+            PaddedRect = paddedRect,
+            PaddingCells = normalizedPadding,
+            FullyVisible = DoesRootSizeContainRect(paddedRect, driver.RootSize),
+            AppliedRootSize = driver.RootSize,
+            PreparedFrameCount = Time.frameCount,
+            Camera = RimWorldState.DescribeCamera()
+        };
+    }
+
+    private static bool WaitForFrameAdvance(int preparedFrameCount, int requiredAdvancedFrames, int timeoutMs, out object renderedCamera)
+    {
+        renderedCamera = null;
+        var requiredFrame = preparedFrameCount + Math.Max(requiredAdvancedFrames, 1);
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs <= 0 ? 2500 : timeoutMs);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            var snapshot = RimBridgeMainThread.Invoke(() => new
+            {
+                frameCount = Time.frameCount,
+                camera = RimWorldState.DescribeCamera()
+            }, timeoutMs: 5000);
+
+            renderedCamera = snapshot.camera;
+            if (snapshot.frameCount >= requiredFrame)
+                return true;
+
+            Thread.Sleep(50);
+        }
+
+        return false;
+    }
+
+    private static float ComputeRootSizeForCellRect(MapCellRectSnapshot rect)
+    {
+        var screenHeight = Math.Max(UI.screenHeight, 1);
+        var aspect = Mathf.Max((float)UI.screenWidth / screenHeight, 0.01f);
+        var requiredForHeight = rect.Height / 2f;
+        var requiredForWidth = rect.Width / (2f * aspect);
+        return Mathf.Clamp(Mathf.Max(requiredForHeight, requiredForWidth), MinimumScreenshotCameraRootSize, MaximumCameraRootSize);
+    }
+
+    private static bool DoesRootSizeContainRect(MapCellRectSnapshot rect, float rootSize)
+    {
+        return rootSize + 0.0001f >= ComputeRootSizeForCellRect(rect);
+    }
+
+    private static MapCellRectSnapshot CreateRequestedRectSnapshot(int x, int z, int width, int height)
+    {
+        return new MapCellRectSnapshot
+        {
+            X = x,
+            Z = z,
+            Width = width,
+            Height = height,
+            MaxX = width <= 0 ? x - 1 : x + width - 1,
+            MaxZ = height <= 0 ? z - 1 : z + height - 1
+        };
+    }
+
+    private static object CreateRequestedRectPayload(int x, int z, int width, int height)
+    {
+        return CreateMapCellRectPayload(CreateRequestedRectSnapshot(x, z, width, height));
+    }
+
+    private static object CreateMapCellRectPayload(CellRect rect)
+    {
+        return CreateMapCellRectPayload(new MapCellRectSnapshot
+        {
+            X = rect.minX,
+            Z = rect.minZ,
+            Width = rect.Width,
+            Height = rect.Height,
+            MaxX = rect.maxX,
+            MaxZ = rect.maxZ
+        });
+    }
+
+    private static object CreateMapCellRectPayload(MapCellRectSnapshot rect)
+    {
+        if (rect == null)
+            return null;
+
+        return new
+        {
+            x = rect.X,
+            z = rect.Z,
+            width = rect.Width,
+            height = rect.Height,
+            maxX = rect.MaxX,
+            maxZ = rect.MaxZ
+        };
     }
 
     private static bool TryCropScreenshot(

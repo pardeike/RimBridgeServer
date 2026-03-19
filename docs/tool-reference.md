@@ -727,6 +727,15 @@ Get current screen-space targets such as open windows and active context-menu ge
 
 Parameters: none.
 
+### `rimworld/get_map_target_info`
+
+Resolve a current-map pawn or thing to its map position and occupied cell rectangle
+
+Parameters:
+- `thingId` (`string`, `optional`, default `null`): Optional stable current-map thing id
+- `pawnName` (`string`, `optional`, default `null`): Optional pawn name on the current map
+- `pawnId` (`string`, `optional`, default `null`): Optional stable current-map pawn id from rimworld/list_colonists
+
 ### `rimworld/jump_camera_to_pawn`
 
 Jump the camera to a pawn by name or stable pawn id
@@ -772,6 +781,21 @@ Frame a comma-separated list of pawns by name and/or stable pawn id so they fit 
 Parameters:
 - `pawnNamesCsv` (`string`, `optional`, default `null`): Comma-separated pawn names. If omitted together with pawnIdsCsv, uses the current selection.
 - `pawnIdsCsv` (`string`, `optional`, default `null`): Comma-separated stable pawn ids from rimworld/list_colonists. If omitted together with pawnNamesCsv, uses the current selection.
+
+### `rimworld/screenshot_cell_rect`
+
+Frame a map-cell rectangle with padding, capture the tightest visible screenshot, and restore the prior camera immediately after by default
+
+Parameters:
+- `x` (`int`, `required`): Top-left cell x coordinate
+- `z` (`int`, `required`): Top-left cell z coordinate
+- `width` (`int`, `optional`, default `1`): Rectangle width in cells
+- `height` (`int`, `optional`, default `1`): Rectangle height in cells
+- `paddingCells` (`int`, `optional`, default `4`): Extra map-cell padding to include around the requested rectangle
+- `fileName` (`string`, `optional`, default `null`): Optional screenshot file name without extension
+- `includeTargets` (`bool`, `optional`, default `true`): Include current screen target metadata such as windows and context menus
+- `suppressMessage` (`bool`, `optional`, default `true`): Suppress RimWorld's screenshot-taken message during this automated capture
+- `doNotResetCamera` (`bool`, `optional`, default `false`): Leave the framed camera and temporary low-minimum zoom settings in place after capture instead of restoring them
 
 ### `rimworld/take_screenshot`
 
