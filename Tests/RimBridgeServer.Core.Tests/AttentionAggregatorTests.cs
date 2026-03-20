@@ -123,4 +123,21 @@ public class AttentionAggregatorTests
         Assert.Equal("op_second", second.CausalOperationId);
         Assert.Equal("rimworld/select_pawn", second.CausalMethod);
     }
+
+    [Fact]
+    public void IgnoresNonTerminalOperationEvents()
+    {
+        var aggregator = new AttentionAggregator();
+
+        var snapshot = aggregator.RecordOperationEvent(new OperationEventRecord
+        {
+            Sequence = 12,
+            EventType = "operation.completed",
+            OperationId = "op_ok",
+            CapabilityId = "rimworld/get_game_info"
+        }, diagnosticsCursor: 12);
+
+        Assert.Null(snapshot);
+        Assert.Null(aggregator.GetCurrent());
+    }
 }

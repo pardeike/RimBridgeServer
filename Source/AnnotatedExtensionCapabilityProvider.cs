@@ -119,6 +119,7 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
                             Name = attribute.Name,
                             Title = attribute.Title,
                             Description = attribute.Description,
+                            ResultDescription = attribute.ResultDescription,
                             RequiresAuth = attribute.RequiresAuth,
                             Parameters = method.GetParameters().Select(CreateToolParameterInfo).ToList(),
                             ResponseFields = method.GetCustomAttributes<AnnotationToolResponseAttribute>(inherit: false)

@@ -261,7 +261,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("Debug Actions And Mods", "Deterministically enable or disable job-tracker logging for one current-map colonist and return a log cursor plus recommended rimbridge/list_logs arguments for consuming future job lines")]
-    [Tool("rimworld/set_colonist_job_logging", Description = "Deterministically enable or disable job-tracker logging for one current-map colonist and return a log cursor plus recommended rimbridge/list_logs arguments for consuming future job lines")]
+    [Tool("rimworld/set_colonist_job_logging", Description = "Deterministically enable or disable job-tracker logging for one current-map colonist and return a log cursor plus recommended rimbridge/list_logs arguments for consuming future job lines", ResultDescription = "The resolved colonist, final logging state, and a log cursor plus ready-to-use rimbridge/list_logs arguments for consuming subsequent job-tracker lines.")]
     public object SetColonistJobLogging(
         [ToolParameter(Description = "Optional current-map colonist name, short name, or full name")] string pawnName = null,
         [ToolParameter(Description = "Optional stable current-map colonist pawn id from rimworld/list_colonists")] string pawnId = null,
@@ -591,7 +591,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("UI And Input", "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable control target ids")]
-    [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable control target ids")]
+    [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable control target ids", ResultDescription = "A structured layout snapshot for the requested surface, including actionable target ids that can be passed to rimworld/click_ui_target.")]
     public object GetUiLayout(
         [ToolParameter(Description = "Optional surface target id such as a window target from rimworld/get_screen_targets or a main-tab target from rimworld/list_main_tabs")] string surfaceId = null,
         [ToolParameter(Description = "Maximum time to wait for the requested UI surface to draw on screen")] int timeoutMs = 2000)
@@ -636,7 +636,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("UI And Input", "List installed RimWorld languages, including a recommended ASCII-safe switch query for each language and the currently active language")]
-    [Tool("rimworld/list_languages", Description = "List installed RimWorld languages, including a recommended ASCII-safe switch query for each language and the currently active language")]
+    [Tool("rimworld/list_languages", Description = "List installed RimWorld languages, including a recommended ASCII-safe switch query for each language and the currently active language", ResultDescription = "The active language plus installed language entries, each with a recommendedQuery string that is safe to pass to rimworld/switch_language.")]
     public object ListLanguages()
     {
         return InvokeAlias();
@@ -909,7 +909,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("Camera And Screenshots", "Take an in-game screenshot and return the saved file path plus optional target metadata")]
-    [Tool("rimworld/take_screenshot", Description = "Take an in-game screenshot and return the saved file path plus optional target metadata")]
+    [Tool("rimworld/take_screenshot", Description = "Take an in-game screenshot and return the saved file path plus optional target metadata", ResultDescription = "The saved screenshot path and, when requested, current target metadata describing visible windows, menus, and other screen targets.")]
     public object TakeScreenshot(
         [ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null,
         [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true,

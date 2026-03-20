@@ -107,6 +107,7 @@ static ToolDefinition? ParseToolDefinition(MethodDeclarationSyntax method)
         ?? throw new InvalidOperationException($"Method {method.Identifier.ValueText} is missing the Tool name argument.");
     var description = GetNamedStringArgument(toolAttribute, "Description")
         ?? throw new InvalidOperationException($"Method {method.Identifier.ValueText} is missing Tool.Description.");
+    var resultDescription = GetNamedStringArgument(toolAttribute, "ResultDescription");
     var readmeGroup = GetPositionalStringArgument(readmeToolAttribute, 0);
     if (string.IsNullOrWhiteSpace(readmeGroup))
         throw new InvalidOperationException($"Method {method.Identifier.ValueText} is missing the ReadmeTool group.");
@@ -119,7 +120,7 @@ static ToolDefinition? ParseToolDefinition(MethodDeclarationSyntax method)
         .Select(ParseParameterDefinition)
         .ToList();
 
-    return new ToolDefinition(toolName, description, readmeGroup, readmeSummary, parameters);
+    return new ToolDefinition(toolName, description, resultDescription, readmeGroup, readmeSummary, parameters);
 }
 
 static ParameterDefinition ParseParameterDefinition(ParameterSyntax parameter)
@@ -218,6 +219,14 @@ static string RenderToolReference(IReadOnlyList<ToolDefinition> tools, string so
             builder.AppendLine(tool.Description);
             builder.AppendLine();
 
+            if (!string.IsNullOrWhiteSpace(tool.ResultDescription))
+            {
+                builder.AppendLine("Returns:");
+                builder.Append("- ");
+                builder.AppendLine(tool.ResultDescription);
+                builder.AppendLine();
+            }
+
             if (tool.Parameters.Count == 0)
             {
                 builder.AppendLine("Parameters: none.");
@@ -291,6 +300,6 @@ static string GetRelativeMarkdownPath(string fromPath, string toPath)
     return relativePath.Replace('\\', '/');
 }
 
-internal sealed record ToolDefinition(string Name, string Description, string ReadmeGroup, string ReadmeSummary, IReadOnlyList<ParameterDefinition> Parameters);
+internal sealed record ToolDefinition(string Name, string Description, string? ResultDescription, string ReadmeGroup, string ReadmeSummary, IReadOnlyList<ParameterDefinition> Parameters);
 
 internal sealed record ParameterDefinition(string Name, string TypeName, string? Description, bool Required, string? DefaultValue);

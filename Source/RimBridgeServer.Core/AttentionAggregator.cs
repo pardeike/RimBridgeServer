@@ -98,7 +98,18 @@ public sealed class AttentionAggregator
     private readonly object _gate = new();
     private readonly Dictionary<string, int> _logRepeatCountsByEntryId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SampleAccumulator> _samplesByKey = new(StringComparer.Ordinal);
+    private readonly RimBridgeAttentionPolicy _policy;
     private BridgeAttentionSnapshot _current;
+
+    public AttentionAggregator()
+        : this(new RimBridgeAttentionPolicy())
+    {
+    }
+
+    internal AttentionAggregator(RimBridgeAttentionPolicy policy)
+    {
+        _policy = policy ?? new RimBridgeAttentionPolicy();
+    }
 
     public BridgeAttentionSnapshot GetCurrent()
     {
@@ -120,7 +131,7 @@ public sealed class AttentionAggregator
 
     public BridgeAttentionSnapshot RecordLog(BridgeLogEntry entry, long diagnosticsCursor = 0)
     {
-        if (entry == null || ShouldTrackLogEntry(entry) == false)
+        if (entry == null || _policy.ShouldTrackLogEntry(entry) == false)
             return null;
 
         lock (_gate)
@@ -148,7 +159,7 @@ public sealed class AttentionAggregator
 
     public BridgeAttentionSnapshot RecordOperationEvent(OperationEventRecord eventRecord, long diagnosticsCursor = 0)
     {
-        if (eventRecord == null || ShouldTrackOperationEvent(eventRecord) == false)
+        if (eventRecord == null || _policy.ShouldTrackOperationEvent(eventRecord) == false)
             return null;
 
         lock (_gate)
@@ -168,20 +179,6 @@ public sealed class AttentionAggregator
             _current.Sample = BuildSamples();
             return _current.Clone();
         }
-    }
-
-    private static bool ShouldTrackLogEntry(BridgeLogEntry entry)
-    {
-        var level = NormalizeSeverity(entry.Level);
-        return string.Equals(level, "error", StringComparison.Ordinal)
-            || string.Equals(level, "fatal", StringComparison.Ordinal);
-    }
-
-    private static bool ShouldTrackOperationEvent(OperationEventRecord eventRecord)
-    {
-        return string.Equals(eventRecord.EventType, "operation.failed", StringComparison.Ordinal)
-            || string.Equals(eventRecord.EventType, "operation.cancelled", StringComparison.Ordinal)
-            || string.Equals(eventRecord.EventType, "operation.timed_out", StringComparison.Ordinal);
     }
 
     private void EnsureCurrent(long openedAtSequence, long diagnosticsCursor)

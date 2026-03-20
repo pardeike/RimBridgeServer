@@ -11,7 +11,7 @@ This project is aimed at automated mod development and testing:
 - faster repro loops for debug actions, saves, settings, and load-order changes
 - AI-assisted mod development through GABS or direct bridge connections
 
-Architecture and design notes live in [docs/architecture.md](docs/architecture.md), [docs/lua-frontend-design.md](docs/lua-frontend-design.md), and [docs/semantic-state-design.md](docs/semantic-state-design.md).
+Architecture and design notes live in [docs/architecture.md](docs/architecture.md), [docs/lua-frontend-design.md](docs/lua-frontend-design.md), [docs/semantic-state-design.md](docs/semantic-state-design.md), and [docs/attention-policy.md](docs/attention-policy.md).
 
 ## What It Does
 
@@ -47,7 +47,7 @@ Basic setup:
 
 Once RimWorld is up, GABS exposes the game-management tools (`games.start`, `games.connect`, `games.call_tool`) and then the live RimBridgeServer tool surface behind them.
 
-RimBridgeServer now also publishes blocking attention when severe async failures happen after a call boundary, such as hard log errors or failed bridge operations. In GABS this surfaces through `games.get_attention` and `games.ack_attention`: ordinary game calls pause until the attention item is reviewed and acknowledged, while `rimbridge/get_bridge_status`, `rimbridge/list_operation_events`, and `rimbridge/list_logs` remain available for diagnosis.
+RimBridgeServer now also publishes blocking attention when severe async failures happen after a call boundary, such as hard log errors or failed bridge operations. In GABS this surfaces through `games.get_attention` and `games.ack_attention`: ordinary game calls pause until the attention item is reviewed and acknowledged, while `rimbridge/get_bridge_status`, `rimbridge/list_operation_events`, and `rimbridge/list_logs` remain available for diagnosis. The current built-in policy is documented in [docs/attention-policy.md](docs/attention-policy.md).
 
 ## RimWorld Mod Debugging Stack
 
@@ -127,8 +127,9 @@ Practical rules:
 
 - use `RimBridgeServer.Annotations` as the only shared dependency
 - annotate public static methods, public instance methods on your `Verse.Mod` class, or public instance methods on a type with a public parameterless constructor
-- use `[ToolParameter]` for argument docs and `[ToolResponse]` for response field docs when useful
+- use `[ToolParameter]` for argument docs, `Tool.ResultDescription` for a short successful-result summary, and `[ToolResponse]` for response field docs when useful
 - expect per-mod fault isolation: one broken mod should not block discovery for other mods
+- assume that blocking attention is still owned centrally by RimBridgeServer; there is not yet a public cross-mod API for third-party mods to publish their own async attention items directly
 
 Minimal example:
 
@@ -137,7 +138,10 @@ using RimBridgeServer.Annotations;
 
 public sealed class MyModBridgeTools
 {
-    [Tool("mymod/ping", Description = "Example tool exposed through RimBridgeServer")]
+    [Tool(
+        "mymod/ping",
+        Description = "Example tool exposed through RimBridgeServer",
+        ResultDescription = "A success flag and the resolved label returned to the caller.")]
     public object Ping(
         [ToolParameter(Description = "Optional label")] string label = null)
     {
