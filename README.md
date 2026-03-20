@@ -251,8 +251,8 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/zoom_camera` - Adjust the current camera zoom/root size
 - `rimworld/set_camera_zoom` - Set the current camera root size directly
 - `rimworld/frame_pawns` - Frame a comma-separated list of pawns by name and/or stable pawn id so they fit in view
-- `rimworld/frame_cell_rect` - Frame a map-cell rectangle with padding and leave the camera at the tightest visible view
-- `rimworld/screenshot_cell_rect` - Frame a map-cell rectangle with padding, capture the tightest visible screenshot, and restore the prior camera immediately after by default
+- `rimworld/frame_cell_rect` - Frame a requested map-cell rectangle plus optional margin cells and leave the camera at the tightest full-viewport view that keeps the padded rect visible
+- `rimworld/screenshot_cell_rect` - Frame a requested map-cell rectangle plus optional margin cells, capture the full viewport at the tightest view that keeps the padded rect visible, and restore the prior camera immediately after by default
 - `rimworld/take_screenshot` - Take an in-game screenshot and return the saved file path plus optional target metadata
 
 ### Save/Load And Spawning

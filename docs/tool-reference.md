@@ -784,25 +784,25 @@ Parameters:
 
 ### `rimworld/frame_cell_rect`
 
-Frame a map-cell rectangle with padding and leave the camera at the tightest visible view
+Frame a requested map-cell rectangle plus optional margin cells and leave the camera at the tightest full-viewport view that keeps the padded rect visible
 
 Parameters:
-- `x` (`int`, `required`): Top-left cell x coordinate
-- `z` (`int`, `required`): Top-left cell z coordinate
-- `width` (`int`, `optional`, default `1`): Rectangle width in cells
-- `height` (`int`, `optional`, default `1`): Rectangle height in cells
-- `paddingCells` (`int`, `optional`, default `4`): Extra map-cell padding to include around the requested rectangle
+- `x` (`int`, `required`): Top-left cell x coordinate of the requested rectangle
+- `z` (`int`, `required`): Top-left cell z coordinate of the requested rectangle
+- `width` (`int`, `optional`, default `1`): Requested rectangle width in map cells
+- `height` (`int`, `optional`, default `1`): Requested rectangle height in map cells
+- `paddingCells` (`int`, `optional`, default `4`): Extra margin cells to add around the requested rectangle before fitting the camera; larger values zoom out
 
 ### `rimworld/screenshot_cell_rect`
 
-Frame a map-cell rectangle with padding, capture the tightest visible screenshot, and restore the prior camera immediately after by default
+Frame a requested map-cell rectangle plus optional margin cells, capture the full viewport at the tightest view that keeps the padded rect visible, and restore the prior camera immediately after by default
 
 Parameters:
-- `x` (`int`, `required`): Top-left cell x coordinate
-- `z` (`int`, `required`): Top-left cell z coordinate
-- `width` (`int`, `optional`, default `1`): Rectangle width in cells
-- `height` (`int`, `optional`, default `1`): Rectangle height in cells
-- `paddingCells` (`int`, `optional`, default `4`): Extra map-cell padding to include around the requested rectangle
+- `x` (`int`, `required`): Top-left cell x coordinate of the requested rectangle
+- `z` (`int`, `required`): Top-left cell z coordinate of the requested rectangle
+- `width` (`int`, `optional`, default `1`): Requested rectangle width in map cells
+- `height` (`int`, `optional`, default `1`): Requested rectangle height in map cells
+- `paddingCells` (`int`, `optional`, default `4`): Extra margin cells to add around the requested rectangle before fitting the camera; larger values zoom out
 - `fileName` (`string`, `optional`, default `null`): Optional screenshot file name without extension
 - `includeTargets` (`bool`, `optional`, default `true`): Include current screen target metadata such as windows and context menus
 - `suppressMessage` (`bool`, `optional`, default `true`): Suppress RimWorld's screenshot-taken message during this automated capture

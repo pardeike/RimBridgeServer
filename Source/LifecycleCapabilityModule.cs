@@ -232,6 +232,10 @@ internal sealed class LifecycleCapabilityModule
             return new { success = false, message = $"Save '{safeName}' does not exist.", path };
         }
 
+        if (Find.WindowStack?.FloatMenu != null)
+            Find.WindowStack.TryRemove(Find.WindowStack.FloatMenu, doCloseSound: false);
+        RimBridgeContextMenus.Clear();
+
         GameDataSaveLoader.LoadGame(safeName);
 
         return new

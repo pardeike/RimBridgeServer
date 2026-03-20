@@ -870,26 +870,26 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pawnNamesCsv), pawnNamesCsv), (nameof(pawnIdsCsv), pawnIdsCsv)));
     }
 
-    [ReadmeTool("Camera And Screenshots", "Frame a map-cell rectangle with padding and leave the camera at the tightest visible view")]
-    [Tool("rimworld/frame_cell_rect", Description = "Frame a map-cell rectangle with padding and leave the camera at the tightest visible view")]
+    [ReadmeTool("Camera And Screenshots", "Frame a requested map-cell rectangle plus optional margin cells and leave the camera at the tightest full-viewport view that keeps the padded rect visible")]
+    [Tool("rimworld/frame_cell_rect", Description = "Frame a requested map-cell rectangle plus optional margin cells and leave the camera at the tightest full-viewport view that keeps the padded rect visible")]
     public object FrameCellRect(
-        [ToolParameter(Description = "Top-left cell x coordinate")] int x,
-        [ToolParameter(Description = "Top-left cell z coordinate")] int z,
-        [ToolParameter(Description = "Rectangle width in cells")] int width = 1,
-        [ToolParameter(Description = "Rectangle height in cells")] int height = 1,
-        [ToolParameter(Description = "Extra map-cell padding to include around the requested rectangle")] int paddingCells = 4)
+        [ToolParameter(Description = "Top-left cell x coordinate of the requested rectangle")] int x,
+        [ToolParameter(Description = "Top-left cell z coordinate of the requested rectangle")] int z,
+        [ToolParameter(Description = "Requested rectangle width in map cells")] int width = 1,
+        [ToolParameter(Description = "Requested rectangle height in map cells")] int height = 1,
+        [ToolParameter(Description = "Extra margin cells to add around the requested rectangle before fitting the camera; larger values zoom out")] int paddingCells = 4)
     {
         return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(paddingCells), paddingCells)));
     }
 
-    [ReadmeTool("Camera And Screenshots", "Frame a map-cell rectangle with padding, capture the tightest visible screenshot, and restore the prior camera immediately after by default")]
-    [Tool("rimworld/screenshot_cell_rect", Description = "Frame a map-cell rectangle with padding, capture the tightest visible screenshot, and restore the prior camera immediately after by default")]
+    [ReadmeTool("Camera And Screenshots", "Frame a requested map-cell rectangle plus optional margin cells, capture the full viewport at the tightest view that keeps the padded rect visible, and restore the prior camera immediately after by default")]
+    [Tool("rimworld/screenshot_cell_rect", Description = "Frame a requested map-cell rectangle plus optional margin cells, capture the full viewport at the tightest view that keeps the padded rect visible, and restore the prior camera immediately after by default")]
     public object ScreenshotCellRect(
-        [ToolParameter(Description = "Top-left cell x coordinate")] int x,
-        [ToolParameter(Description = "Top-left cell z coordinate")] int z,
-        [ToolParameter(Description = "Rectangle width in cells")] int width = 1,
-        [ToolParameter(Description = "Rectangle height in cells")] int height = 1,
-        [ToolParameter(Description = "Extra map-cell padding to include around the requested rectangle")] int paddingCells = 4,
+        [ToolParameter(Description = "Top-left cell x coordinate of the requested rectangle")] int x,
+        [ToolParameter(Description = "Top-left cell z coordinate of the requested rectangle")] int z,
+        [ToolParameter(Description = "Requested rectangle width in map cells")] int width = 1,
+        [ToolParameter(Description = "Requested rectangle height in map cells")] int height = 1,
+        [ToolParameter(Description = "Extra margin cells to add around the requested rectangle before fitting the camera; larger values zoom out")] int paddingCells = 4,
         [ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null,
         [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true,
         [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true,
