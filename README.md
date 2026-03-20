@@ -161,6 +161,7 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 
 - `rimworld/pause_game` - Pause or unpause the game
 - `rimworld/set_time_speed` - Set RimWorld's current time speed directly
+- `rimworld/play_for` - Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, ending early if the game is paused, returns to the main menu, or the session changes
 - `rimworld/list_debug_action_roots` - List top-level RimWorld debug action roots using stable internal debug-action paths
 - `rimworld/list_debug_action_children` - List direct children of a RimWorld debug action path
 - `rimworld/search_debug_actions` - Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time

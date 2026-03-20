@@ -193,6 +193,16 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(speed), speed)));
     }
 
+    [ReadmeTool("Debug Actions And Mods", "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, ending early if the game is paused, returns to the main menu, or the session changes")]
+    [Tool("rimworld/play_for", Description = "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, ending early if the game is paused, returns to the main menu, or the session changes")]
+    public object PlayFor(
+        [ToolParameter(Description = "Real-time duration in milliseconds to keep the game unpaused before pausing it again")] int durationMs,
+        [ToolParameter(Description = "Desired play speed while the game is running: Normal, Fast, Superfast, or Ultrafast")] string speed = "Normal",
+        [ToolParameter(Description = "How often to poll playback state while waiting to repause")] int pollIntervalMs = 25)
+    {
+        return InvokeAlias(Arguments((nameof(durationMs), durationMs), (nameof(speed), speed), (nameof(pollIntervalMs), pollIntervalMs)));
+    }
+
     [ReadmeTool("Debug Actions And Mods", "List top-level RimWorld debug action roots using stable internal debug-action paths")]
     [Tool("rimworld/list_debug_action_roots", Description = "List top-level RimWorld debug action roots using stable internal debug-action paths")]
     public object ListDebugActionRoots([ToolParameter(Description = "Include roots that are currently hidden in the active game state")] bool includeHidden = false)

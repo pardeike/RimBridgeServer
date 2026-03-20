@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `108` tools total
+- `109` tools total
 - `18` `rimbridge/*` tools
-- `90` `rimworld/*` tools
+- `91` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -183,6 +183,15 @@ Set RimWorld's current time speed directly
 
 Parameters:
 - `speed` (`string`, `optional`, default `"Normal"`): Desired time speed: Paused, Normal, Fast, Superfast, or Ultrafast
+
+### `rimworld/play_for`
+
+Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, ending early if the game is paused, returns to the main menu, or the session changes
+
+Parameters:
+- `durationMs` (`int`, `required`): Real-time duration in milliseconds to keep the game unpaused before pausing it again
+- `speed` (`string`, `optional`, default `"Normal"`): Desired play speed while the game is running: Normal, Fast, Superfast, or Ultrafast
+- `pollIntervalMs` (`int`, `optional`, default `25`): How often to poll playback state while waiting to repause
 
 ### `rimworld/list_debug_action_roots`
 

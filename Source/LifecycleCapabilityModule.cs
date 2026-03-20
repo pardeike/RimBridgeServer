@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using RimBridgeServer.Core;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -61,6 +63,94 @@ internal sealed class LifecycleCapabilityModule
             message = $"Time speed set to {Find.TickManager.CurTimeSpeed}.",
             state = RimWorldState.ToolStateSnapshot()
         };
+    }
+
+    public object PlayFor(int durationMs, string speed = "Normal", int pollIntervalMs = 25)
+    {
+        if (durationMs <= 0)
+        {
+            return new
+            {
+                success = false,
+                message = "durationMs must be greater than 0.",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        if (pollIntervalMs < 0)
+        {
+            return new
+            {
+                success = false,
+                message = "pollIntervalMs cannot be negative.",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        if (Enum.TryParse<TimeSpeed>(speed, ignoreCase: true, out var parsedSpeed) == false)
+        {
+            return new
+            {
+                success = false,
+                message = $"Unknown time speed '{speed}'. Supported values: Normal, Fast, Superfast, Ultrafast.",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        if (parsedSpeed == TimeSpeed.Paused)
+        {
+            return new
+            {
+                success = false,
+                message = "play_for requires an active play speed. Use Normal, Fast, Superfast, or Ultrafast.",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        try
+        {
+            Stopwatch stopwatch = null;
+            var controller = new TimedPlaybackController();
+            var result = controller.PlayFor(
+                durationMs,
+                pollIntervalMs,
+                getElapsedMs: () => stopwatch?.ElapsedMilliseconds ?? 0L,
+                readState: () => RimBridgeMainThread.Invoke(CapturePlaybackState, timeoutMs: 5000),
+                startPlayback: () => RimBridgeMainThread.Invoke(() =>
+                {
+                    stopwatch = Stopwatch.StartNew();
+                    EnsurePlaybackRunning(parsedSpeed);
+                }, timeoutMs: 5000),
+                pausePlayback: () => RimBridgeMainThread.Invoke(PauseIfNeeded, timeoutMs: 5000));
+
+            return new
+            {
+                success = result.Success,
+                requestedDurationMs = durationMs,
+                elapsedMs = result.ElapsedMs,
+                pollIntervalMs,
+                timeSpeed = parsedSpeed.ToString(),
+                paused = result.PausedAtEnd,
+                initiallyPaused = result.InitiallyPaused,
+                startTick = result.StartTick,
+                endTick = result.EndTick,
+                advancedTicks = result.AdvancedTicks,
+                attempts = result.Attempts,
+                probeFailureCount = result.ProbeFailureCount,
+                lastProbeError = string.IsNullOrWhiteSpace(result.LastProbeError) ? null : result.LastProbeError,
+                message = result.Message,
+                state = result.Snapshot
+            };
+        }
+        catch (Exception ex)
+        {
+            return new
+            {
+                success = false,
+                message = $"Failed to play for {durationMs}ms: {ex.Message}",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
     }
 
     public object StartDebugGame()
@@ -246,5 +336,47 @@ internal sealed class LifecycleCapabilityModule
             path,
             state = RimWorldState.ToolStateSnapshot()
         };
+    }
+
+    private static TimedPlaybackState CapturePlaybackState()
+    {
+        var hasPlayableGame = Current.ProgramState == ProgramState.Playing
+            && Current.Game != null
+            && Find.TickManager != null;
+        var hasLongEvent = LongEventHandler.AnyEventNowOrWaiting;
+        var atMainMenu = GenScene.InEntryScene || Current.ProgramState == ProgramState.Entry;
+
+        return new TimedPlaybackState
+        {
+            Available = hasPlayableGame && !hasLongEvent,
+            Paused = hasPlayableGame && Find.TickManager.Paused,
+            TickCount = hasPlayableGame ? Find.TickManager.TicksGame : 0,
+            SessionToken = Current.Game,
+            Snapshot = RimWorldState.ToolStateSnapshot(),
+            Message = hasPlayableGame
+                ? (hasLongEvent ? "RimWorld is busy with a long event." : string.Empty)
+                : (atMainMenu ? "RimWorld returned to the main menu." : "No playable game is currently loaded.")
+        };
+    }
+
+    private static void EnsurePlaybackRunning(TimeSpeed speed)
+    {
+        if (Current.ProgramState != ProgramState.Playing || Current.Game == null || Find.TickManager == null)
+            throw new InvalidOperationException("No playable game is currently loaded.");
+        if (LongEventHandler.AnyEventNowOrWaiting)
+            throw new InvalidOperationException("RimWorld is busy with a long event.");
+
+        Find.TickManager.CurTimeSpeed = speed;
+        if (Find.TickManager.Paused)
+            Find.TickManager.TogglePaused();
+    }
+
+    private static void PauseIfNeeded()
+    {
+        if (Current.Game == null || Find.TickManager == null)
+            return;
+
+        if (!Find.TickManager.Paused)
+            Find.TickManager.TogglePaused();
     }
 }
