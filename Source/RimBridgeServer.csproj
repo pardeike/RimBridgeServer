@@ -61,7 +61,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4566" GeneratePathProperty="true" />
-		<PackageReference Include="Lib.GAB" Version="0.1.0" />
+		<PackageReference Include="Lib.GAB" Version="$(LibGabPackageVersion)" />
 		<PackageReference Include="Lib.Harmony.Ref" Version="2.4.1" />
 		<PackageReference Include="Microsoft.NETCore.Platforms" Version="7.0.4" />
 		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3">
@@ -69,7 +69,7 @@
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-		<PackageReference Include="RimBridgeServer.Annotations" Version="1.0.0" />
+		<PackageReference Include="RimBridgeServer.Annotations" Version="$(RimBridgeServerAnnotationsPackageVersion)" />
 		<PackageReference Include="TaskPubliciser" Version="1.0.3" />
 	</ItemGroup>
 

@@ -82,6 +82,31 @@ Your client then connects to:
 - port: the logged bridge port
 - token: the logged bridge token
 
+## Local Package Overrides
+
+For cross-repo development in a sibling workspace, RimBridgeServer supports an opt-in local NuGet source override without switching the project to `ProjectReference`s.
+
+- default local source path: `../.nuget-local`
+- enable it with `EnableLocalNuGetOverride=true`
+- override package versions with `LibGabPackageVersion` and `RimBridgeServerAnnotationsPackageVersion`
+
+Example:
+
+```bash
+dotnet restore Source/RimBridgeServer.csproj \
+  -p:EnableLocalNuGetOverride=true \
+  -p:LibGabPackageVersion=0.1.0-local.1 \
+  -p:RimBridgeServerAnnotationsPackageVersion=1.0.0
+```
+
+Populate the local source by packing the sibling library into `../.nuget-local`, for example:
+
+```bash
+dotnet pack ../Lib.GAB/Lib.GAB/Lib.GAB.csproj \
+  -o ../.nuget-local \
+  -p:PackageVersion=0.1.0-local.1
+```
+
 ## Beginner Start
 
 If you only need the shortest possible mental model, use this:
