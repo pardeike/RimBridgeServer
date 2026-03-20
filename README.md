@@ -47,6 +47,8 @@ Basic setup:
 
 Once RimWorld is up, GABS exposes the game-management tools (`games.start`, `games.connect`, `games.call_tool`) and then the live RimBridgeServer tool surface behind them.
 
+RimBridgeServer now also publishes blocking attention when severe async failures happen after a call boundary, such as hard log errors or failed bridge operations. In GABS this surfaces through `games.get_attention` and `games.ack_attention`: ordinary game calls pause until the attention item is reviewed and acknowledged, while `rimbridge/get_bridge_status`, `rimbridge/list_operation_events`, and `rimbridge/list_logs` remain available for diagnosis.
+
 ## RimWorld Mod Debugging Stack
 
 If you want the same stack used for real mod repro-and-fix sessions, use:

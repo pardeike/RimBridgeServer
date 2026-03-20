@@ -11,6 +11,7 @@ internal static class RimBridgeStartup
     private static bool _runtimeReady;
     private static bool _started;
     private static GabpServer _server;
+    private static RimBridgeAttentionPublisher _attentionPublisher;
 
     public static void OnModConstructed()
     {
@@ -78,9 +79,16 @@ internal static class RimBridgeStartup
 
             var tools = new RimBridgeTools();
             var version = typeof(RimBridgeServerMod).Assembly.GetName().Version?.ToString() ?? "0.1.0.0";
-            _server = Lib.GAB.Gabp.CreateGabsAwareServerWithInstance("RimBridgeServer", version, tools, fallbackPort: 5174);
+            _server = Lib.GAB.Gabp.CreateServer()
+                .UseAppInfo("RimBridgeServer", version)
+                .UseGabsEnvironmentIfAvailable()
+                .UsePortIfNotSet(5174)
+                .EnableAttentionSupport()
+                .Build();
+            _server.Tools.RegisterToolsFromInstance(tools);
             RegisterExtensionTools(_server);
             RimBridgeEventRelay.Initialize(_server.Events, RimBridgeCapabilities.Journal, RimBridgeCapabilities.LogJournal);
+            _attentionPublisher = new RimBridgeAttentionPublisher(_server.Attention, RimBridgeCapabilities.Journal, RimBridgeCapabilities.LogJournal);
 
             _server.StartAsync().ContinueWith(task =>
             {
