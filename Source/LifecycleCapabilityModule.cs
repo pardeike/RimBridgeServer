@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -11,6 +12,8 @@ namespace RimBridgeServer;
 
 internal sealed class LifecycleCapabilityModule
 {
+    private static readonly MainThreadDispatcher Dispatcher = new();
+
     public object PauseGame(bool pause = true)
     {
         if (Current.Game == null)
@@ -335,6 +338,49 @@ internal sealed class LifecycleCapabilityModule
             saveName = safeName,
             path,
             state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    public object LoadGameReady(string saveName, int timeoutMs = 120000, int pollIntervalMs = 100, bool waitForScreenFade = true, bool pauseIfNeeded = true)
+    {
+        var safeName = RimWorldState.SanitizeName(saveName, "rimbridge_save");
+        var path = GenFilePaths.FilePathForSavedGame(safeName);
+        if (!File.Exists(path))
+        {
+            return new { success = false, message = $"Save '{safeName}' does not exist.", path };
+        }
+
+        var queuedState = Dispatcher.Invoke(() =>
+        {
+            if (Find.WindowStack?.FloatMenu != null)
+                Find.WindowStack.TryRemove(Find.WindowStack.FloatMenu, doCloseSound: false);
+            RimBridgeContextMenus.Clear();
+
+            GameDataSaveLoader.LoadGame(safeName);
+            return RimWorldState.ToolStateSnapshot();
+        }, timeoutMs: 5000);
+
+        var wait = RimWorldWaits.WaitForGameLoadedResult(timeoutMs, pollIntervalMs, waitForScreenFade, pauseIfNeeded);
+        var success = wait.TryGetValue("success", out var successValue) && successValue is bool satisfied && satisfied;
+        wait.TryGetValue("message", out var message);
+        wait.TryGetValue("state", out var finalState);
+
+        return new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["success"] = success,
+            ["saveName"] = safeName,
+            ["path"] = path,
+            ["message"] = message,
+            ["state"] = finalState ?? queuedState,
+            ["load"] = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["success"] = true,
+                ["status"] = "queued",
+                ["saveName"] = safeName,
+                ["path"] = path,
+                ["state"] = queuedState
+            },
+            ["wait"] = wait
         };
     }
 

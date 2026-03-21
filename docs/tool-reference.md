@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `109` tools total
+- `110` tools total
 - `18` `rimbridge/*` tools
-- `91` `rimworld/*` tools
+- `92` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -869,6 +869,17 @@ Load a named RimWorld save
 
 Parameters:
 - `saveName` (`string`, `required`): Save name without extension
+
+### `rimworld/load_game_ready`
+
+Load a named RimWorld save and wait until the game is automation-ready before returning
+
+Parameters:
+- `saveName` (`string`, `required`): Save name without extension
+- `timeoutMs` (`int`, `optional`, default `120000`): Maximum time to wait in milliseconds
+- `pollIntervalMs` (`int`, `optional`, default `100`): Polling interval in milliseconds
+- `waitForScreenFade` (`bool`, `optional`, default `true`): Wait until RimWorld's screen fade has fully cleared
+- `pauseIfNeeded` (`bool`, `optional`, default `true`): Pause the game before returning success if it is still running
 
 ### `rimworld/open_context_menu`
 

@@ -2226,14 +2226,7 @@ internal static class SmokeScenarioCatalog
         if (!SaveListContains(listSaves.StructuredContent, SaveLoadRoundTripSaveName))
             throw new InvalidOperationException($"Save '{SaveLoadRoundTripSaveName}' was not returned by rimworld/list_saves after being written.");
 
-        var loadGame = await context.CallGameToolAsync("save_load.load_game", "rimworld/load_game", new
-        {
-            saveName = SaveLoadRoundTripSaveName
-        }, cancellationToken);
-        context.EnsureSucceeded(loadGame, $"Loading RimWorld save '{SaveLoadRoundTripSaveName}'");
-
-        await context.WaitForLongEventIdleAsync("save_load.wait_for_long_event_idle_after_load", cancellationToken);
-        await context.WaitForGameLoadedAsync("save_load.wait_for_game_loaded_after_load", cancellationToken);
+        await context.LoadGameReadyAsync("save_load.load_game_ready", SaveLoadRoundTripSaveName, cancellationToken);
 
         var colonists = await context.CallGameToolAsync("save_load.list_colonists_after_load", "rimworld/list_colonists", new
         {

@@ -97,8 +97,8 @@ Example:
 ```bash
 dotnet restore Source/RimBridgeServer.csproj \
   -p:EnableLocalNuGetOverride=true \
-  -p:LibGabPackageVersion=0.1.0-local.1 \
-  -p:RimBridgeServerAnnotationsPackageVersion=1.0.0
+  -p:LibGabPackageVersion=1.0.0-local.1 \
+  -p:RimBridgeServerAnnotationsPackageVersion=1.1.0-local.1
 ```
 
 Populate the local source by packing the sibling library into `../.nuget-local`, for example:
@@ -106,8 +106,17 @@ Populate the local source by packing the sibling library into `../.nuget-local`,
 ```bash
 dotnet pack ../Lib.GAB/Lib.GAB/Lib.GAB.csproj \
   -o ../.nuget-local \
-  -p:PackageVersion=0.1.0-local.1
+  -p:PackageVersion=1.0.0-local.1
 ```
+
+## Release Assets
+
+Release-facing assets are kept in source control so the in-game metadata, GitHub release packaging, and external post copy stay aligned.
+
+- `About/ModIcon.png` is the small in-game mod icon
+- `About/Preview.png` is the preview/banner image
+- `Source/Originals/Steam-Post.txt` and `Source/Originals/Ludean-Post.txt` hold the maintained workshop/forum copy
+- `scripts/render-mod-icon.swift` regenerates `About/ModIcon.png` from the preview art
 
 ## Beginner Start
 
@@ -293,6 +302,7 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/spawn_thing` - Spawn a thing on the current map at a target cell
 - `rimworld/save_game` - Save the current game to a named save
 - `rimworld/load_game` - Load a named RimWorld save
+- `rimworld/load_game_ready` - Load a named RimWorld save and wait until the game is automation-ready before returning
 
 ### Context Menus And Map Interaction
 

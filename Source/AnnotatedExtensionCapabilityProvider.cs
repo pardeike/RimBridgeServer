@@ -119,7 +119,7 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
                             Name = attribute.Name,
                             Title = attribute.Title,
                             Description = attribute.Description,
-                            ResultDescription = attribute.ResultDescription,
+                            ResultDescription = GetOptionalStringProperty(attribute, "ResultDescription"),
                             RequiresAuth = attribute.RequiresAuth,
                             Parameters = method.GetParameters().Select(CreateToolParameterInfo).ToList(),
                             ResponseFields = method.GetCustomAttributes<AnnotationToolResponseAttribute>(inherit: false)
@@ -198,6 +198,12 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
             Required = attribute?.Required ?? !parameter.IsOptional,
             DefaultValue = hasDefaultValue ? parameter.DefaultValue : attribute?.DefaultValue
         };
+    }
+
+    private static string GetOptionalStringProperty(object source, string propertyName)
+    {
+        var property = source.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        return property?.GetValue(source) as string;
     }
 
     private static object[] BindArguments(MethodInfo method, IDictionary<string, object> arguments)

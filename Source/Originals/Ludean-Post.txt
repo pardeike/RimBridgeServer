@@ -1,0 +1,56 @@
+[b][color=yellow]RimBridgeServer[/color][/b]
+Turn RimWorld into a live automation bridge.
+
+[img]https://raw.githubusercontent.com/pardeike/RimBridgeServer/latest/About/Preview.png[/img]
+
+[b]RimBridgeServer[/b] is a developer-facing RimWorld mod that exposes a stable tool surface from the running game to external tools, test harnesses, and AI agents. It is built for real mod debugging, reproducible repro loops, UI verification, and automation against the real game instead of a simulation.
+
+[hr]
+
+[b][color=yellow]What it does[/color][/b]
+
+- inspect live game, map, camera, selection, notification, and UI state
+- drive debug actions, main tabs, Architect designators, semantic UI controls, saves, and screenshots
+- change mod settings and mod load order
+- run JSON or lowered Lua automation scripts inside the live game session
+- let third-party mods publish their own annotated bridge tools through RimBridgeServer
+
+[hr]
+
+[b][color=yellow]Best with GABS[/color][/b]
+
+The recommended setup is to launch RimWorld through [url=https://github.com/pardeike/GABS]GABS[/url]. That gives you clean game lifecycle control plus live bridge discovery without manually managing ports or tokens.
+
+Manual direct mode still works if you prefer it. Start RimWorld normally, read the bridge startup lines from the RimWorld log, and connect directly to the advertised port and token.
+
+[hr]
+
+[b][color=yellow]Who this is for[/color][/b]
+
+RimBridgeServer is aimed at mod developers, tool authors, and automation users. It is not a gameplay content mod. The value is faster debugging, reproducible automation, and safer mod iteration against a real running RimWorld session.
+
+[hr]
+
+[b][color=yellow]Installation[/color][/b]
+
+Download the latest release from [url=https://github.com/pardeike/RimBridgeServer/releases/latest]GitHub Releases[/url], unzip the [i]RimBridgeServer[/i] folder into your RimWorld Mods directory, and enable it in RimWorld.
+
+[hr]
+
+[b][color=yellow]Ecosystem[/color][/b]
+
+- [url=https://github.com/pardeike/GABS]GABS[/url]
+- [url=https://github.com/pardeike/DecompilerServer]DecompilerServer[/url]
+
+[hr]
+
+[b][color=yellow]Feedback[/color][/b]
+
+GitHub:
+[url=https://github.com/pardeike/RimBridgeServer]https://github.com/pardeike/RimBridgeServer[/url]
+
+[hr]
+
+[b][color=yellow]License[/color][/b]
+
+MIT

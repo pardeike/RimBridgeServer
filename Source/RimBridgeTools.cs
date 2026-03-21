@@ -952,6 +952,18 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(saveName), saveName)));
     }
 
+    [ReadmeTool("Save/Load And Spawning", "Load a named RimWorld save and wait until the game is automation-ready before returning")]
+    [Tool("rimworld/load_game_ready", Description = "Load a named RimWorld save and wait until the game is automation-ready before returning")]
+    public object LoadGameReady(
+        [ToolParameter(Description = "Save name without extension")] string saveName,
+        [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 120000,
+        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 100,
+        [ToolParameter(Description = "Wait until RimWorld's screen fade has fully cleared")] bool waitForScreenFade = true,
+        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = true)
+    {
+        return InvokeAlias(Arguments((nameof(saveName), saveName), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(waitForScreenFade), waitForScreenFade), (nameof(pauseIfNeeded), pauseIfNeeded)));
+    }
+
     [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open")]
     [Tool("rimworld/open_context_menu", Description = "Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open")]
     public object OpenContextMenu(

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using RimBridgeServer.Core;
 using Verse;
 
@@ -32,6 +33,11 @@ internal static class RimWorldWaits
     }
 
     public static object WaitForGameLoaded(int timeoutMs = 30000, int pollIntervalMs = 100, bool waitForScreenFade = true, bool pauseIfNeeded = false)
+    {
+        return WaitForGameLoadedResult(timeoutMs, pollIntervalMs, waitForScreenFade, pauseIfNeeded);
+    }
+
+    public static Dictionary<string, object> WaitForGameLoadedResult(int timeoutMs = 30000, int pollIntervalMs = 100, bool waitForScreenFade = true, bool pauseIfNeeded = false)
     {
         var outcome = WaitUntilMainThreadProbe(() =>
         {
@@ -138,18 +144,18 @@ internal static class RimWorldWaits
             : "RimWorld has a loaded playable game.";
     }
 
-    private static object CreateWaitResponse(WaitOutcome outcome)
+    private static Dictionary<string, object> CreateWaitResponse(WaitOutcome outcome)
     {
-        return new
+        return new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            success = outcome.Satisfied,
-            satisfied = outcome.Satisfied,
-            message = outcome.Message,
-            elapsedMs = outcome.ElapsedMs,
-            attempts = outcome.Attempts,
-            probeFailureCount = outcome.ProbeFailureCount,
-            lastProbeError = string.IsNullOrWhiteSpace(outcome.LastProbeError) ? null : outcome.LastProbeError,
-            state = outcome.Snapshot
+            ["success"] = outcome.Satisfied,
+            ["satisfied"] = outcome.Satisfied,
+            ["message"] = outcome.Message,
+            ["elapsedMs"] = outcome.ElapsedMs,
+            ["attempts"] = outcome.Attempts,
+            ["probeFailureCount"] = outcome.ProbeFailureCount,
+            ["lastProbeError"] = string.IsNullOrWhiteSpace(outcome.LastProbeError) ? null : outcome.LastProbeError,
+            ["state"] = outcome.Snapshot
         };
     }
 

@@ -6,9 +6,44 @@
     <li>1.6</li>
   </supportedVersions>
   <packageId>brrainz.rimbridgeserver</packageId>
-  <modVersion>0.6.4</modVersion>
+  <modVersion>1.0.0</modVersion>
   <url>https://github.com/pardeike/RimBridgeServer</url>
-  <description>RimBridgeServer spins up an MCP server inside RimWorld to enable automated, remote control of a running game. It is designed so AI agents or external tools can rapidly test and validate the mods they are developing by issuing commands and querying state through a stable protocol.
+  <description>Turn a running RimWorld session into a live automation bridge.
 
-Includes a basic MCP implementation with a built-in connectivity tool: "rimbridge/ping" (responds with "pong"). The server is modular: core hosting is kept minimal and features are provided by opt-in modules (capabilities). Transports, message formats, and feature sets can evolve independently so you can tailor the server to your needs without impacting the core.</description>
+RimBridgeServer is a developer-facing mod for external tools, test harnesses, and AI agents. It exposes a stable tool surface from the real game so mods can be debugged, driven, and validated against actual RimWorld state instead of a simulation.
+
+IN PRACTICE YOU CAN
+
+- inspect live game, map, camera, selection, notification, and UI state
+- drive debug actions, main tabs, Architect designators, saves, and screenshots
+- change mod settings and mod load order
+- run JSON or lowered Lua automation scripts
+- let third-party mods expose their own bridge tools through RimBridgeServer.Annotations
+
+RECOMMENDED SETUP
+
+Use GABS to start RimWorld, discover the live bridge surface, and connect your automation client without manually managing ports or tokens.
+
+DIRECT MODE
+
+Standalone direct mode still works. Start RimWorld normally, read the bridge startup lines from the RimWorld log, and connect your client directly to the advertised port and token.
+
+INSTALLATION
+
+1. Download the latest release from GitHub
+2. Unzip the RimBridgeServer folder into RimWorld's Mods directory
+3. Enable RimBridgeServer in RimWorld
+4. Prefer GABS when you want AI or harness-driven control
+
+FEEDBACK
+
+GitHub releases, issues, and docs:
+https://github.com/pardeike/RimBridgeServer
+
+GABS:
+https://github.com/pardeike/GABS
+
+LICENSE
+
+MIT</description>
 </ModMetaData>

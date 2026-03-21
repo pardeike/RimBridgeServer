@@ -83,6 +83,19 @@ internal sealed class SmokeScenarioContext
         EnsureSucceeded(wait, "Waiting for RimWorld to load an automation-ready game");
     }
 
+    public async Task LoadGameReadyAsync(string stepName, string saveName, CancellationToken cancellationToken)
+    {
+        var load = await CallGameToolAsync(stepName, "rimworld/load_game_ready", new
+        {
+            saveName,
+            timeoutMs = _options.WaitTimeoutMs,
+            pollIntervalMs = 100,
+            waitForScreenFade = true,
+            pauseIfNeeded = true
+        }, cancellationToken);
+        EnsureSucceeded(load, $"Loading RimWorld save '{saveName}' and waiting for automation readiness");
+    }
+
     public async Task WaitForOperationAsync(string stepName, string operationId, CancellationToken cancellationToken)
     {
         var wait = await CallGameToolAsync(stepName, "rimbridge/wait_for_operation", new

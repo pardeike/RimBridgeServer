@@ -60,15 +60,15 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4566" GeneratePathProperty="true" />
+		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4633" GeneratePathProperty="true" />
 		<PackageReference Include="Lib.GAB" Version="$(LibGabPackageVersion)" />
-		<PackageReference Include="Lib.Harmony.Ref" Version="2.4.1" />
+		<PackageReference Include="Lib.Harmony.Ref" Version="2.4.2" />
 		<PackageReference Include="Microsoft.NETCore.Platforms" Version="7.0.4" />
 		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 		<PackageReference Include="RimBridgeServer.Annotations" Version="$(RimBridgeServerAnnotationsPackageVersion)" />
 		<PackageReference Include="TaskPubliciser" Version="1.0.3" />
 	</ItemGroup>
@@ -107,8 +107,8 @@
 	<Target Name="CopyToRimworld" AfterTargets="PostBuildAction" Condition="'$(RIMWORLD_MOD_DIR)' != ''">
 		<RemoveDir Directories="$(RIMWORLD_MOD_DIR)\$(ModFileName)" />
 		<ItemGroup>
-			<Copy_16 Include="..\1.6\**" />
-			<CopyAbout Include="..\About\**" />
+			<Copy_16 Include="..\1.6\**" Exclude="..\1.6\**\.DS_Store;..\1.6\**\Thumbs.db" />
+			<CopyAbout Include="..\About\**" Exclude="..\About\**\.DS_Store;..\About\**\Thumbs.db" />
 			<CopyLoadFolders Include="..\LoadFolders.xml" />
 			<CopyReadme Include="..\README.md" />
 			<CopyLicense Include="..\LICENSE" />

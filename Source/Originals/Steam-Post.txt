@@ -1,0 +1,45 @@
+Turn RimWorld into a live automation bridge.
+
+RimBridgeServer is a developer-facing RimWorld mod that exposes a stable tool surface from the running game to external tools, test harnesses, and AI agents. It is built for real mod debugging, reproducible repro loops, UI verification, and automation against the real game instead of a simulation.
+
+WHAT IT DOES
+
+- inspect live game, map, camera, selection, notification, and UI state
+- drive debug actions, main tabs, Architect designators, semantic UI controls, saves, and screenshots
+- change mod settings and mod load order
+- run JSON or lowered Lua automation scripts inside the live game session
+- let third-party mods publish their own annotated bridge tools through RimBridgeServer
+
+BEST WITH GABS
+
+The recommended setup is to launch RimWorld through GABS. That gives you clean game lifecycle control plus live bridge discovery without manually managing ports or tokens.
+
+Manual direct mode still works if you prefer it. Start RimWorld normally, read the bridge startup lines from the RimWorld log, and connect directly to the advertised port and token.
+
+WHO THIS IS FOR
+
+RimBridgeServer is aimed at mod developers, tool authors, and automation users. It is not a gameplay content mod. The value is faster debugging, reproducible automation, and safer mod iteration against a real running RimWorld session.
+
+INSTALLATION
+
+If you are installing manually, download the latest release from:
+https://github.com/pardeike/RimBridgeServer/releases/latest
+
+Then unzip the RimBridgeServer folder into your RimWorld Mods directory and enable it in RimWorld.
+
+ECOSYSTEM
+
+GABS:
+https://github.com/pardeike/GABS
+
+DecompilerServer:
+https://github.com/pardeike/DecompilerServer
+
+FEEDBACK
+
+GitHub:
+https://github.com/pardeike/RimBridgeServer
+
+LICENSE
+
+MIT
