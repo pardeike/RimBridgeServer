@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `110` tools total
+- `111` tools total
 - `18` `rimbridge/*` tools
-- `92` `rimworld/*` tools
+- `93` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -97,7 +97,7 @@ Wait until RimWorld reaches the requested loaded-game readiness level
 Parameters:
 - `timeoutMs` (`int`, `optional`, default `30000`): Maximum time to wait in milliseconds
 - `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
-- `readiness` (`string`, `optional`, default `"mapData"`): Readiness target: gameData, mapData, currentMap, playable, or visual
+- `readiness` (`string`, `optional`, default `AutomationReadiness.DefaultTargetName`): Readiness target: gameData, mapData, currentMap, playable, or visual
 - `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
 
 ### `rimbridge/wait_for_long_event_idle`
@@ -628,7 +628,7 @@ Start RimWorld's built-in quick test colony from the main menu and wait for the 
 Parameters:
 - `timeoutMs` (`int`, `optional`, default `120000`): Maximum time to wait in milliseconds
 - `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
-- `readiness` (`string`, `optional`, default `"mapData"`): Readiness target: gameData, mapData, currentMap, playable, or visual
+- `readiness` (`string`, `optional`, default `AutomationReadiness.DefaultTargetName`): Readiness target: gameData, mapData, currentMap, playable, or visual
 - `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
 
 ### `rimworld/go_to_main_menu`
@@ -888,7 +888,7 @@ Parameters:
 - `saveName` (`string`, `required`): Save name without extension
 - `timeoutMs` (`int`, `optional`, default `120000`): Maximum time to wait in milliseconds
 - `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
-- `readiness` (`string`, `optional`, default `"mapData"`): Readiness target: gameData, mapData, currentMap, playable, or visual
+- `readiness` (`string`, `optional`, default `AutomationReadiness.DefaultTargetName`): Readiness target: gameData, mapData, currentMap, playable, or visual
 - `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
 
 ### `rimworld/open_context_menu`
