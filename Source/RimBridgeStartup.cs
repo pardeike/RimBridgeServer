@@ -1,5 +1,6 @@
 using System;
 using Lib.GAB.Server;
+using UnityEngine;
 using Verse;
 
 namespace RimBridgeServer;
@@ -76,12 +77,26 @@ internal static class RimBridgeStartup
         {
             RimBridgeCapabilities.Initialize();
             RimBridgeLogs.Initialize(RimBridgeCapabilities.LogJournal);
+            Application.runInBackground = true;
 
             var tools = new RimBridgeTools();
             var version = typeof(RimBridgeServerMod).Assembly.GetName().Version?.ToString() ?? "0.1.0.0";
-            _server = Lib.GAB.Gabp.CreateServer()
+            var builder = Lib.GAB.Gabp.CreateServer()
                 .UseAppInfo("RimBridgeServer", version)
-                .UseGabsEnvironmentIfAvailable()
+                .UseGabsEnvironmentIfAvailable();
+            var usingGabsConfig = Lib.GAB.Gabp.IsRunningUnderGabs();
+            string bridgeConfigError = null;
+            if (!usingGabsConfig && RimBridgeGabsBridgeConfig.TryRead("rimworld", out var bridgeConfig, out bridgeConfigError))
+            {
+                builder.UseExternalConfig(bridgeConfig.Port, bridgeConfig.Token, bridgeConfig.GameId);
+                usingGabsConfig = true;
+            }
+            else if (!string.IsNullOrEmpty(bridgeConfigError))
+            {
+                Log.Warning($"[RimBridge] Could not read GABS bridge config: {bridgeConfigError}");
+            }
+
+            _server = builder
                 .UsePortIfNotSet(5174)
                 .EnableAttentionSupport()
                 .Build();
@@ -98,7 +113,7 @@ internal static class RimBridgeStartup
                     return;
                 }
 
-                if (Lib.GAB.Gabp.IsRunningUnderGabs())
+                if (usingGabsConfig)
                 {
                     Log.Message($"[RimBridge] GABP server connected to GABS on port {_server.Port}");
                 }
