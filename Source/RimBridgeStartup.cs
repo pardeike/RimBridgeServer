@@ -27,6 +27,7 @@ internal static class RimBridgeStartup
     public static void OnRuntimeReady()
     {
         var shouldLog = false;
+        var alreadyStarted = false;
 
         lock (Sync)
         {
@@ -35,10 +36,16 @@ internal static class RimBridgeStartup
                 _runtimeReady = true;
                 shouldLog = true;
             }
+
+            alreadyStarted = _started;
         }
 
         if (shouldLog)
-            Log.Message("[RimBridge] Startup conditions satisfied after play-data load; initializing bridge services.");
+        {
+            Log.Message(alreadyStarted
+                ? "[RimBridge] Play-data load complete; bridge services are already available."
+                : "[RimBridge] Startup conditions satisfied after play-data load; initializing bridge services.");
+        }
 
         TryStart();
     }
@@ -65,16 +72,22 @@ internal static class RimBridgeStartup
 
     private static void TryStart()
     {
+        var startingBeforeRuntimeReady = false;
+
         lock (Sync)
         {
-            if (!_modConstructed || !_runtimeReady || _started)
+            if (!_modConstructed || _started)
                 return;
 
             _started = true;
+            startingBeforeRuntimeReady = !_runtimeReady;
         }
 
         try
         {
+            if (startingBeforeRuntimeReady)
+                Log.Message("[RimBridge] Initializing bridge services before play-data load completes.");
+
             RimBridgeCapabilities.Initialize();
             RimBridgeLogs.Initialize(RimBridgeCapabilities.LogJournal);
             Application.runInBackground = true;

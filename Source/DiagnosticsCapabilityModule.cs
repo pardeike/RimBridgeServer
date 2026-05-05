@@ -189,9 +189,9 @@ internal sealed class DiagnosticsCapabilityModule
         };
     }
 
-    public object WaitForGameLoaded(int timeoutMs = 30000, int pollIntervalMs = 100, bool waitForScreenFade = true, bool pauseIfNeeded = false)
+    public object WaitForGameLoaded(int timeoutMs = 30000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false)
     {
-        return RimWorldWaits.WaitForGameLoaded(timeoutMs, pollIntervalMs, waitForScreenFade, pauseIfNeeded);
+        return RimWorldWaits.WaitForGameLoaded(timeoutMs, pollIntervalMs, readiness, pauseIfNeeded);
     }
 
     public object WaitForLongEventIdle(int timeoutMs = 30000, int pollIntervalMs = 100)

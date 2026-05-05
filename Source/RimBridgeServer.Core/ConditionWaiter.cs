@@ -21,6 +21,8 @@ public sealed class WaitProbeResult
 
     public string Message { get; set; } = string.Empty;
 
+    public string BlockingReason { get; set; } = string.Empty;
+
     public object Snapshot { get; set; }
 }
 
@@ -37,6 +39,8 @@ public sealed class WaitOutcome
     public string LastProbeError { get; set; } = string.Empty;
 
     public string Message { get; set; } = string.Empty;
+
+    public string BlockingReason { get; set; } = string.Empty;
 
     public object Snapshot { get; set; }
 }
@@ -96,6 +100,7 @@ public sealed class ConditionWaiter
                     ProbeFailureCount = probeFailureCount,
                     LastProbeError = lastProbeError,
                     Message = string.IsNullOrWhiteSpace(lastProbe.Message) ? "Condition satisfied." : lastProbe.Message,
+                    BlockingReason = lastProbe.BlockingReason,
                     Snapshot = lastProbe.Snapshot
                 };
             }
@@ -116,6 +121,7 @@ public sealed class ConditionWaiter
                     ProbeFailureCount = probeFailureCount,
                     LastProbeError = lastProbeError,
                     Message = timeoutMessage,
+                    BlockingReason = lastProbe.BlockingReason,
                     Snapshot = lastProbe.Snapshot ?? lastSnapshot
                 };
             }

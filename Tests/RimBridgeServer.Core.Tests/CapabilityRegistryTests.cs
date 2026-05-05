@@ -46,6 +46,16 @@ public class CapabilityRegistryTests
     }
 
     [Fact]
+    public void RejectsNonCanonicalCapabilityAliases()
+    {
+        var registry = new CapabilityRegistry();
+
+        var ex = Assert.Throws<ArgumentException>(() => registry.RegisterProvider(new InvalidAliasProvider()));
+
+        Assert.Contains(GabpToolNameValidator.CanonicalPattern, ex.Message);
+    }
+
+    [Fact]
     public void RecordsOperationLifecycleInJournal()
     {
         var journal = new OperationJournal();
@@ -144,6 +154,24 @@ public class CapabilityRegistryTests
                     Aliases = ["rimbridge/ping"]
                 },
                 (_, _) => Task.FromResult(OperationEnvelope.Completed("op_2", "rimbridge.core/other/ping", System.DateTimeOffset.UtcNow, new { message = "pong" })));
+        }
+    }
+
+    private sealed class InvalidAliasProvider : IRimBridgeCapabilityProvider
+    {
+        public string ProviderId => "invalid.provider";
+
+        public IEnumerable<RimBridgeCapabilityRegistration> GetCapabilities()
+        {
+            yield return new RimBridgeCapabilityRegistration(
+                new CapabilityDescriptor
+                {
+                    Id = "invalid.provider/example",
+                    ProviderId = ProviderId,
+                    Category = "diagnostics",
+                    Aliases = ["rimbridge.core.ping"]
+                },
+                (_, _) => Task.FromResult(OperationEnvelope.Completed("op_invalid", "invalid.provider/example", System.DateTimeOffset.UtcNow, new { })));
         }
     }
 

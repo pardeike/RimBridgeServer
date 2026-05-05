@@ -184,7 +184,7 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimbridge/list_operation_events` - List recent bridge operation lifecycle events from the in-memory event journal
 - `rimbridge/list_logs` - List recent captured RimWorld and bridge log entries from the in-memory log journal, including operation correlation when available
 - `rimbridge/wait_for_operation` - Wait for an operation in the journal to reach a terminal status
-- `rimbridge/wait_for_game_loaded` - Wait until RimWorld has finished loading a playable game and, optionally, until screen fade is complete
+- `rimbridge/wait_for_game_loaded` - Wait until RimWorld reaches the requested loaded-game readiness level
 - `rimbridge/wait_for_long_event_idle` - Wait until RimWorld reports no long events in progress
 
 ### Scripting
@@ -258,6 +258,7 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/click_screen_target` - Semantically click a known actionable target id returned by `rimworld/get_screen_targets` without requiring OS focus
 - `rimworld/switch_language` - Switch RimWorld to an installed language by the recommendedQuery from `rimworld/list_languages` or another exact language name match, mirroring the main-menu language picker and saving prefs
 - `rimworld/start_debug_game` - Start RimWorld's built-in quick test colony from the main menu
+- `rimworld/start_debug_game_ready` - Start RimWorld's built-in quick test colony from the main menu and wait for the requested readiness level
 - `rimworld/go_to_main_menu` - Return to the RimWorld main menu entry scene, or no-op if already there
 
 ### Selection And Colony State
@@ -302,7 +303,7 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/spawn_thing` - Spawn a thing on the current map at a target cell
 - `rimworld/save_game` - Save the current game to a named save
 - `rimworld/load_game` - Load a named RimWorld save
-- `rimworld/load_game_ready` - Load a named RimWorld save and wait until the game is automation-ready before returning
+- `rimworld/load_game_ready` - Load a named RimWorld save and wait until the requested readiness level before returning
 
 ### Context Menus And Map Interaction
 

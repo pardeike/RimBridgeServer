@@ -264,8 +264,8 @@ rb.poll("rimbridge/get_bridge_status", {}, {
 rb.call("rimworld/start_debug_game")
 rb.call("rimbridge/wait_for_game_loaded", {
   timeoutMs = 60000,
-  pollIntervalMs = 100,
-  waitForScreenFade = true,
+  pollIntervalMs = 50,
+  readiness = "visual",
   pauseIfNeeded = true
 })
 

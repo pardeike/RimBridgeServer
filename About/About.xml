@@ -6,7 +6,7 @@
     <li>1.6</li>
   </supportedVersions>
   <packageId>brrainz.rimbridgeserver</packageId>
-  <modVersion>1.0.0</modVersion>
+  <modVersion>1.0.1</modVersion>
   <url>https://github.com/pardeike/RimBridgeServer</url>
   <description>Turn a running RimWorld session into a live automation bridge.
 

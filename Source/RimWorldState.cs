@@ -18,6 +18,8 @@ internal static class RimWorldState
             string programState,
             bool inEntryScene,
             bool hasCurrentGame,
+            int mapCount,
+            bool hasCurrentMap,
             bool longEventPending,
             bool paused,
             string timeSpeed,
@@ -27,6 +29,8 @@ internal static class RimWorldState
             ProgramState = programState;
             InEntryScene = inEntryScene;
             HasCurrentGame = hasCurrentGame;
+            MapCount = mapCount;
+            HasCurrentMap = hasCurrentMap;
             LongEventPending = longEventPending;
             Paused = paused;
             TimeSpeed = timeSpeed;
@@ -40,6 +44,10 @@ internal static class RimWorldState
 
         public bool HasCurrentGame { get; }
 
+        public int MapCount { get; }
+
+        public bool HasCurrentMap { get; }
+
         public bool LongEventPending { get; }
 
         public bool Paused { get; }
@@ -51,7 +59,7 @@ internal static class RimWorldState
         public float FadeOverlayAlpha { get; }
 
         public AutomationReadinessEvaluation Readiness =>
-            AutomationReadiness.Evaluate(HasCurrentGame, ProgramState, LongEventPending, ScreenFading, FadeOverlayAlpha);
+            AutomationReadiness.Evaluate(HasCurrentGame, MapCount, HasCurrentMap, ProgramState, LongEventPending, ScreenFading, FadeOverlayAlpha);
     }
 
     public static object ToolStateSnapshot()
@@ -62,6 +70,8 @@ internal static class RimWorldState
     public static RuntimeStatus ReadStatus()
     {
         var hasCurrentGame = Current.Game != null;
+        var currentMap = Find.CurrentMap;
+        var mapCount = hasCurrentGame ? Find.Maps?.Count(map => map != null) ?? 0 : 0;
         var paused = hasCurrentGame && Find.TickManager?.Paused == true;
         var timeSpeed = hasCurrentGame ? Find.TickManager?.CurTimeSpeed.ToString() : null;
         var screenFading = ScreenFader.IsFading();
@@ -71,6 +81,8 @@ internal static class RimWorldState
             Current.ProgramState.ToString(),
             GenScene.InEntryScene,
             hasCurrentGame,
+            mapCount,
+            currentMap != null,
             LongEventHandler.AnyEventNowOrWaiting,
             paused,
             timeSpeed,
@@ -90,13 +102,18 @@ internal static class RimWorldState
             hasCurrentGame = status.HasCurrentGame,
             currentMapId = GetMapId(currentMap),
             currentMapIndex = currentMap?.Index,
+            mapCount = status.MapCount,
             longEventPending = status.LongEventPending,
             paused = status.Paused,
             timeSpeed = status.TimeSpeed,
             screenFading = status.ScreenFading,
             fadeOverlayAlpha = Math.Round(status.FadeOverlayAlpha, 4),
+            gameDataReady = readiness.GameDataReady,
+            mapDataReady = readiness.MapDataReady,
+            currentMapReady = readiness.CurrentMapReady,
             screenFadeClear = readiness.ScreenFadeClear,
             playable = readiness.Playable,
+            visualReady = readiness.VisualReady,
             automationReady = readiness.AutomationReady
         };
     }

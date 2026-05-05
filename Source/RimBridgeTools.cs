@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Lib.GAB.Tools;
+using RimBridgeServer.Core;
 
 namespace RimBridgeServer;
 
@@ -98,15 +99,15 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(operationId), operationId), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs)));
     }
 
-    [ReadmeTool("Bridge Diagnostics", "Wait until RimWorld has finished loading a playable game and, optionally, until screen fade is complete")]
-    [Tool("rimbridge/wait_for_game_loaded", Description = "Wait until RimWorld has finished loading a playable game and, optionally, until screen fade is complete")]
+    [ReadmeTool("Bridge Diagnostics", "Wait until RimWorld reaches the requested loaded-game readiness level")]
+    [Tool("rimbridge/wait_for_game_loaded", Description = "Wait until RimWorld reaches the requested loaded-game readiness level")]
     public object WaitForGameLoaded(
         [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 30000,
-        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 100,
-        [ToolParameter(Description = "Wait until RimWorld's screen fade has fully cleared")] bool waitForScreenFade = true,
+        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 50,
+        [ToolParameter(Description = "Readiness target: gameData, mapData, currentMap, playable, or visual")] string readiness = AutomationReadiness.DefaultTargetName,
         [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false)
     {
-        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(waitForScreenFade), waitForScreenFade), (nameof(pauseIfNeeded), pauseIfNeeded)));
+        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded)));
     }
 
     [ReadmeTool("Bridge Diagnostics", "Wait until RimWorld reports no long events in progress")]
@@ -686,6 +687,17 @@ public class RimBridgeTools
         return InvokeAlias();
     }
 
+    [ReadmeTool("UI And Input", "Start RimWorld's built-in quick test colony from the main menu and wait for the requested readiness level")]
+    [Tool("rimworld/start_debug_game_ready", Description = "Start RimWorld's built-in quick test colony from the main menu and wait for the requested readiness level")]
+    public object StartDebugGameReady(
+        [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 120000,
+        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 50,
+        [ToolParameter(Description = "Readiness target: gameData, mapData, currentMap, playable, or visual")] string readiness = AutomationReadiness.DefaultTargetName,
+        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false)
+    {
+        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded)));
+    }
+
     [ReadmeTool("UI And Input", "Return to the RimWorld main menu entry scene, or no-op if already there")]
     [Tool("rimworld/go_to_main_menu", Description = "Return to the RimWorld main menu entry scene, or no-op if already there")]
     public object GoToMainMenu()
@@ -952,16 +964,16 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(saveName), saveName)));
     }
 
-    [ReadmeTool("Save/Load And Spawning", "Load a named RimWorld save and wait until the game is automation-ready before returning")]
-    [Tool("rimworld/load_game_ready", Description = "Load a named RimWorld save and wait until the game is automation-ready before returning")]
+    [ReadmeTool("Save/Load And Spawning", "Load a named RimWorld save and wait until the requested readiness level before returning")]
+    [Tool("rimworld/load_game_ready", Description = "Load a named RimWorld save and wait until the requested readiness level before returning")]
     public object LoadGameReady(
         [ToolParameter(Description = "Save name without extension")] string saveName,
         [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 120000,
-        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 100,
-        [ToolParameter(Description = "Wait until RimWorld's screen fade has fully cleared")] bool waitForScreenFade = true,
-        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = true)
+        [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 50,
+        [ToolParameter(Description = "Readiness target: gameData, mapData, currentMap, playable, or visual")] string readiness = AutomationReadiness.DefaultTargetName,
+        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false)
     {
-        return InvokeAlias(Arguments((nameof(saveName), saveName), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(waitForScreenFade), waitForScreenFade), (nameof(pauseIfNeeded), pauseIfNeeded)));
+        return InvokeAlias(Arguments((nameof(saveName), saveName), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded)));
     }
 
     [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open")]

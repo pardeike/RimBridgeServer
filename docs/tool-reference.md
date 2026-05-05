@@ -92,12 +92,12 @@ Parameters:
 
 ### `rimbridge/wait_for_game_loaded`
 
-Wait until RimWorld has finished loading a playable game and, optionally, until screen fade is complete
+Wait until RimWorld reaches the requested loaded-game readiness level
 
 Parameters:
 - `timeoutMs` (`int`, `optional`, default `30000`): Maximum time to wait in milliseconds
-- `pollIntervalMs` (`int`, `optional`, default `100`): Polling interval in milliseconds
-- `waitForScreenFade` (`bool`, `optional`, default `true`): Wait until RimWorld's screen fade has fully cleared
+- `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
+- `readiness` (`string`, `optional`, default `"mapData"`): Readiness target: gameData, mapData, currentMap, playable, or visual
 - `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
 
 ### `rimbridge/wait_for_long_event_idle`
@@ -621,6 +621,16 @@ Start RimWorld's built-in quick test colony from the main menu
 
 Parameters: none.
 
+### `rimworld/start_debug_game_ready`
+
+Start RimWorld's built-in quick test colony from the main menu and wait for the requested readiness level
+
+Parameters:
+- `timeoutMs` (`int`, `optional`, default `120000`): Maximum time to wait in milliseconds
+- `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
+- `readiness` (`string`, `optional`, default `"mapData"`): Readiness target: gameData, mapData, currentMap, playable, or visual
+- `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
+
 ### `rimworld/go_to_main_menu`
 
 Return to the RimWorld main menu entry scene, or no-op if already there
@@ -872,14 +882,14 @@ Parameters:
 
 ### `rimworld/load_game_ready`
 
-Load a named RimWorld save and wait until the game is automation-ready before returning
+Load a named RimWorld save and wait until the requested readiness level before returning
 
 Parameters:
 - `saveName` (`string`, `required`): Save name without extension
 - `timeoutMs` (`int`, `optional`, default `120000`): Maximum time to wait in milliseconds
-- `pollIntervalMs` (`int`, `optional`, default `100`): Polling interval in milliseconds
-- `waitForScreenFade` (`bool`, `optional`, default `true`): Wait until RimWorld's screen fade has fully cleared
-- `pauseIfNeeded` (`bool`, `optional`, default `true`): Pause the game before returning success if it is still running
+- `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
+- `readiness` (`string`, `optional`, default `"mapData"`): Readiness target: gameData, mapData, currentMap, playable, or visual
+- `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
 
 ### `rimworld/open_context_menu`
 

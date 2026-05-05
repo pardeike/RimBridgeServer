@@ -158,33 +158,84 @@ internal sealed class LifecycleCapabilityModule
 
     public object StartDebugGame()
     {
-        if (LongEventHandler.AnyEventNowOrWaiting)
+        return StartDebugGameCore();
+    }
+
+    public object StartDebugGameReady(int timeoutMs = 120000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var entry = RimWorldWaits.WaitForEntrySceneReadyResult(timeoutMs, pollIntervalMs);
+        if (entry.TryGetValue("success", out var entrySuccessValue) == false || entrySuccessValue is not bool entrySuccess || entrySuccess == false)
         {
-            return new
+            return new Dictionary<string, object>(StringComparer.Ordinal)
             {
-                success = false,
-                message = "RimWorld is busy with another long event. Wait for it to finish before starting a debug game.",
-                state = RimWorldState.ToolStateSnapshot()
+                ["success"] = false,
+                ["message"] = entry.TryGetValue("message", out var entryMessage) ? entryMessage : "RimWorld entry scene was not ready.",
+                ["state"] = entry.TryGetValue("state", out var entryState) ? entryState : null,
+                ["entry"] = entry
+            };
+        }
+
+        var start = Dispatcher.Invoke(() => StartDebugGameCore(allowWhileLongEventPending: true), timeoutMs: 5000);
+        if (start.TryGetValue("success", out var startSuccessValue) == false || startSuccessValue is not bool startSuccess || startSuccess == false)
+        {
+            return new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["success"] = false,
+                ["message"] = start.TryGetValue("message", out var message) ? message : "Failed to queue RimWorld quick test start.",
+                ["state"] = start.TryGetValue("state", out var state) ? state : null,
+                ["start"] = start
+            };
+        }
+
+        var remainingTimeoutMs = timeoutMs <= 0
+            ? 0
+            : Math.Max(0, timeoutMs - (int)stopwatch.ElapsedMilliseconds);
+        var wait = RimWorldWaits.WaitForGameLoadedResult(remainingTimeoutMs, pollIntervalMs, readiness, pauseIfNeeded);
+        var success = wait.TryGetValue("success", out var waitSuccessValue) && waitSuccessValue is bool satisfied && satisfied;
+        wait.TryGetValue("message", out var waitMessage);
+        wait.TryGetValue("state", out var finalState);
+
+        return new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["success"] = success,
+            ["message"] = waitMessage,
+            ["state"] = finalState,
+            ["entry"] = entry,
+            ["start"] = start,
+            ["wait"] = wait
+        };
+    }
+
+    private static Dictionary<string, object> StartDebugGameCore(bool allowWhileLongEventPending = false)
+    {
+        if (LongEventHandler.AnyEventNowOrWaiting && allowWhileLongEventPending == false)
+        {
+            return new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["success"] = false,
+                ["message"] = "RimWorld is busy with another long event. Wait for it to finish before starting a debug game.",
+                ["state"] = RimWorldState.ToolStateSnapshot()
             };
         }
 
         if (!GenScene.InEntryScene || Current.ProgramState != ProgramState.Entry)
         {
-            return new
+            return new Dictionary<string, object>(StringComparer.Ordinal)
             {
-                success = false,
-                message = "Debug game start is only supported from the main menu entry scene.",
-                state = RimWorldState.ToolStateSnapshot()
+                ["success"] = false,
+                ["message"] = "Debug game start is only supported from the main menu entry scene.",
+                ["state"] = RimWorldState.ToolStateSnapshot()
             };
         }
 
         if (Current.Game != null)
         {
-            return new
+            return new Dictionary<string, object>(StringComparer.Ordinal)
             {
-                success = false,
-                message = "A game is already loaded. Return to the main menu before starting a new debug game.",
-                state = RimWorldState.ToolStateSnapshot()
+                ["success"] = false,
+                ["message"] = "A game is already loaded. Return to the main menu before starting a new debug game.",
+                ["state"] = RimWorldState.ToolStateSnapshot()
             };
         }
 
@@ -194,17 +245,30 @@ internal sealed class LifecycleCapabilityModule
             PageUtility.InitGameStart();
         }, "GeneratingMap", doAsynchronously: true, GameAndMapInitExceptionHandlers.ErrorWhileGeneratingMap);
 
-        return new
+        return new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            success = true,
-            status = "queued",
-            message = "Queued RimWorld quick test start.",
-            scenario = ScenarioDefOf.Crashlanded.defName,
-            storyteller = StorytellerDefOf.Cassandra.defName,
-            difficulty = DifficultyDefOf.Rough.defName,
-            mapSize = 250,
-            state = RimWorldState.ToolStateSnapshot()
+            ["success"] = true,
+            ["status"] = "queued",
+            ["message"] = "Queued RimWorld quick test start.",
+            ["scenario"] = SafeDefName(() => ScenarioDefOf.Crashlanded.defName, "Crashlanded"),
+            ["storyteller"] = SafeDefName(() => StorytellerDefOf.Cassandra.defName, "Cassandra"),
+            ["difficulty"] = SafeDefName(() => DifficultyDefOf.Rough.defName, "Rough"),
+            ["mapSize"] = 250,
+            ["state"] = RimWorldState.ToolStateSnapshot()
         };
+    }
+
+    private static string SafeDefName(Func<string> readDefName, string fallback)
+    {
+        try
+        {
+            var value = readDefName?.Invoke();
+            return string.IsNullOrWhiteSpace(value) ? fallback : value;
+        }
+        catch
+        {
+            return fallback;
+        }
     }
 
     public object GoToMainMenu()
@@ -341,7 +405,7 @@ internal sealed class LifecycleCapabilityModule
         };
     }
 
-    public object LoadGameReady(string saveName, int timeoutMs = 120000, int pollIntervalMs = 100, bool waitForScreenFade = true, bool pauseIfNeeded = true)
+    public object LoadGameReady(string saveName, int timeoutMs = 120000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false)
     {
         var safeName = RimWorldState.SanitizeName(saveName, "rimbridge_save");
         var path = GenFilePaths.FilePathForSavedGame(safeName);
@@ -360,7 +424,7 @@ internal sealed class LifecycleCapabilityModule
             return RimWorldState.ToolStateSnapshot();
         }, timeoutMs: 5000);
 
-        var wait = RimWorldWaits.WaitForGameLoadedResult(timeoutMs, pollIntervalMs, waitForScreenFade, pauseIfNeeded);
+        var wait = RimWorldWaits.WaitForGameLoadedResult(timeoutMs, pollIntervalMs, readiness, pauseIfNeeded);
         var success = wait.TryGetValue("success", out var successValue) && successValue is bool satisfied && satisfied;
         wait.TryGetValue("message", out var message);
         wait.TryGetValue("state", out var finalState);

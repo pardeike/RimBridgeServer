@@ -145,6 +145,7 @@ public sealed class CapabilityRegistry
         RegisterAlias(descriptor.Id, descriptor.Id);
         foreach (var alias in descriptor.Aliases.Where(alias => string.IsNullOrWhiteSpace(alias) == false))
         {
+            GabpToolNameValidator.EnsureCanonical(alias, nameof(descriptor.Aliases));
             RegisterAlias(alias, descriptor.Id);
         }
     }

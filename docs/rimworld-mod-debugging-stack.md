@@ -35,7 +35,7 @@ Relevant repos:
 ## Reproducing A Mod Bug Cleanly
 
 1. Prepare a save or a tiny scenario that reproduces the issue.
-2. Use GABS to start RimWorld. If you need to load a save, call `rimworld/load_game_ready`; use `rimbridge/wait_for_game_loaded` only after you have already triggered a playable-game load such as `rimworld/start_debug_game` or `rimworld/load_game`.
+2. Use GABS to start RimWorld. For the fastest state-inspection cycle, call `rimworld/start_debug_game_ready` or `rimworld/load_game_ready` with the default `mapData` readiness; use `readiness: "visual"` only when the next step needs visible UI or screenshots.
 3. Use RimBridgeServer tools to inspect pawns, jobs, map state, UI state, saves, or screenshots.
 4. Use DecompilerServer to inspect the RimWorld or mod code path you suspect.
 5. Patch the target mod, rebuild it into the RimWorld `Mods` folder, restart through GABS, and rerun the same scenario.

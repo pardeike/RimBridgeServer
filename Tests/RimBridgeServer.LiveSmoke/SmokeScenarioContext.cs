@@ -76,8 +76,8 @@ internal sealed class SmokeScenarioContext
         var wait = await CallGameToolAsync(stepName, "rimbridge/wait_for_game_loaded", new
         {
             timeoutMs = _options.WaitTimeoutMs,
-            pollIntervalMs = 100,
-            waitForScreenFade = true,
+            pollIntervalMs = 50,
+            readiness = "visual",
             pauseIfNeeded = true
         }, cancellationToken);
         EnsureSucceeded(wait, "Waiting for RimWorld to load an automation-ready game");
@@ -89,8 +89,8 @@ internal sealed class SmokeScenarioContext
         {
             saveName,
             timeoutMs = _options.WaitTimeoutMs,
-            pollIntervalMs = 100,
-            waitForScreenFade = true,
+            pollIntervalMs = 50,
+            readiness = "visual",
             pauseIfNeeded = true
         }, cancellationToken);
         EnsureSucceeded(load, $"Loading RimWorld save '{saveName}' and waiting for automation readiness");
