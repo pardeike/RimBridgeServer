@@ -128,6 +128,12 @@ If you only need the shortest possible mental model, use this:
 4. Wait until the bridge is connected.
 5. Use tools like `rimbridge/get_bridge_status`, `rimworld/start_debug_game`, `rimworld/get_ui_layout`, `rimworld/take_screenshot`, `rimworld/list_mods`, and `rimworld/update_mod_settings` to drive and validate the game.
 
+## UI Layout Targets And Cropped Screenshots
+
+Use `rimworld/get_ui_layout` when visual verification needs something more precise than a full-frame screenshot. The layout response exposes `ui-surface` ids for open windows/main tabs and `ui-element` ids for controls and natural regions such as `scroll_view` elements. Each surface and element includes its local `rect` plus a crop-ready `screenRect`.
+
+Pass those ids to `rimworld/take_screenshot` as `clipTargetId` to crop a screenshot around a dialog, a window surface, a button, a label row, or a scroll viewport. For scroll views, use the element's `scroll` payload to read current offsets and limits, then call `rimworld/scroll_ui_target` with a delta or absolute target offset before capturing the next layout or cropped screenshot.
+
 ## Third-Party Extension Tools
 
 Third-party mods can expose bridge tools by referencing the `RimBridgeServer.Annotations` NuGet package and annotating ordinary public methods. RimBridgeServer delays its own GAB startup until RimWorld has finished initializing all loaded mods, then scans every loaded mod assembly exactly once, registers all discovered annotated tools exactly once, and exposes them through the same capability registry and top-level GAB tool surface as built-in tools.
@@ -246,8 +252,9 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/list_main_tabs` - List RimWorld main tabs such as Work, Assign, Research, and mod-provided tabs with stable `main-tab` target ids
 - `rimworld/open_main_tab` - Open one RimWorld main tab by stable target id, `defName`, label, or tab window type
 - `rimworld/close_main_tab` - Close the currently open RimWorld main tab, optionally asserting which tab is open first
-- `rimworld/get_ui_layout` - Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable control target ids
+- `rimworld/get_ui_layout` - Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata
 - `rimworld/click_ui_target` - Activate an actionable UI control target returned by `rimworld/get_ui_layout` on the next real draw frame
+- `rimworld/scroll_ui_target` - Scroll a scroll_view `ui-element` target returned by `rimworld/get_ui_layout` on the next real draw frame
 - `rimworld/set_hover_target` - Set a persistent virtual hover target for UI review and screenshots, using either an actionable `ui-element` target id or a current-map cell, pawn, or thing
 - `rimworld/clear_hover_target` - Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state
 - `rimworld/press_accept` - Send semantic accept input to the active RimWorld window stack without requiring OS focus
@@ -293,9 +300,9 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/zoom_camera` - Adjust the current camera zoom/root size
 - `rimworld/set_camera_zoom` - Set the current camera root size directly
 - `rimworld/frame_pawns` - Frame a comma-separated list of pawns by name and/or stable pawn id so they fit in view
-- `rimworld/frame_cell_rect` - Frame a requested map-cell rectangle plus optional margin cells and leave the camera at the tightest full-viewport view that keeps the padded rect visible
-- `rimworld/screenshot_cell_rect` - Frame a requested map-cell rectangle plus optional margin cells, capture the full viewport at the tightest view that keeps the padded rect visible, and restore the prior camera immediately after by default
-- `rimworld/take_screenshot` - Take an in-game screenshot and return the saved file path plus optional target metadata
+- `rimworld/frame_cell_rect` - Frame a requested map-cell rectangle plus optional margin cells at the current camera zoom, or at an explicit root size when provided
+- `rimworld/screenshot_cell_rect` - Center a requested map-cell rectangle plus optional margin cells at the current camera zoom, capture it, crop to the cell bounds, and restore the prior camera immediately after by default
+- `rimworld/take_screenshot` - Take an in-game screenshot and optionally crop it to a screen target, UI surface, UI element, or scroll-view region
 
 ### Save/Load And Spawning
 

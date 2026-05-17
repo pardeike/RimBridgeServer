@@ -591,8 +591,8 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(mainTabId), mainTabId)));
     }
 
-    [ReadmeTool("UI And Input", "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable control target ids")]
-    [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable control target ids", ResultDescription = "A structured layout snapshot for the requested surface, including actionable target ids that can be passed to rimworld/click_ui_target.")]
+    [ReadmeTool("UI And Input", "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata")]
+    [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata", ResultDescription = "A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/click_ui_target, or rimworld/scroll_ui_target.")]
     public object GetUiLayout(
         [ToolParameter(Description = "Optional surface target id such as a window target from rimworld/get_screen_targets or a main-tab target from rimworld/list_main_tabs")] string surfaceId = null,
         [ToolParameter(Description = "Maximum time to wait for the requested UI surface to draw on screen")] int timeoutMs = 2000)
@@ -607,6 +607,19 @@ public class RimBridgeTools
         [ToolParameter(Description = "Maximum time to wait for the target control to be redrawn so the click can be injected")] int timeoutMs = 2000)
     {
         return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(timeoutMs), timeoutMs)));
+    }
+
+    [ReadmeTool("UI And Input", "Scroll a scroll_view ui-element target returned by rimworld/get_ui_layout on the next real draw frame")]
+    [Tool("rimworld/scroll_ui_target", Description = "Scroll a scroll_view ui-element target returned by rimworld/get_ui_layout on the next real draw frame")]
+    public object ScrollUiTarget(
+        [ToolParameter(Description = "Scroll-view ui-element target id returned by rimworld/get_ui_layout")] string targetId,
+        [ToolParameter(Description = "Vertical logical-pixel delta to add to the current scroll offset; positive values scroll down")] float deltaY = 0f,
+        [ToolParameter(Description = "Horizontal logical-pixel delta to add to the current scroll offset; positive values scroll right")] float deltaX = 0f,
+        [ToolParameter(Description = "Optional absolute vertical scroll offset; when provided it overrides deltaY")] float? targetY = null,
+        [ToolParameter(Description = "Optional absolute horizontal scroll offset; when provided it overrides deltaX")] float? targetX = null,
+        [ToolParameter(Description = "Maximum time to wait for the target scroll view to be redrawn so the scroll can be applied")] int timeoutMs = 2000)
+    {
+        return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(deltaY), deltaY), (nameof(deltaX), deltaX), (nameof(targetY), targetY), (nameof(targetX), targetX), (nameof(timeoutMs), timeoutMs)));
     }
 
     [ReadmeTool("UI And Input", "Set a persistent virtual hover target for UI review and screenshots, using either an actionable ui-element target id or a current-map cell, pawn, or thing")]
@@ -892,41 +905,43 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pawnNamesCsv), pawnNamesCsv), (nameof(pawnIdsCsv), pawnIdsCsv)));
     }
 
-    [ReadmeTool("Camera And Screenshots", "Frame a requested map-cell rectangle plus optional margin cells and leave the camera at the tightest full-viewport view that keeps the padded rect visible")]
-    [Tool("rimworld/frame_cell_rect", Description = "Frame a requested map-cell rectangle plus optional margin cells and leave the camera at the tightest full-viewport view that keeps the padded rect visible")]
+    [ReadmeTool("Camera And Screenshots", "Frame a requested map-cell rectangle plus optional margin cells at the current camera zoom, or at an explicit root size when provided")]
+    [Tool("rimworld/frame_cell_rect", Description = "Frame a requested map-cell rectangle plus optional margin cells at the current camera zoom, or at an explicit root size when provided")]
     public object FrameCellRect(
         [ToolParameter(Description = "Top-left cell x coordinate of the requested rectangle")] int x,
         [ToolParameter(Description = "Top-left cell z coordinate of the requested rectangle")] int z,
         [ToolParameter(Description = "Requested rectangle width in map cells")] int width = 1,
         [ToolParameter(Description = "Requested rectangle height in map cells")] int height = 1,
-        [ToolParameter(Description = "Extra margin cells to add around the requested rectangle before fitting the camera; larger values zoom out")] int paddingCells = 4)
+        [ToolParameter(Description = "Extra margin cells to add around the requested rectangle before framing and cropping")] int paddingCells = 4,
+        [ToolParameter(Description = "Optional camera root size to use; omit or pass 0 to preserve the current camera zoom")] float rootSize = 0f)
     {
-        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(paddingCells), paddingCells)));
+        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(paddingCells), paddingCells), (nameof(rootSize), rootSize)));
     }
 
-    [ReadmeTool("Camera And Screenshots", "Frame a requested map-cell rectangle plus optional margin cells, capture the full viewport at the tightest view that keeps the padded rect visible, and restore the prior camera immediately after by default")]
-    [Tool("rimworld/screenshot_cell_rect", Description = "Frame a requested map-cell rectangle plus optional margin cells, capture the full viewport at the tightest view that keeps the padded rect visible, and restore the prior camera immediately after by default")]
+    [ReadmeTool("Camera And Screenshots", "Center a requested map-cell rectangle plus optional margin cells at the current camera zoom, capture it, crop to the cell bounds, and restore the prior camera immediately after by default")]
+    [Tool("rimworld/screenshot_cell_rect", Description = "Center a requested map-cell rectangle plus optional margin cells at the current camera zoom, capture it, crop to the cell bounds, and restore the prior camera immediately after by default")]
     public object ScreenshotCellRect(
         [ToolParameter(Description = "Top-left cell x coordinate of the requested rectangle")] int x,
         [ToolParameter(Description = "Top-left cell z coordinate of the requested rectangle")] int z,
         [ToolParameter(Description = "Requested rectangle width in map cells")] int width = 1,
         [ToolParameter(Description = "Requested rectangle height in map cells")] int height = 1,
-        [ToolParameter(Description = "Extra margin cells to add around the requested rectangle before fitting the camera; larger values zoom out")] int paddingCells = 4,
+        [ToolParameter(Description = "Extra margin cells to add around the requested rectangle before framing and cropping")] int paddingCells = 4,
         [ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null,
         [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true,
         [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true,
-        [ToolParameter(Description = "True to leave the camera and temporary camera zoom settings at the framed view after capture instead of restoring them")] bool doNotResetCamera = false)
+        [ToolParameter(Description = "True to leave the camera at the framed view after capture instead of restoring it")] bool doNotResetCamera = false,
+        [ToolParameter(Description = "Optional camera root size to use; omit or pass 0 to preserve the current camera zoom")] float rootSize = 0f)
     {
-        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(paddingCells), paddingCells), (nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(doNotResetCamera), doNotResetCamera)));
+        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(paddingCells), paddingCells), (nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(doNotResetCamera), doNotResetCamera), (nameof(rootSize), rootSize)));
     }
 
-    [ReadmeTool("Camera And Screenshots", "Take an in-game screenshot and return the saved file path plus optional target metadata")]
-    [Tool("rimworld/take_screenshot", Description = "Take an in-game screenshot and return the saved file path plus optional target metadata", ResultDescription = "The saved screenshot path and, when requested, current target metadata describing visible windows, menus, and other screen targets.")]
+    [ReadmeTool("Camera And Screenshots", "Take an in-game screenshot and optionally crop it to a screen target, UI surface, UI element, or scroll-view region")]
+    [Tool("rimworld/take_screenshot", Description = "Take an in-game screenshot and optionally crop it to a screen target, UI surface, UI element, or scroll-view region", ResultDescription = "The saved screenshot path and, when requested, current target metadata describing visible windows, menus, and other screen targets.")]
     public object TakeScreenshot(
         [ToolParameter(Description = "Optional screenshot file name without extension")] string fileName = null,
         [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true,
         [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true,
-        [ToolParameter(Description = "Optional target id from rimworld/get_screen_targets to crop around")] string clipTargetId = null,
+        [ToolParameter(Description = "Optional target id from rimworld/get_screen_targets or rimworld/get_ui_layout to crop around, including windows, ui-surface ids, ui-element ids, and scroll_view elements")] string clipTargetId = null,
         [ToolParameter(Description = "Logical screen-pixel padding to include around the clip target")] int clipPadding = 8)
     {
         return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(clipTargetId), clipTargetId), (nameof(clipPadding), clipPadding)));

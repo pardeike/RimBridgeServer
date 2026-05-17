@@ -67,6 +67,11 @@ internal sealed class InputCapabilityModule
         return RimBridgeUiWorkbench.ClickUiTargetResponse(targetId, timeoutMs);
     }
 
+    public object ScrollUiTarget(string targetId, float deltaY = 0f, float deltaX = 0f, float? targetY = null, float? targetX = null, int timeoutMs = 2000)
+    {
+        return RimBridgeUiWorkbench.ScrollUiTargetResponse(targetId, deltaY, deltaX, targetY, targetX, timeoutMs);
+    }
+
     public object SetHoverTarget(string targetId = null, int? x = null, int? z = null, string thingId = null, string pawnName = null, string pawnId = null)
     {
         return RimWorldHover.SetHoverTargetResponse(targetId, x, z, thingId, pawnName, pawnId);

@@ -45,7 +45,38 @@ internal sealed class UiLayoutSurfaceSnapshot
 
     public UiRectSnapshot Rect { get; set; } = new();
 
+    public UiRectSnapshot ScreenRect { get; set; } = new();
+
     public List<UiLayoutElementSnapshot> Elements { get; set; } = [];
+}
+
+internal sealed class UiLayoutScrollSnapshot
+{
+    public float OffsetX { get; set; }
+
+    public float OffsetY { get; set; }
+
+    public float MaxOffsetX { get; set; }
+
+    public float MaxOffsetY { get; set; }
+
+    public bool CanScrollX { get; set; }
+
+    public bool CanScrollY { get; set; }
+
+    public bool AtLeft { get; set; }
+
+    public bool AtRight { get; set; }
+
+    public bool AtTop { get; set; }
+
+    public bool AtBottom { get; set; }
+
+    public UiRectSnapshot ViewportRect { get; set; } = new();
+
+    public UiRectSnapshot ViewportScreenRect { get; set; } = new();
+
+    public UiRectSnapshot ContentRect { get; set; } = new();
 }
 
 internal sealed class UiLayoutElementSnapshot
@@ -75,6 +106,10 @@ internal sealed class UiLayoutElementSnapshot
     public string ParentTargetId { get; set; }
 
     public UiRectSnapshot Rect { get; set; } = new();
+
+    public UiRectSnapshot ScreenRect { get; set; } = new();
+
+    public UiLayoutScrollSnapshot Scroll { get; set; }
 }
 
 internal static class RimBridgeUiWorkbench
@@ -127,6 +162,45 @@ internal static class RimBridgeUiWorkbench
         public ClickPhase Phase { get; set; } = ClickPhase.MouseDown;
 
         public int PhaseInjectedFrame { get; set; } = -1;
+
+        public string Message { get; set; } = string.Empty;
+    }
+
+    private sealed class ScrollRequest
+    {
+        public string TargetId { get; set; } = string.Empty;
+
+        public string SurfaceTargetId { get; set; } = string.Empty;
+
+        public int ElementIndex { get; set; }
+
+        public string Kind { get; set; } = string.Empty;
+
+        public string Source { get; set; } = string.Empty;
+
+        public string Label { get; set; } = string.Empty;
+
+        public UiRectSnapshot Rect { get; set; } = new();
+
+        public int Depth { get; set; }
+
+        public float DeltaX { get; set; }
+
+        public float DeltaY { get; set; }
+
+        public float? TargetX { get; set; }
+
+        public float? TargetY { get; set; }
+
+        public TaskCompletionSource<bool> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool Applied { get; set; }
+
+        public int AppliedFrame { get; set; } = -1;
+
+        public UiLayoutScrollSnapshot Before { get; set; }
+
+        public UiLayoutScrollSnapshot After { get; set; }
 
         public string Message { get; set; } = string.Empty;
     }
@@ -216,6 +290,8 @@ internal static class RimBridgeUiWorkbench
         public bool? InitialCheckedState { get; set; }
 
         public bool RegisteredActiveInteraction { get; set; }
+
+        public UiRectSnapshot InteractionRect { get; set; }
     }
 
     private static readonly object Sync = new();
@@ -224,6 +300,7 @@ internal static class RimBridgeUiWorkbench
     private static readonly Queue<int> CaptureOrder = [];
     private static CaptureRequest _pendingCapture;
     private static ClickRequest _pendingClick;
+    private static ScrollRequest _pendingScroll;
     private static HoverRequest _hoveredElement;
     private static ActiveInteractionContext _activeInteraction;
     private static int _nextCaptureId = 1;
@@ -319,6 +396,64 @@ internal static class RimBridgeUiWorkbench
         return CreateClickResponse(targetId, before, after, request.Message);
     }
 
+    public static object ScrollUiTargetResponse(
+        string targetId,
+        float deltaY = 0f,
+        float deltaX = 0f,
+        float? targetY = null,
+        float? targetX = null,
+        int timeoutMs = 2000)
+    {
+        timeoutMs = timeoutMs <= 0 ? 2000 : timeoutMs;
+
+        ScrollRequest request;
+        try
+        {
+            request = RimBridgeMainThread.Invoke(() => QueueScroll(targetId, deltaX, deltaY, targetX, targetY), timeoutMs: 5000);
+        }
+        catch (Exception ex)
+        {
+            return new
+            {
+                success = false,
+                command = "scroll_ui_target",
+                changed = false,
+                message = ex.Message,
+                targetId
+            };
+        }
+
+        if (!request.Completion.Task.Wait(timeoutMs))
+        {
+            RimBridgeMainThread.Invoke(() => CancelScroll(targetId), timeoutMs: 5000);
+            return new
+            {
+                success = false,
+                command = "scroll_ui_target",
+                changed = false,
+                message = $"Timed out waiting {timeoutMs}ms for scroll target '{targetId}' to be redrawn. Capture a fresh layout and retry.",
+                targetId
+            };
+        }
+
+        var applied = request.Completion.Task.GetAwaiter().GetResult();
+        if (!applied)
+        {
+            return new
+            {
+                success = false,
+                command = "scroll_ui_target",
+                changed = false,
+                message = request.Message,
+                targetId,
+                before = DescribeScroll(request.Before),
+                after = DescribeScroll(request.After)
+            };
+        }
+
+        return CreateScrollResponse(request);
+    }
+
     public static object SetHoverTargetResponse(string targetId)
     {
         try
@@ -400,10 +535,10 @@ internal static class RimBridgeUiWorkbench
             Label = label ?? string.Empty,
             Rect = new UiRectSnapshot
             {
-                X = element?.Rect.X ?? surface.Rect.X,
-                Y = element?.Rect.Y ?? surface.Rect.Y,
-                Width = element?.Rect.Width ?? surface.Rect.Width,
-                Height = element?.Rect.Height ?? surface.Rect.Height
+                X = element?.ScreenRect?.X ?? surface.ScreenRect.X,
+                Y = element?.ScreenRect?.Y ?? surface.ScreenRect.Y,
+                Width = element?.ScreenRect?.Width ?? surface.ScreenRect.Width,
+                Height = element?.ScreenRect?.Height ?? surface.ScreenRect.Height
             }
         };
         return true;
@@ -413,6 +548,7 @@ internal static class RimBridgeUiWorkbench
     {
         CaptureRequest completedCapture = null;
         ClickRequest completedClick = null;
+        ScrollRequest completedScroll = null;
 
         lock (Sync)
         {
@@ -445,10 +581,20 @@ internal static class RimBridgeUiWorkbench
                     _pendingClick = null;
                 }
             }
+
+            if (_pendingScroll != null
+                && _pendingScroll.Applied
+                && _pendingScroll.AppliedFrame >= 0
+                && frameCount > _pendingScroll.AppliedFrame)
+            {
+                completedScroll = _pendingScroll;
+                _pendingScroll = null;
+            }
         }
 
         completedCapture?.Completion.TrySetResult(completedCapture.Snapshot);
         completedClick?.Completion.TrySetResult(false);
+        completedScroll?.Completion.TrySetResult(true);
     }
 
     public static void BeginSurface(Window window)
@@ -467,8 +613,9 @@ internal static class RimBridgeUiWorkbench
         {
             var capture = _pendingCapture;
             var click = _pendingClick;
+            var scroll = _pendingScroll;
             var hover = _hoveredElement;
-            if (capture == null && click == null && hover == null)
+            if (capture == null && click == null && scroll == null && hover == null)
             {
                 SurfaceStack.Push(null);
                 return;
@@ -477,8 +624,9 @@ internal static class RimBridgeUiWorkbench
             var descriptor = DescribeSurface(window);
             var shouldCapture = capture != null && SurfaceMatches(capture.SurfaceTargetId, descriptor.SurfaceTargetId);
             var shouldTrackForClick = click != null && string.Equals(click.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
+            var shouldTrackForScroll = scroll != null && string.Equals(scroll.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
             var shouldTrackForHover = hover != null && string.Equals(hover.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
-            if (!shouldCapture && !shouldTrackForClick && !shouldTrackForHover)
+            if (!shouldCapture && !shouldTrackForClick && !shouldTrackForScroll && !shouldTrackForHover)
             {
                 SurfaceStack.Push(null);
                 return;
@@ -503,7 +651,8 @@ internal static class RimBridgeUiWorkbench
                         Label = descriptor.Label,
                         SemanticKind = descriptor.SemanticKind,
                         SemanticDetails = descriptor.SemanticDetails,
-                        Rect = descriptor.Rect
+                        Rect = descriptor.Rect,
+                        ScreenRect = descriptor.Rect
                     };
                     capture.Snapshot.Surfaces.Add(captureSurface);
                 }
@@ -620,6 +769,36 @@ internal static class RimBridgeUiWorkbench
         }
     }
 
+    public static void BeginScrollViewContainer(Rect viewportRect, ref Vector2 scrollPosition, Rect contentRect)
+    {
+        lock (Sync)
+        {
+            var surface = GetCurrentSurface();
+            if (surface == null || !surface.TrackingEnabled)
+                return;
+            if (surface.CompoundDepth > 0)
+                return;
+
+            var scroll = CreateScrollSnapshot(scrollPosition, viewportRect, contentRect);
+            var captureTargetId = RegisterElement(
+                surface,
+                "scroll_view",
+                "widgets.begin_scroll_view",
+                viewportRect,
+                label: null,
+                valueText: null,
+                actionable: false,
+                checkedState: null,
+                disabled: null,
+                scroll);
+
+            TryApplyPendingScroll(surface, viewportRect, contentRect, scroll, ref scrollPosition);
+
+            if (!string.IsNullOrWhiteSpace(captureTargetId))
+                surface.ContainerTargetIds.Push(captureTargetId);
+        }
+    }
+
     public static void EndContainer()
     {
         lock (Sync)
@@ -661,6 +840,7 @@ internal static class RimBridgeUiWorkbench
             state.EventOverridden = true;
             state.TransientPointerToken = RimBridgeVirtualPointer.PushTransientOverride(pointerInverted);
             state.RegisteredActiveInteraction = true;
+            state.InteractionRect = ToSnapshot(rect);
             _activeInteraction = new ActiveInteractionContext
             {
                 Rect = ToSnapshot(rect),
@@ -694,6 +874,26 @@ internal static class RimBridgeUiWorkbench
         completedClick?.Completion.TrySetResult(true);
     }
 
+    public static void OverrideButtonResultIfPending(UiPatchControlState state, ref bool result)
+    {
+        if (result || state == null || !state.ShouldActivate)
+            return;
+
+        lock (Sync)
+        {
+            if (_pendingClick == null || _pendingClick.Activated)
+                return;
+            if (_activeInteraction == null || !_activeInteraction.ShouldActivate)
+                return;
+            if (_pendingClick.Phase != ClickPhase.MouseUp || _pendingClick.PhaseInjectedFrame != Time.frameCount)
+                return;
+            if (!RectApproximatelyEquals(_activeInteraction.Rect, state.InteractionRect, 1f))
+                return;
+
+            result = true;
+        }
+    }
+
     public static void OverrideDraggableResultIfPending(Rect rect, ref Widgets.DraggableResult result)
     {
         lock (Sync)
@@ -720,7 +920,8 @@ internal static class RimBridgeUiWorkbench
         string valueText,
         bool actionable,
         bool? checkedState,
-        bool? disabled)
+        bool? disabled,
+        UiLayoutScrollSnapshot scroll = null)
     {
         var normalizedLabel = NormalizeText(label);
         var normalizedValueText = NormalizeText(valueText);
@@ -730,6 +931,7 @@ internal static class RimBridgeUiWorkbench
         surface.ElementIndex++;
         var elementIndex = surface.ElementIndex;
         var rectSnapshot = ToSnapshot(rect);
+        var screenRectSnapshot = ToScreenSnapshot(rect);
         string targetId = null;
 
         if (surface.CaptureSurface != null)
@@ -766,12 +968,14 @@ internal static class RimBridgeUiWorkbench
                 Label = normalizedLabel,
                 ValueText = normalizedValueText,
                 Actionable = actionable,
-                Checked = checkedState,
-                Disabled = disabled,
-                Depth = surface.ContainerTargetIds.Count,
-                ParentTargetId = surface.ContainerTargetIds.Count == 0 ? null : surface.ContainerTargetIds.Peek(),
-                Rect = rectSnapshot
-            });
+                    Checked = checkedState,
+                    Disabled = disabled,
+                    Depth = surface.ContainerTargetIds.Count,
+                    ParentTargetId = surface.ContainerTargetIds.Count == 0 ? null : surface.ContainerTargetIds.Peek(),
+                    Rect = rectSnapshot,
+                    ScreenRect = screenRectSnapshot,
+                    Scroll = scroll
+                });
         }
 
         surface.LastRegisteredElement = new RegisteredElementFingerprint
@@ -837,6 +1041,50 @@ internal static class RimBridgeUiWorkbench
             && RectApproximatelyEquals(_hoveredElement.Rect, rect, 1f);
     }
 
+    private static bool ShouldScrollCurrentElement(LiveSurfaceState surface, Rect rect)
+    {
+        if (_pendingScroll == null || _pendingScroll.Applied)
+            return false;
+        if (!string.Equals(_pendingScroll.SurfaceTargetId, surface.SurfaceTargetId, StringComparison.Ordinal))
+            return false;
+        if (!string.Equals(_pendingScroll.Kind, "scroll_view", StringComparison.Ordinal))
+            return false;
+        if (!string.Equals(_pendingScroll.Source, "widgets.begin_scroll_view", StringComparison.Ordinal))
+            return false;
+
+        if (_pendingScroll.ElementIndex == surface.ElementIndex)
+            return true;
+
+        return _pendingScroll.Depth == surface.ContainerTargetIds.Count
+            && RectApproximatelyEquals(_pendingScroll.Rect, rect, 1f);
+    }
+
+    private static void TryApplyPendingScroll(
+        LiveSurfaceState surface,
+        Rect viewportRect,
+        Rect contentRect,
+        UiLayoutScrollSnapshot before,
+        ref Vector2 scrollPosition)
+    {
+        if (!ShouldScrollCurrentElement(surface, viewportRect))
+            return;
+
+        var maxOffsetX = Math.Max(0f, contentRect.width - viewportRect.width);
+        var maxOffsetY = Math.Max(0f, contentRect.height - viewportRect.height);
+        var requestedX = _pendingScroll.TargetX ?? (before.OffsetX + _pendingScroll.DeltaX);
+        var requestedY = _pendingScroll.TargetY ?? (before.OffsetY + _pendingScroll.DeltaY);
+        var next = new Vector2(
+            Mathf.Clamp(requestedX, 0f, maxOffsetX),
+            Mathf.Clamp(requestedY, 0f, maxOffsetY));
+
+        scrollPosition = next;
+        _pendingScroll.Before = before;
+        _pendingScroll.After = CreateScrollSnapshot(next, viewportRect, contentRect);
+        _pendingScroll.Applied = true;
+        _pendingScroll.AppliedFrame = Time.frameCount;
+        _pendingScroll.Message = BuildScrollMessage(_pendingScroll);
+    }
+
     private static CaptureRequest QueueCapture(string surfaceId)
     {
         lock (Sync)
@@ -845,6 +1093,8 @@ internal static class RimBridgeUiWorkbench
                 throw new InvalidOperationException("A UI layout capture is already pending.");
             if (_pendingClick != null)
                 throw new InvalidOperationException("Cannot start a UI layout capture while a UI target click is pending.");
+            if (_pendingScroll != null)
+                throw new InvalidOperationException("Cannot start a UI layout capture while a UI target scroll is pending.");
 
             var captureId = _nextCaptureId++;
             var request = new CaptureRequest
@@ -880,6 +1130,8 @@ internal static class RimBridgeUiWorkbench
         {
             if (_pendingClick != null)
                 throw new InvalidOperationException("A UI target click is already pending.");
+            if (_pendingScroll != null)
+                throw new InvalidOperationException("Cannot click a UI target while a UI target scroll is pending.");
 
             if (!UiLayoutTargetIds.TryParse(targetId, out var target) || target.Kind != UiLayoutTargetKind.Element)
                 throw new InvalidOperationException($"Target id '{targetId}' is not a UI element target id returned by rimworld/get_ui_layout.");
@@ -908,6 +1160,46 @@ internal static class RimBridgeUiWorkbench
         }
     }
 
+    private static ScrollRequest QueueScroll(string targetId, float deltaX, float deltaY, float? targetX, float? targetY)
+    {
+        lock (Sync)
+        {
+            if (_pendingScroll != null)
+                throw new InvalidOperationException("A UI target scroll is already pending.");
+            if (_pendingClick != null)
+                throw new InvalidOperationException("Cannot scroll a UI target while a UI target click is pending.");
+
+            if (!UiLayoutTargetIds.TryParse(targetId, out var target) || target.Kind != UiLayoutTargetKind.Element)
+                throw new InvalidOperationException($"Target id '{targetId}' is not a UI element target id returned by rimworld/get_ui_layout.");
+
+            if (!TryResolveTarget(target, out var surface, out var element))
+                throw new InvalidOperationException($"UI layout target '{targetId}' is no longer available. Capture a fresh layout snapshot.");
+            if (element == null || element.Scroll == null || !string.Equals(element.Kind, "scroll_view", StringComparison.Ordinal))
+                throw new InvalidOperationException($"UI layout target '{targetId}' is not a scroll view target.");
+            if (Math.Abs(deltaX) < 0.001f && Math.Abs(deltaY) < 0.001f && !targetX.HasValue && !targetY.HasValue)
+                throw new InvalidOperationException("Provide a non-zero deltaX/deltaY or a targetX/targetY offset.");
+
+            var request = new ScrollRequest
+            {
+                TargetId = targetId,
+                SurfaceTargetId = surface.SurfaceTargetId,
+                ElementIndex = element.ElementIndex,
+                Kind = element.Kind,
+                Source = element.Source,
+                Label = element.Label ?? string.Empty,
+                Rect = element.Rect,
+                Depth = element.Depth,
+                DeltaX = deltaX,
+                DeltaY = deltaY,
+                TargetX = targetX,
+                TargetY = targetY,
+                Before = element.Scroll
+            };
+            _pendingScroll = request;
+            return request;
+        }
+    }
+
     private static object SetHoveredElement(string targetId)
     {
         lock (Sync)
@@ -932,7 +1224,8 @@ internal static class RimBridgeUiWorkbench
                 Depth = element.Depth
             };
 
-            var center = new Vector2(element.Rect.X + element.Rect.Width / 2f, element.Rect.Y + element.Rect.Height / 2f);
+            var pointerRect = element.ScreenRect ?? element.Rect;
+            var center = new Vector2(pointerRect.X + pointerRect.Width / 2f, pointerRect.Y + pointerRect.Height / 2f);
             RimBridgeVirtualPointer.SetPersistentPointer(
                 kind: "ui_element",
                 targetId,
@@ -958,6 +1251,19 @@ internal static class RimBridgeUiWorkbench
 
             var request = _pendingClick;
             _pendingClick = null;
+            request.Completion.TrySetCanceled();
+        }
+    }
+
+    private static void CancelScroll(string targetId)
+    {
+        lock (Sync)
+        {
+            if (_pendingScroll == null || !string.Equals(_pendingScroll.TargetId, targetId, StringComparison.Ordinal))
+                return;
+
+            var request = _pendingScroll;
+            _pendingScroll = null;
             request.Completion.TrySetCanceled();
         }
     }
@@ -1071,6 +1377,17 @@ internal static class RimBridgeUiWorkbench
             && Math.Abs(snapshot.Height - rect.height) <= tolerance;
     }
 
+    private static bool RectApproximatelyEquals(UiRectSnapshot first, UiRectSnapshot second, float tolerance)
+    {
+        if (first == null || second == null)
+            return false;
+
+        return Math.Abs(first.X - second.X) <= tolerance
+            && Math.Abs(first.Y - second.Y) <= tolerance
+            && Math.Abs(first.Width - second.Width) <= tolerance
+            && Math.Abs(first.Height - second.Height) <= tolerance;
+    }
+
     private static (string SurfaceTargetId, string SurfaceKind, string Type, string Title, string Label, string SemanticKind, object SemanticDetails, UiRectSnapshot Rect) DescribeSurface(Window window)
     {
         var type = window.GetType().FullName ?? window.GetType().Name;
@@ -1113,6 +1430,44 @@ internal static class RimBridgeUiWorkbench
         };
     }
 
+    private static UiRectSnapshot ToScreenSnapshot(Rect rect)
+    {
+        var topLeft = UI.GUIToScreenPoint(new Vector2(rect.xMin, rect.yMin));
+        var bottomRight = UI.GUIToScreenPoint(new Vector2(rect.xMax, rect.yMax));
+        return new UiRectSnapshot
+        {
+            X = Math.Min(topLeft.x, bottomRight.x),
+            Y = Math.Min(topLeft.y, bottomRight.y),
+            Width = Math.Abs(bottomRight.x - topLeft.x),
+            Height = Math.Abs(bottomRight.y - topLeft.y)
+        };
+    }
+
+    private static UiLayoutScrollSnapshot CreateScrollSnapshot(Vector2 scrollPosition, Rect viewportRect, Rect contentRect)
+    {
+        var maxOffsetX = Math.Max(0f, contentRect.width - viewportRect.width);
+        var maxOffsetY = Math.Max(0f, contentRect.height - viewportRect.height);
+        var offsetX = Mathf.Clamp(scrollPosition.x, 0f, maxOffsetX);
+        var offsetY = Mathf.Clamp(scrollPosition.y, 0f, maxOffsetY);
+
+        return new UiLayoutScrollSnapshot
+        {
+            OffsetX = offsetX,
+            OffsetY = offsetY,
+            MaxOffsetX = maxOffsetX,
+            MaxOffsetY = maxOffsetY,
+            CanScrollX = maxOffsetX > 0.5f,
+            CanScrollY = maxOffsetY > 0.5f,
+            AtLeft = offsetX <= 0.5f,
+            AtRight = offsetX >= maxOffsetX - 0.5f,
+            AtTop = offsetY <= 0.5f,
+            AtBottom = offsetY >= maxOffsetY - 0.5f,
+            ViewportRect = ToSnapshot(viewportRect),
+            ViewportScreenRect = ToScreenSnapshot(viewportRect),
+            ContentRect = ToSnapshot(contentRect)
+        };
+    }
+
     private static string NormalizeText(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1133,6 +1488,57 @@ internal static class RimBridgeUiWorkbench
     {
         var label = string.IsNullOrWhiteSpace(element.Label) ? element.Kind : element.Label;
         return $"Activated UI target '{label}' on surface '{surface.SurfaceTargetId}'.";
+    }
+
+    private static string BuildScrollMessage(ScrollRequest request)
+    {
+        var before = request.Before;
+        var after = request.After;
+        if (before == null || after == null)
+            return $"Scrolled UI target '{request.TargetId}'.";
+
+        return $"Scrolled UI target '{request.TargetId}' from ({before.OffsetX:0.##}, {before.OffsetY:0.##}) to ({after.OffsetX:0.##}, {after.OffsetY:0.##}).";
+    }
+
+    private static object DescribeScroll(UiLayoutScrollSnapshot scroll)
+    {
+        if (scroll == null)
+            return null;
+
+        return new
+        {
+            offsetX = scroll.OffsetX,
+            offsetY = scroll.OffsetY,
+            maxOffsetX = scroll.MaxOffsetX,
+            maxOffsetY = scroll.MaxOffsetY,
+            canScrollX = scroll.CanScrollX,
+            canScrollY = scroll.CanScrollY,
+            atLeft = scroll.AtLeft,
+            atRight = scroll.AtRight,
+            atTop = scroll.AtTop,
+            atBottom = scroll.AtBottom,
+            viewportRect = new
+            {
+                x = scroll.ViewportRect.X,
+                y = scroll.ViewportRect.Y,
+                width = scroll.ViewportRect.Width,
+                height = scroll.ViewportRect.Height
+            },
+            viewportScreenRect = new
+            {
+                x = scroll.ViewportScreenRect.X,
+                y = scroll.ViewportScreenRect.Y,
+                width = scroll.ViewportScreenRect.Width,
+                height = scroll.ViewportScreenRect.Height
+            },
+            contentRect = new
+            {
+                x = scroll.ContentRect.X,
+                y = scroll.ContentRect.Y,
+                width = scroll.ContentRect.Width,
+                height = scroll.ContentRect.Height
+            }
+        };
     }
 
     private static object DescribeLayout(UiLayoutSnapshot snapshot)
@@ -1161,6 +1567,13 @@ internal static class RimBridgeUiWorkbench
                     width = surface.Rect.Width,
                     height = surface.Rect.Height
                 },
+                screenRect = new
+                {
+                    x = surface.ScreenRect.X,
+                    y = surface.ScreenRect.Y,
+                    width = surface.ScreenRect.Width,
+                    height = surface.ScreenRect.Height
+                },
                 elementCount = surface.Elements.Count,
                 actionableElementCount = surface.Elements.Count(element => element.Actionable),
                 elements = surface.Elements.Select(element => new
@@ -1182,9 +1595,38 @@ internal static class RimBridgeUiWorkbench
                         y = element.Rect.Y,
                         width = element.Rect.Width,
                         height = element.Rect.Height
-                    }
+                    },
+                    screenRect = new
+                    {
+                        x = element.ScreenRect.X,
+                        y = element.ScreenRect.Y,
+                        width = element.ScreenRect.Width,
+                        height = element.ScreenRect.Height
+                    },
+                    scroll = DescribeScroll(element.Scroll)
                 }).ToList()
             }).ToList()
+        };
+    }
+
+    private static object CreateScrollResponse(ScrollRequest request)
+    {
+        var before = request.Before;
+        var after = request.After;
+        var changed = before == null
+            || after == null
+            || Math.Abs(before.OffsetX - after.OffsetX) > 0.001f
+            || Math.Abs(before.OffsetY - after.OffsetY) > 0.001f;
+
+        return new
+        {
+            success = true,
+            command = "scroll_ui_target",
+            changed,
+            message = changed ? request.Message : request.Message + " Scroll offset did not change.",
+            targetId = request.TargetId,
+            before = DescribeScroll(before),
+            after = DescribeScroll(after)
         };
     }
 
@@ -1261,9 +1703,9 @@ internal static class Widgets_BeginScrollView_UiWorkbench_Patch
         return AccessTools.Method(typeof(Widgets), nameof(Widgets.BeginScrollView), [typeof(Rect), typeof(Vector2).MakeByRefType(), typeof(Rect), typeof(bool)]);
     }
 
-    public static void Prefix(Rect outRect, Vector2 scrollPosition, Rect viewRect)
+    public static void Prefix(Rect outRect, ref Vector2 scrollPosition, Rect viewRect)
     {
-        RimBridgeUiWorkbench.BeginContainer("scroll_view", "widgets.begin_scroll_view", outRect);
+        RimBridgeUiWorkbench.BeginScrollViewContainer(outRect, ref scrollPosition, viewRect);
     }
 
     public static void Postfix()
@@ -1446,8 +1888,9 @@ internal static class Gui_Button_String_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(string text, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string text, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "button" : text)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1463,8 +1906,9 @@ internal static class Gui_Button_StringStyle_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(string text, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string text, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "button" : text)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1481,9 +1925,10 @@ internal static class Gui_Button_Content_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(GUIContent content, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(GUIContent content, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var label = content?.text;
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1500,9 +1945,10 @@ internal static class Gui_Button_ContentStyle_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, position);
     }
 
-    public static void Postfix(GUIContent content, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(GUIContent content, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var label = content?.text;
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1694,8 +2140,9 @@ internal static class Widgets_RadioButtonLabeled_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(string labelText, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string labelText, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(labelText) ? "radio button" : labelText)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1711,8 +2158,9 @@ internal static class Widgets_ButtonInvisible_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, butRect);
     }
 
-    public static void Postfix(bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, "Activated an invisible button UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1738,8 +2186,9 @@ internal static class Widgets_ButtonText_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(string label, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string label, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1755,8 +2204,9 @@ internal static class Widgets_ButtonTextColored_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(string label, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string label, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1772,8 +2222,9 @@ internal static class Widgets_ButtonImage_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, butRect);
     }
 
-    public static void Postfix(bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, "Activated an icon button UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1789,8 +2240,9 @@ internal static class Widgets_ButtonImageColored_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, butRect);
     }
 
-    public static void Postfix(bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, "Activated an icon button UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1806,8 +2258,9 @@ internal static class Widgets_ButtonImageHoverColored_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, butRect);
     }
 
-    public static void Postfix(bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, "Activated an icon button UI target on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1898,8 +2351,9 @@ internal static class ListingStandard_ButtonText_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(string label, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string label, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
@@ -1916,8 +2370,9 @@ internal static class ListingStandard_ButtonTextLabeled_UiWorkbench_Patch
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
-    public static void Postfix(string buttonLabel, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    public static void Postfix(string buttonLabel, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
+        RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
         RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(buttonLabel) ? "button" : buttonLabel)}' on the current surface.");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }

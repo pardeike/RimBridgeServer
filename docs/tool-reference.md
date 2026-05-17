@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `111` tools total
+- `112` tools total
 - `18` `rimbridge/*` tools
-- `93` `rimworld/*` tools
+- `94` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -530,10 +530,10 @@ Parameters:
 
 ### `rimworld/get_ui_layout`
 
-Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable control target ids
+Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata
 
 Returns:
-- A structured layout snapshot for the requested surface, including actionable target ids that can be passed to rimworld/click_ui_target.
+- A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/click_ui_target, or rimworld/scroll_ui_target.
 
 Parameters:
 - `surfaceId` (`string`, `optional`, default `null`): Optional surface target id such as a window target from rimworld/get_screen_targets or a main-tab target from rimworld/list_main_tabs
@@ -546,6 +546,18 @@ Activate an actionable UI control target returned by rimworld/get_ui_layout on t
 Parameters:
 - `targetId` (`string`, `required`): Actionable ui-element target id returned by rimworld/get_ui_layout
 - `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the target control to be redrawn so the click can be injected
+
+### `rimworld/scroll_ui_target`
+
+Scroll a scroll_view ui-element target returned by rimworld/get_ui_layout on the next real draw frame
+
+Parameters:
+- `targetId` (`string`, `required`): Scroll-view ui-element target id returned by rimworld/get_ui_layout
+- `deltaY` (`float`, `optional`, default `0f`): Vertical logical-pixel delta to add to the current scroll offset; positive values scroll down
+- `deltaX` (`float`, `optional`, default `0f`): Horizontal logical-pixel delta to add to the current scroll offset; positive values scroll right
+- `targetY` (`float?`, `optional`, default `null`): Optional absolute vertical scroll offset; when provided it overrides deltaY
+- `targetX` (`float?`, `optional`, default `null`): Optional absolute horizontal scroll offset; when provided it overrides deltaX
+- `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the target scroll view to be redrawn so the scroll can be applied
 
 ### `rimworld/set_hover_target`
 
@@ -812,33 +824,35 @@ Parameters:
 
 ### `rimworld/frame_cell_rect`
 
-Frame a requested map-cell rectangle plus optional margin cells and leave the camera at the tightest full-viewport view that keeps the padded rect visible
+Frame a requested map-cell rectangle plus optional margin cells at the current camera zoom, or at an explicit root size when provided
 
 Parameters:
 - `x` (`int`, `required`): Top-left cell x coordinate of the requested rectangle
 - `z` (`int`, `required`): Top-left cell z coordinate of the requested rectangle
 - `width` (`int`, `optional`, default `1`): Requested rectangle width in map cells
 - `height` (`int`, `optional`, default `1`): Requested rectangle height in map cells
-- `paddingCells` (`int`, `optional`, default `4`): Extra margin cells to add around the requested rectangle before fitting the camera; larger values zoom out
+- `paddingCells` (`int`, `optional`, default `4`): Extra margin cells to add around the requested rectangle before framing and cropping
+- `rootSize` (`float`, `optional`, default `0f`): Optional camera root size to use; omit or pass 0 to preserve the current camera zoom
 
 ### `rimworld/screenshot_cell_rect`
 
-Frame a requested map-cell rectangle plus optional margin cells, capture the full viewport at the tightest view that keeps the padded rect visible, and restore the prior camera immediately after by default
+Center a requested map-cell rectangle plus optional margin cells at the current camera zoom, capture it, crop to the cell bounds, and restore the prior camera immediately after by default
 
 Parameters:
 - `x` (`int`, `required`): Top-left cell x coordinate of the requested rectangle
 - `z` (`int`, `required`): Top-left cell z coordinate of the requested rectangle
 - `width` (`int`, `optional`, default `1`): Requested rectangle width in map cells
 - `height` (`int`, `optional`, default `1`): Requested rectangle height in map cells
-- `paddingCells` (`int`, `optional`, default `4`): Extra margin cells to add around the requested rectangle before fitting the camera; larger values zoom out
+- `paddingCells` (`int`, `optional`, default `4`): Extra margin cells to add around the requested rectangle before framing and cropping
 - `fileName` (`string`, `optional`, default `null`): Optional screenshot file name without extension
 - `includeTargets` (`bool`, `optional`, default `true`): Include current screen target metadata such as windows and context menus
 - `suppressMessage` (`bool`, `optional`, default `true`): Suppress RimWorld's screenshot-taken message during this automated capture
-- `doNotResetCamera` (`bool`, `optional`, default `false`): True to leave the camera and temporary camera zoom settings at the framed view after capture instead of restoring them
+- `doNotResetCamera` (`bool`, `optional`, default `false`): True to leave the camera at the framed view after capture instead of restoring it
+- `rootSize` (`float`, `optional`, default `0f`): Optional camera root size to use; omit or pass 0 to preserve the current camera zoom
 
 ### `rimworld/take_screenshot`
 
-Take an in-game screenshot and return the saved file path plus optional target metadata
+Take an in-game screenshot and optionally crop it to a screen target, UI surface, UI element, or scroll-view region
 
 Returns:
 - The saved screenshot path and, when requested, current target metadata describing visible windows, menus, and other screen targets.
@@ -847,7 +861,7 @@ Parameters:
 - `fileName` (`string`, `optional`, default `null`): Optional screenshot file name without extension
 - `includeTargets` (`bool`, `optional`, default `true`): Include current screen target metadata such as windows and context menus
 - `suppressMessage` (`bool`, `optional`, default `true`): Suppress RimWorld's screenshot-taken message during this automated capture
-- `clipTargetId` (`string`, `optional`, default `null`): Optional target id from rimworld/get_screen_targets to crop around
+- `clipTargetId` (`string`, `optional`, default `null`): Optional target id from rimworld/get_screen_targets or rimworld/get_ui_layout to crop around, including windows, ui-surface ids, ui-element ids, and scroll_view elements
 - `clipPadding` (`int`, `optional`, default `8`): Logical screen-pixel padding to include around the clip target
 
 ### `rimworld/list_saves`
