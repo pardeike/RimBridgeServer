@@ -204,6 +204,18 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(durationMs), durationMs), (nameof(speed), speed), (nameof(pollIntervalMs), pollIntervalMs)));
     }
 
+    [ReadmeTool("Debug Actions And Mods", "Advance the paused game by an exact number of ticks, one tick per Unity update frame, mirroring RimWorld's Dev_TickOnce path while preserving render-frame boundaries")]
+    [Tool("rimworld/step_game_ticks", Description = "Advance the paused game by an exact number of ticks, one tick per Unity update frame, mirroring RimWorld's Dev_TickOnce path while preserving render-frame boundaries")]
+    public object StepGameTicks(
+        [ToolParameter(Description = "Number of game ticks to advance. Each requested tick is executed on a separate Unity update frame.")] int ticks = 1,
+        [ToolParameter(Description = "Maximum time to wait in milliseconds before cancelling the step request")] int timeoutMs = 10000,
+        [ToolParameter(Description = "How often to poll step completion while waiting")] int pollIntervalMs = 10,
+        [ToolParameter(Description = "Set time speed to Paused before stepping. If false, the game must already be paused.")] bool pauseFirst = true,
+        [ToolParameter(Description = "Play RimWorld's dev tick-once clock sound for each stepped tick")] bool playSound = false)
+    {
+        return InvokeAlias(Arguments((nameof(ticks), ticks), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(pauseFirst), pauseFirst), (nameof(playSound), playSound)));
+    }
+
     [ReadmeTool("Debug Actions And Mods", "List top-level RimWorld debug action roots using stable internal debug-action paths")]
     [Tool("rimworld/list_debug_action_roots", Description = "List top-level RimWorld debug action roots using stable internal debug-action paths")]
     public object ListDebugActionRoots([ToolParameter(Description = "Include roots that are currently hidden in the active game state")] bool includeHidden = false)

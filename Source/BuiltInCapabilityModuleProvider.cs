@@ -306,6 +306,7 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             "rimworld/load_game_ready" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/switch_language" => CapabilityExecutionKind.LongEventBound,
             "rimworld/play_for" => CapabilityExecutionKind.BackgroundObserved,
+            "rimworld/step_game_ticks" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/take_screenshot" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/frame_cell_rect" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/screenshot_cell_rect" => CapabilityExecutionKind.BackgroundObserved,

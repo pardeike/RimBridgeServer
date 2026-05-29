@@ -156,6 +156,73 @@ internal sealed class LifecycleCapabilityModule
         }
     }
 
+    public object StepGameTicks(int ticks = 1, int timeoutMs = 10000, int pollIntervalMs = 10, bool pauseFirst = true, bool playSound = false)
+    {
+        if (ticks <= 0)
+        {
+            return new
+            {
+                success = false,
+                message = "ticks must be greater than 0.",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        if (timeoutMs < 0)
+        {
+            return new
+            {
+                success = false,
+                message = "timeoutMs cannot be negative.",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        if (pollIntervalMs < 0)
+        {
+            return new
+            {
+                success = false,
+                message = "pollIntervalMs cannot be negative.",
+                state = RimWorldState.ToolStateSnapshot()
+            };
+        }
+
+        var start = RimBridgeMainThread.Invoke(() => RimWorldTickStepper.Start(ticks, timeoutMs, pauseFirst, playSound), timeoutMs: 5000);
+        if (start.Status != "active")
+            return start.ToToolResponse();
+
+        var waiter = new ConditionWaiter();
+        var outcome = waiter.WaitUntil(() =>
+        {
+            var current = RimBridgeMainThread.Invoke(() => RimWorldTickStepper.GetSnapshot(start.StepId), timeoutMs: 5000);
+            var terminal = current.Status != "active";
+            return new WaitProbeResult
+            {
+                IsSatisfied = terminal,
+                Message = current.Message,
+                Snapshot = current
+            };
+        }, new WaitOptions
+        {
+            TimeoutMs = timeoutMs,
+            PollIntervalMs = pollIntervalMs,
+            TimeoutMessage = $"Timed out waiting to advance {ticks} game tick(s).",
+            HandleProbeException = ex => ex is TimeoutException
+                ? new WaitProbeResult
+                {
+                    IsSatisfied = false,
+                    Message = "Retrying after main-thread timeout."
+                }
+                : null
+        });
+
+        if (outcome.Satisfied && outcome.Snapshot is RimWorldTickStepper.StepSnapshot completed)
+            return completed.ToToolResponse();
+
+        return RimBridgeMainThread.Invoke(() => RimWorldTickStepper.Cancel(start.StepId, outcome.Message), timeoutMs: 5000).ToToolResponse();
+    }
+
     public object StartDebugGame()
     {
         return StartDebugGameCore();

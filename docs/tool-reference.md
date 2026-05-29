@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `112` tools total
+- `113` tools total
 - `18` `rimbridge/*` tools
-- `94` `rimworld/*` tools
+- `95` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -192,6 +192,17 @@ Parameters:
 - `durationMs` (`int`, `required`): Real-time duration in milliseconds to keep the game unpaused before pausing it again
 - `speed` (`string`, `optional`, default `"Normal"`): Desired play speed while the game is running: Normal, Fast, Superfast, or Ultrafast
 - `pollIntervalMs` (`int`, `optional`, default `25`): How often to poll playback state while waiting to repause
+
+### `rimworld/step_game_ticks`
+
+Advance the paused game by an exact number of ticks, one tick per Unity update frame, mirroring RimWorld's Dev_TickOnce path while preserving render-frame boundaries
+
+Parameters:
+- `ticks` (`int`, `optional`, default `1`): Number of game ticks to advance. Each requested tick is executed on a separate Unity update frame.
+- `timeoutMs` (`int`, `optional`, default `10000`): Maximum time to wait in milliseconds before cancelling the step request
+- `pollIntervalMs` (`int`, `optional`, default `10`): How often to poll step completion while waiting
+- `pauseFirst` (`bool`, `optional`, default `true`): Set time speed to Paused before stepping. If false, the game must already be paused.
+- `playSound` (`bool`, `optional`, default `false`): Play RimWorld's dev tick-once clock sound for each stepped tick
 
 ### `rimworld/list_debug_action_roots`
 
