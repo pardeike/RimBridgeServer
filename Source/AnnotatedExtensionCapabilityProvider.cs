@@ -19,6 +19,11 @@ namespace RimBridgeServer;
 
 internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilityProvider
 {
+    private const int DefaultExtensionToolTimeoutMs = 60000;
+    private const int MinimumExtensionToolTimeoutMs = 1000;
+    private const int MaximumExtensionToolTimeoutMs = 600000;
+    private const string ExecutionTimeoutArgumentName = "_rimBridgeTimeoutMs";
+
     internal sealed class DiscoveredTool
     {
         public string Alias { get; set; } = string.Empty;
@@ -148,13 +153,31 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
             CapabilityId = descriptor.Id,
             StartedAtUtc = invocation.RequestedAtUtc,
             MarshalToMainThread = true,
-            TimeoutMs = 0,
+            TimeoutMs = ResolveExecutionTimeoutMs(invocation.Arguments),
             FailureCode = "capability.failed",
             TimeoutCode = "capability.timed_out",
             CancellationCode = "capability.cancelled"
         });
 
         return Task.FromResult(envelope);
+    }
+
+    private static int ResolveExecutionTimeoutMs(IDictionary<string, object> arguments)
+    {
+        if (arguments != null && arguments.TryGetValue(ExecutionTimeoutArgumentName, out var suppliedValue))
+        {
+            try
+            {
+                var requested = Convert.ToInt32(suppliedValue, CultureInfo.InvariantCulture);
+                return Math.Max(MinimumExtensionToolTimeoutMs, Math.Min(MaximumExtensionToolTimeoutMs, requested));
+            }
+            catch
+            {
+                return DefaultExtensionToolTimeoutMs;
+            }
+        }
+
+        return DefaultExtensionToolTimeoutMs;
     }
 
     private string CreateCapabilityId(string typeSegment, MethodInfo method, ISet<string> usedIds)
