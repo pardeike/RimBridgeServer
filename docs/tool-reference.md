@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `113` tools total
+- `119` tools total
 - `18` `rimbridge/*` tools
-- `95` `rimworld/*` tools
+- `101` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -170,6 +170,52 @@ Get basic information about the current RimWorld game
 
 Parameters: none.
 
+### `rimworld/dpa_status`
+
+Read Dubs Performance Analyzer availability and bridge integration state without mutating DPA
+
+Parameters:
+- `includePresets` (`bool`, `optional`, default `true`): Include built-in DPA target presets in the response
+
+### `rimworld/dpa_patch_methods`
+
+Patch explicit methods or a built-in preset into Dubs Performance Analyzer for repeatable Tick or Update profiling
+
+Parameters:
+- `category` (`string`, `optional`, default `"Tick"`): DPA category for patching: Tick or Update
+- `inputMode` (`string`, `optional`, default `"Method"`): DPA input mode: Method or Type. Method accepts targets like Verse.Pawn:Tick; Type accepts targets like Verse.Pawn
+- `preset` (`string`, `optional`, default `"none"`): Built-in target preset: general_tick, general_update, general_pawn_ai_methods, or none
+- `targets` (`string`, `optional`, default `""`): Optional newline, semicolon, pipe, or comma separated method or type targets for the selected input mode
+- `initialize` (`bool`, `optional`, default `true`): Initialize DPA profiling state before patching
+- `resetAfterPatch` (`bool`, `optional`, default `true`): Reset DPA profiler buffers after patching
+- `previewLimit` (`int`, `optional`, default `8`): Maximum number of resolved method signatures to preview per target
+
+### `rimworld/dpa_snapshot`
+
+Snapshot current Dubs Performance Analyzer profiler rows sorted by average, max, total, calls, calls per entry, or label
+
+Parameters:
+- `sortBy` (`string`, `optional`, default `"average"`): Snapshot sort: average, max, total, calls, callsPerEntry, or label
+- `limit` (`int`, `optional`, default `30`): Maximum profiler rows to return
+
+### `rimworld/dpa_reset`
+
+Reset Dubs Performance Analyzer profiler buffers without changing the active patch set
+
+Parameters: none.
+
+### `rimworld/dpa_stop`
+
+Stop Dubs Performance Analyzer profiling and reset its UI state without running cleanup
+
+Parameters: none.
+
+### `rimworld/dpa_cleanup`
+
+Request Dubs Performance Analyzer cleanup after a profiling run
+
+Parameters: none.
+
 ### `rimworld/pause_game`
 
 Pause or unpause the game
@@ -186,12 +232,13 @@ Parameters:
 
 ### `rimworld/play_for`
 
-Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, ending early if the game is paused, returns to the main menu, or the session changes
+Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, optionally suppressing RimWorld's forced-normal-speed slowdown during the run
 
 Parameters:
 - `durationMs` (`int`, `required`): Real-time duration in milliseconds to keep the game unpaused before pausing it again
 - `speed` (`string`, `optional`, default `"Normal"`): Desired play speed while the game is running: Normal, Fast, Superfast, or Ultrafast
 - `pollIntervalMs` (`int`, `optional`, default `25`): How often to poll playback state while waiting to repause
+- `forceRequestedSpeed` (`bool`, `optional`, default `false`): When true, temporarily suppress RimWorld's forced-normal-speed slowdown while preserving the normal TickManager update path
 
 ### `rimworld/step_game_ticks`
 

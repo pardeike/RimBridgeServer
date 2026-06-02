@@ -5,6 +5,7 @@ internal static class ReadmeToolSurface
     private static readonly string[] AllowedGroups =
     [
         "Bridge Diagnostics",
+        "Performance Profiling",
         "Scripting",
         "Debug Actions And Mods",
         "Architect And Map State",

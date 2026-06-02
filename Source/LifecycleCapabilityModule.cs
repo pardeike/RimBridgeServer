@@ -68,7 +68,7 @@ internal sealed class LifecycleCapabilityModule
         };
     }
 
-    public object PlayFor(int durationMs, string speed = "Normal", int pollIntervalMs = 25)
+    public object PlayFor(int durationMs, string speed = "Normal", int pollIntervalMs = 25, bool forceRequestedSpeed = false)
     {
         if (durationMs <= 0)
         {
@@ -110,6 +110,9 @@ internal sealed class LifecycleCapabilityModule
             };
         }
 
+        bool? previousNeverForceNormalSpeed = null;
+        bool? restoredNeverForceNormalSpeed = null;
+
         try
         {
             Stopwatch stopwatch = null;
@@ -121,10 +124,31 @@ internal sealed class LifecycleCapabilityModule
                 readState: () => RimBridgeMainThread.Invoke(CapturePlaybackState, timeoutMs: 5000),
                 startPlayback: () => RimBridgeMainThread.Invoke(() =>
                 {
+                    if (forceRequestedSpeed && previousNeverForceNormalSpeed == null)
+                    {
+                        previousNeverForceNormalSpeed = DebugViewSettings.neverForceNormalSpeed;
+                        DebugViewSettings.neverForceNormalSpeed = true;
+                    }
                     stopwatch = Stopwatch.StartNew();
                     EnsurePlaybackRunning(parsedSpeed);
                 }, timeoutMs: 5000),
-                pausePlayback: () => RimBridgeMainThread.Invoke(PauseIfNeeded, timeoutMs: 5000));
+                pausePlayback: () => RimBridgeMainThread.Invoke(() =>
+                {
+                    try
+                    {
+                        PauseIfNeeded();
+                    }
+                    finally
+                    {
+                        restoredNeverForceNormalSpeed = RestoreNeverForceNormalSpeed(previousNeverForceNormalSpeed);
+                    }
+                }, timeoutMs: 5000));
+
+            restoredNeverForceNormalSpeed ??= RimBridgeMainThread.Invoke(
+                () => RestoreNeverForceNormalSpeed(previousNeverForceNormalSpeed),
+                timeoutMs: 5000);
+            var finalNeverForceNormalSpeed = RimBridgeMainThread.Invoke(() => DebugViewSettings.neverForceNormalSpeed, timeoutMs: 5000);
+            var finalTimeSpeed = RimBridgeMainThread.Invoke(() => Find.TickManager?.CurTimeSpeed.ToString(), timeoutMs: 5000);
 
             return new
             {
@@ -133,6 +157,11 @@ internal sealed class LifecycleCapabilityModule
                 elapsedMs = result.ElapsedMs,
                 pollIntervalMs,
                 timeSpeed = parsedSpeed.ToString(),
+                forceRequestedSpeed,
+                previousNeverForceNormalSpeed,
+                restoredNeverForceNormalSpeed,
+                finalNeverForceNormalSpeed,
+                finalTimeSpeed,
                 paused = result.PausedAtEnd,
                 initiallyPaused = result.InitiallyPaused,
                 startTick = result.StartTick,
@@ -147,10 +176,27 @@ internal sealed class LifecycleCapabilityModule
         }
         catch (Exception ex)
         {
+            if (forceRequestedSpeed && previousNeverForceNormalSpeed != null)
+            {
+                try
+                {
+                    restoredNeverForceNormalSpeed = RimBridgeMainThread.Invoke(
+                        () => RestoreNeverForceNormalSpeed(previousNeverForceNormalSpeed),
+                        timeoutMs: 5000);
+                }
+                catch
+                {
+                    restoredNeverForceNormalSpeed = null;
+                }
+            }
+
             return new
             {
                 success = false,
                 message = $"Failed to play for {durationMs}ms: {ex.Message}",
+                forceRequestedSpeed,
+                previousNeverForceNormalSpeed,
+                restoredNeverForceNormalSpeed,
                 state = RimWorldState.ToolStateSnapshot()
             };
         }
@@ -555,5 +601,14 @@ internal sealed class LifecycleCapabilityModule
 
         if (!Find.TickManager.Paused)
             Find.TickManager.TogglePaused();
+    }
+
+    private static bool? RestoreNeverForceNormalSpeed(bool? previousNeverForceNormalSpeed)
+    {
+        if (previousNeverForceNormalSpeed == null)
+            return null;
+
+        DebugViewSettings.neverForceNormalSpeed = previousNeverForceNormalSpeed.Value;
+        return DebugViewSettings.neverForceNormalSpeed;
     }
 }

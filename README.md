@@ -22,6 +22,7 @@ RimBridgeServer runs inside RimWorld and exposes a tool surface for:
 - changing mod settings and mod load order
 - capturing screenshots, including clipped screenshots for known UI or screen targets
 - running small automation scripts through JSON or Lua front-ends
+- driving Dubs Performance Analyzer profiling when DPA is installed and active
 
 It is designed to stay as close as possible to RimWorld's own logical seams instead of reimplementing gameplay logic outside the game.
 
@@ -57,6 +58,8 @@ If you want the same stack used for real mod repro-and-fix sessions, use:
 2. `RimBridgeServer` inside RimWorld for live game inspection and control
 3. [GABS](https://github.com/pardeike/GABS) to launch RimWorld and surface the live tools to your AI client
 4. [DecompilerServer](https://github.com/pardeike/DecompilerServer) to inspect `Assembly-CSharp.dll` and related managed code while debugging
+
+When [Dubs Performance Analyzer](https://steamcommunity.com/sharedfiles/filedetails/?id=2038874626) is installed and active, RimBridgeServer also exposes generic DPA profiling tools for repeatable method-level Tick and Update measurements.
 
 There is a short setup order here: [docs/rimworld-mod-debugging-stack.md](docs/rimworld-mod-debugging-stack.md).
 
@@ -193,6 +196,15 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimbridge/wait_for_game_loaded` - Wait until RimWorld reaches the requested loaded-game readiness level
 - `rimbridge/wait_for_long_event_idle` - Wait until RimWorld reports no long events in progress
 
+### Performance Profiling
+
+- `rimworld/dpa_status` - Read Dubs Performance Analyzer availability and bridge integration state without mutating DPA
+- `rimworld/dpa_patch_methods` - Patch explicit methods or a built-in preset into Dubs Performance Analyzer for repeatable Tick or Update profiling
+- `rimworld/dpa_snapshot` - Snapshot current Dubs Performance Analyzer profiler rows sorted by average, max, total, calls, calls per entry, or label
+- `rimworld/dpa_reset` - Reset Dubs Performance Analyzer profiler buffers without changing the active patch set
+- `rimworld/dpa_stop` - Stop Dubs Performance Analyzer profiling and reset its UI state without running cleanup
+- `rimworld/dpa_cleanup` - Request Dubs Performance Analyzer cleanup after a profiling run
+
 ### Scripting
 
 - `rimbridge/get_script_reference` - Get a machine-readable authoring reference for `rimbridge/run_script`, including statement types, expressions, conditions, limits, and examples
@@ -207,7 +219,7 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 
 - `rimworld/pause_game` - Pause or unpause the game
 - `rimworld/set_time_speed` - Set RimWorld's current time speed directly
-- `rimworld/play_for` - Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, ending early if the game is paused, returns to the main menu, or the session changes
+- `rimworld/play_for` - Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, optionally suppressing RimWorld's forced-normal-speed slowdown during the run
 - `rimworld/step_game_ticks` - Advance the paused game by an exact number of ticks, one tick per Unity update frame, mirroring RimWorld's Dev_TickOnce path while preserving render-frame boundaries
 - `rimworld/list_debug_action_roots` - List top-level RimWorld debug action roots using stable internal debug-action paths
 - `rimworld/list_debug_action_children` - List direct children of a RimWorld debug action path

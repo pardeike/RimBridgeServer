@@ -30,6 +30,12 @@ internal static class RimBridgeCapabilities
             aliasMetadataType: typeof(RimBridgeTools),
             source: CapabilitySourceKind.Core));
         registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
+            providerId: "rimbridge.optional/dpa",
+            category: "profiling",
+            module: new DpaCapabilityModule(),
+            aliasMetadataType: typeof(RimBridgeTools),
+            source: CapabilitySourceKind.Optional));
+        registry.RegisterProvider(new BuiltInCapabilityModuleProvider(
             providerId: "rimbridge.core/scripting",
             category: "scripting",
             module: new ScriptingCapabilityModule(registry),

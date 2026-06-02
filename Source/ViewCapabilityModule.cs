@@ -23,6 +23,10 @@ internal sealed class ViewCapabilityModule
 
         public string OutputFileName { get; set; } = string.Empty;
 
+        public string SaveDataFolder { get; set; } = string.Empty;
+
+        public string ScreenshotFolder { get; set; } = string.Empty;
+
         public object ScreenTargets { get; set; }
 
         public bool RestoreSuppressMessage { get; set; }
@@ -62,6 +66,8 @@ internal sealed class ViewCapabilityModule
         public string FileName { get; set; } = string.Empty;
 
         public string RequestedFileName { get; set; } = string.Empty;
+
+        public string SaveDataFolder { get; set; } = string.Empty;
 
         public string ScreenshotFolder { get; set; } = string.Empty;
 
@@ -482,6 +488,7 @@ internal sealed class ViewCapabilityModule
                 sourcePath = string.IsNullOrWhiteSpace(capture?.SourcePath) ? null : capture.SourcePath,
                 fileName = capture?.FileName,
                 requestedFileName = capture?.RequestedFileName,
+                saveDataFolder = capture?.SaveDataFolder,
                 screenshotFolder = capture?.ScreenshotFolder,
                 sizeBytes = capture?.SizeBytes,
                 capturedAtUtc = capture?.CapturedAtUtc,
@@ -534,6 +541,7 @@ internal sealed class ViewCapabilityModule
                 sourcePath = string.IsNullOrWhiteSpace(capture.SourcePath) ? null : capture.SourcePath,
                 fileName = capture.FileName,
                 requestedFileName = capture.RequestedFileName,
+                saveDataFolder = capture.SaveDataFolder,
                 screenshotFolder = capture.ScreenshotFolder,
                 sizeBytes = capture.SizeBytes,
                 capturedAtUtc = capture.CapturedAtUtc,
@@ -563,6 +571,7 @@ internal sealed class ViewCapabilityModule
             sourcePath = string.IsNullOrWhiteSpace(capture.SourcePath) ? null : capture.SourcePath,
             fileName = capture.FileName,
             requestedFileName = capture.RequestedFileName,
+            saveDataFolder = capture.SaveDataFolder,
             screenshotFolder = capture.ScreenshotFolder,
             sizeBytes = capture.SizeBytes,
             capturedAtUtc = capture.CapturedAtUtc,
@@ -649,14 +658,18 @@ internal sealed class ViewCapabilityModule
             if (suppressMessage)
                 ScreenshotTaker.suppressMessage = true;
 
+            var saveDataFolder = GetFullPath(GenFilePaths.SaveDataFolderPath);
+            var screenshotFolder = GetFullPath(GenFilePaths.ScreenshotFolderPath);
             ScreenshotTaker.TakeNonSteamShot(safeName);
             var hasClip = resolvedClipArea != null;
             var outputFileName = hasClip ? safeName + (clipOutputSuffix ?? "__clip") : safeName;
             return new PendingScreenshotCapture
             {
-                ExpectedPath = Path.Combine(GenFilePaths.ScreenshotFolderPath, safeName + ".png"),
-                OutputPath = Path.Combine(GenFilePaths.ScreenshotFolderPath, outputFileName + ".png"),
+                ExpectedPath = Path.Combine(screenshotFolder, safeName + ".png"),
+                OutputPath = Path.Combine(screenshotFolder, outputFileName + ".png"),
                 OutputFileName = outputFileName,
+                SaveDataFolder = saveDataFolder,
+                ScreenshotFolder = screenshotFolder,
                 ScreenTargets = screenTargets,
                 RestoreSuppressMessage = restoreSuppressMessage,
                 ClipTargetId = resolvedClipTargetId,
@@ -700,7 +713,8 @@ internal sealed class ViewCapabilityModule
                                     SourcePath = capture.ExpectedPath,
                                     FileName = safeName,
                                     RequestedFileName = safeName,
-                                    ScreenshotFolder = GenFilePaths.ScreenshotFolderPath,
+                                    SaveDataFolder = capture.SaveDataFolder,
+                                    ScreenshotFolder = capture.ScreenshotFolder,
                                     SuppressMessage = suppressMessage
                                 };
                             }
@@ -717,7 +731,8 @@ internal sealed class ViewCapabilityModule
                             SourcePath = clipPath == null ? string.Empty : capture.ExpectedPath,
                             FileName = clipPath == null ? safeName : capture.OutputFileName,
                             RequestedFileName = safeName,
-                            ScreenshotFolder = GenFilePaths.ScreenshotFolderPath,
+                            SaveDataFolder = capture.SaveDataFolder,
+                            ScreenshotFolder = capture.ScreenshotFolder,
                             SizeBytes = info.Length,
                             CapturedAtUtc = DateTime.UtcNow,
                             SuppressMessage = suppressMessage,
@@ -740,7 +755,8 @@ internal sealed class ViewCapabilityModule
                 Success = false,
                 Message = "Timed out waiting for RimWorld to finish writing the screenshot file.",
                 RequestedFileName = safeName,
-                ScreenshotFolder = GenFilePaths.ScreenshotFolderPath,
+                SaveDataFolder = capture.SaveDataFolder,
+                ScreenshotFolder = capture.ScreenshotFolder,
                 SuppressMessage = suppressMessage,
                 ExpectedPath = capture.ExpectedPath
             };
@@ -767,6 +783,7 @@ internal sealed class ViewCapabilityModule
             sourcePath = string.IsNullOrWhiteSpace(capture.SourcePath) ? null : capture.SourcePath,
             fileName = string.IsNullOrWhiteSpace(capture.FileName) ? null : capture.FileName,
             requestedFileName = string.IsNullOrWhiteSpace(capture.RequestedFileName) ? null : capture.RequestedFileName,
+            saveDataFolder = string.IsNullOrWhiteSpace(capture.SaveDataFolder) ? null : capture.SaveDataFolder,
             screenshotFolder = string.IsNullOrWhiteSpace(capture.ScreenshotFolder) ? null : capture.ScreenshotFolder,
             sizeBytes = capture.SizeBytes,
             capturedAtUtc = capture.CapturedAtUtc,
@@ -788,6 +805,11 @@ internal sealed class ViewCapabilityModule
             screenTargets = capture.ScreenTargets,
             expectedPath = string.IsNullOrWhiteSpace(capture.ExpectedPath) ? null : capture.ExpectedPath
         };
+    }
+
+    private static string GetFullPath(string path)
+    {
+        return string.IsNullOrWhiteSpace(path) ? string.Empty : Path.GetFullPath(path);
     }
 
     private static CameraSnapshot CaptureCameraSnapshot()

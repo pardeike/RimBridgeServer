@@ -119,6 +119,65 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs)));
     }
 
+    [ReadmeTool("Performance Profiling", "Read Dubs Performance Analyzer availability and bridge integration state without mutating DPA")]
+    [Tool("rimworld/dpa_status", Description = "Read Dubs Performance Analyzer availability and bridge integration state without mutating DPA")]
+    public object DpaStatus(
+        [ToolParameter(Description = "Include built-in DPA target presets in the response")] bool includePresets = true)
+    {
+        return InvokeAlias(Arguments((nameof(includePresets), includePresets)));
+    }
+
+    [ReadmeTool("Performance Profiling", "Patch explicit methods or a built-in preset into Dubs Performance Analyzer for repeatable Tick or Update profiling")]
+    [Tool("rimworld/dpa_patch_methods", Description = "Patch explicit methods or a built-in preset into Dubs Performance Analyzer for repeatable Tick or Update profiling")]
+    public object DpaPatchMethods(
+        [ToolParameter(Description = "DPA category for patching: Tick or Update")] string category = "Tick",
+        [ToolParameter(Description = "DPA input mode: Method or Type. Method accepts targets like Verse.Pawn:Tick; Type accepts targets like Verse.Pawn")] string inputMode = "Method",
+        [ToolParameter(Description = "Built-in target preset: general_tick, general_update, general_pawn_ai_methods, or none")] string preset = "none",
+        [ToolParameter(Description = "Optional newline, semicolon, pipe, or comma separated method or type targets for the selected input mode")] string targets = "",
+        [ToolParameter(Description = "Initialize DPA profiling state before patching")] bool initialize = true,
+        [ToolParameter(Description = "Reset DPA profiler buffers after patching")] bool resetAfterPatch = true,
+        [ToolParameter(Description = "Maximum number of resolved method signatures to preview per target")] int previewLimit = 8)
+    {
+        return InvokeAlias(Arguments(
+            (nameof(category), category),
+            (nameof(inputMode), inputMode),
+            (nameof(preset), preset),
+            (nameof(targets), targets),
+            (nameof(initialize), initialize),
+            (nameof(resetAfterPatch), resetAfterPatch),
+            (nameof(previewLimit), previewLimit)));
+    }
+
+    [ReadmeTool("Performance Profiling", "Snapshot current Dubs Performance Analyzer profiler rows sorted by average, max, total, calls, calls per entry, or label")]
+    [Tool("rimworld/dpa_snapshot", Description = "Snapshot current Dubs Performance Analyzer profiler rows sorted by average, max, total, calls, calls per entry, or label")]
+    public object DpaSnapshot(
+        [ToolParameter(Description = "Snapshot sort: average, max, total, calls, callsPerEntry, or label")] string sortBy = "average",
+        [ToolParameter(Description = "Maximum profiler rows to return")] int limit = 30)
+    {
+        return InvokeAlias(Arguments((nameof(sortBy), sortBy), (nameof(limit), limit)));
+    }
+
+    [ReadmeTool("Performance Profiling", "Reset Dubs Performance Analyzer profiler buffers without changing the active patch set")]
+    [Tool("rimworld/dpa_reset", Description = "Reset Dubs Performance Analyzer profiler buffers without changing the active patch set")]
+    public object DpaReset()
+    {
+        return InvokeAlias();
+    }
+
+    [ReadmeTool("Performance Profiling", "Stop Dubs Performance Analyzer profiling and reset its UI state without running cleanup")]
+    [Tool("rimworld/dpa_stop", Description = "Stop Dubs Performance Analyzer profiling and reset its UI state without running cleanup")]
+    public object DpaStop()
+    {
+        return InvokeAlias();
+    }
+
+    [ReadmeTool("Performance Profiling", "Request Dubs Performance Analyzer cleanup after a profiling run")]
+    [Tool("rimworld/dpa_cleanup", Description = "Request Dubs Performance Analyzer cleanup after a profiling run")]
+    public object DpaCleanup()
+    {
+        return InvokeAlias();
+    }
+
     [ReadmeTool("Scripting", "Get a machine-readable authoring reference for rimbridge/run_script, including statement types, expressions, conditions, limits, and examples")]
     [Tool("rimbridge/get_script_reference", Description = "Get a machine-readable authoring reference for rimbridge/run_script, including statement types, expressions, conditions, limits, and examples")]
     public object GetScriptReference()
@@ -194,14 +253,15 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(speed), speed)));
     }
 
-    [ReadmeTool("Debug Actions And Mods", "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, ending early if the game is paused, returns to the main menu, or the session changes")]
-    [Tool("rimworld/play_for", Description = "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, ending early if the game is paused, returns to the main menu, or the session changes")]
+    [ReadmeTool("Debug Actions And Mods", "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, optionally suppressing RimWorld's forced-normal-speed slowdown during the run")]
+    [Tool("rimworld/play_for", Description = "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again, optionally suppressing RimWorld's forced-normal-speed slowdown during the run")]
     public object PlayFor(
         [ToolParameter(Description = "Real-time duration in milliseconds to keep the game unpaused before pausing it again")] int durationMs,
         [ToolParameter(Description = "Desired play speed while the game is running: Normal, Fast, Superfast, or Ultrafast")] string speed = "Normal",
-        [ToolParameter(Description = "How often to poll playback state while waiting to repause")] int pollIntervalMs = 25)
+        [ToolParameter(Description = "How often to poll playback state while waiting to repause")] int pollIntervalMs = 25,
+        [ToolParameter(Description = "When true, temporarily suppress RimWorld's forced-normal-speed slowdown while preserving the normal TickManager update path")] bool forceRequestedSpeed = false)
     {
-        return InvokeAlias(Arguments((nameof(durationMs), durationMs), (nameof(speed), speed), (nameof(pollIntervalMs), pollIntervalMs)));
+        return InvokeAlias(Arguments((nameof(durationMs), durationMs), (nameof(speed), speed), (nameof(pollIntervalMs), pollIntervalMs), (nameof(forceRequestedSpeed), forceRequestedSpeed)));
     }
 
     [ReadmeTool("Debug Actions And Mods", "Advance the paused game by an exact number of ticks, one tick per Unity update frame, mirroring RimWorld's Dev_TickOnce path while preserving render-frame boundaries")]
