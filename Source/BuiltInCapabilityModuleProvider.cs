@@ -311,12 +311,10 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             "rimworld/frame_cell_rect" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/screenshot_cell_rect" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/get_ui_layout" => CapabilityExecutionKind.BackgroundObserved,
-            "rimworld/click_ui_target" => CapabilityExecutionKind.BackgroundObserved,
+            "rimworld/pointer_move" => CapabilityExecutionKind.BackgroundObserved,
+            "rimworld/pointer_gesture" => CapabilityExecutionKind.BackgroundObserved,
+            "rimworld/pointer_clear" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/scroll_ui_target" => CapabilityExecutionKind.BackgroundObserved,
-            "rimworld/set_hover_target" => CapabilityExecutionKind.BackgroundObserved,
-            "rimworld/clear_hover_target" => CapabilityExecutionKind.BackgroundObserved,
-            "rimworld/open_context_menu" => CapabilityExecutionKind.BackgroundObserved,
-            "rimworld/right_click_cell" => CapabilityExecutionKind.BackgroundObserved,
             _ => CapabilityExecutionKind.MainThread
         };
     }

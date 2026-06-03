@@ -73,29 +73,6 @@ jobs:
           echo "MOD_VERSION=$MOD_VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
-      - name: Create or verify release tag
-        run: |
-          set -euo pipefail
-
-          git fetch --tags --force
-
-          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
-            TAG_COMMIT="$(git rev-list -n 1 "$RELEASE_TAG")"
-            if [ "$TAG_COMMIT" != "$GITHUB_SHA" ]; then
-              echo "Tag $RELEASE_TAG already exists at $TAG_COMMIT but current commit is $GITHUB_SHA." >&2
-              echo "Update ModVersion in Directory.Build.props before creating another release." >&2
-              exit 1
-            fi
-
-            echo "Tag $RELEASE_TAG already points at this commit."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
-          git push origin "refs/tags/$RELEASE_TAG"
-
       - name: Build mod
         env:
           RIMWORLD_MOD_DIR: ""
@@ -121,6 +98,29 @@ jobs:
             cd dist
             zip -qr "$ARCHIVE_NAME" "$(basename "$STAGE_DIR")"
           )
+
+      - name: Create or verify release tag
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            TAG_COMMIT="$(git rev-list -n 1 "$RELEASE_TAG")"
+            if [ "$TAG_COMMIT" != "$GITHUB_SHA" ]; then
+              echo "Tag $RELEASE_TAG already exists at $TAG_COMMIT but current commit is $GITHUB_SHA." >&2
+              echo "Update ModVersion in Directory.Build.props before creating another release." >&2
+              exit 1
+            fi
+
+            echo "Tag $RELEASE_TAG already points at this commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG"
 
       - name: Create GitHub release if needed
         env:

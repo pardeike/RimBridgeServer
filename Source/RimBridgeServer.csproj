@@ -4,7 +4,7 @@
 		<RootNamespace>$(ModFileName)</RootNamespace>
 		<AssemblyName>$(ModFileName)</AssemblyName>
 		<TargetFramework>net472</TargetFramework>
-		<LangVersion>preview</LangVersion>
+		<LangVersion>latest</LangVersion>
 		<PlatformTarget>x64</PlatformTarget>
 		<OutputPath>..\1.6\Assemblies\</OutputPath>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -34,7 +34,7 @@
 		<DebugSymbols>true</DebugSymbols>
 		<DefineConstants>TRACE;DEBUG</DefineConstants>
 		<Optimize>false</Optimize>
-		<DebugType>embedded</DebugType>
+		<DebugType>portable</DebugType>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 

@@ -17,7 +17,7 @@ indent_size = 3
 [*.cs]
 indent_style = tab
 indent_size = 3
-tab_width = 3
+tab_width = 3 # https://github.com/dotnet/roslyn/issues/22601
 trim_trailing_whitespace = true
 
 dotnet_sort_system_directives_first = false
@@ -150,4 +150,3 @@ dotnet_style_prefer_compound_assignment = true:warning
 dotnet_style_prefer_simplified_interpolation = true:suggestion
 dotnet_style_prefer_collection_expression = when_types_loosely_match:suggestion
 dotnet_style_namespace_match_folder = true:suggestion
-

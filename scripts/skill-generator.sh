@@ -389,7 +389,7 @@ skill_md.extend(
         "- After `rimbridge/wait_for_game_loaded` or `rimworld/load_game_ready` returns success, proceed directly to the requested colony action or verification step instead of rechecking readiness again.",
         "- Through a direct bridge connection, prefer bridge-native discovery and status tools before calling task-specific tools.",
         "- Prefer semantic tools over brittle UI clicking when a structured tool exists for the task.",
-        "- For visual UI verification, prefer `rimworld/get_ui_layout` to discover `ui-surface` and `ui-element` targets, pass those ids to `rimworld/take_screenshot` for cropped windows or natural regions, and use `rimworld/scroll_ui_target` for captured `scroll_view` elements instead of foreground mouse wheel workarounds.",
+        "- For visual UI verification, prefer `rimworld/get_ui_layout` to discover `ui-surface` and `ui-element` targets, pass those ids to `rimworld/take_screenshot` for cropped windows or natural regions, use `rimworld/pointer_move` for hover and tooltip checks, `rimworld/pointer_gesture` for click, right-click, hold, and drag paths, `rimworld/pointer_clear` after persistent hover, and `rimworld/scroll_ui_target` for captured `scroll_view` elements.",
         "- For new lowered-Lua automation, read the reference or compile first before running the script.",
         "- After actions that can change UI or game state significantly, re-read layout, state, selection, or logs instead of assuming success.",
         "",

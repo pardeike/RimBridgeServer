@@ -133,7 +133,12 @@ local interiorMaxZ = rallyZ + 1
 rb.print("planning_attempts", planningAttempts)
 rb.print("rally", { x = rallyX, z = rallyZ })
 
-rb.call("rimworld/right_click_cell", { x = rallyX, z = rallyZ })
+rb.call("rimworld/pointer_gesture", {
+  from = { kind = "mapCell", x = rallyX, z = rallyZ },
+  button = "right",
+  durationMs = 0,
+  steps = 0
+})
 rb.call("rimworld/pause_game", { pause = false })
 
 local grouped = rb.poll("rimworld/list_colonists", { currentMapOnly = true }, {

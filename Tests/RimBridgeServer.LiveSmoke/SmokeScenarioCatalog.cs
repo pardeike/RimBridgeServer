@@ -642,24 +642,25 @@ internal static class SmokeScenarioCatalog
         if (!initialChecked.HasValue)
             throw new InvalidOperationException("The captured Work-tab checkbox did not expose a boolean checked state.");
 
-        var setUiHover = await context.CallGameToolAsync("ui_layout.set_ui_hover", "rimworld/set_hover_target", new
+        var setUiHover = await context.CallGameToolAsync("ui_layout.set_ui_hover", "rimworld/pointer_move", new
         {
-            targetId = initialTargetId
+            target = new { kind = "ui", id = initialTargetId },
+            persist = true
         }, cancellationToken);
-        context.EnsureSucceeded(setUiHover, $"Setting UI hover target '{initialTargetId}'");
+        context.EnsureSucceeded(setUiHover, $"Moving the pointer to UI target '{initialTargetId}'");
 
         var hoveredTargets = await context.CallGameToolAsync("ui_layout.capture_hover_targets", "rimworld/get_screen_targets", new
         {
         }, cancellationToken);
         context.EnsureSucceeded(hoveredTargets, "Capturing screen targets after setting the UI hover target");
 
-        var uiHoverTarget = JsonNodeHelpers.GetPath(hoveredTargets.StructuredContent, "targets", "hoverTarget");
+        var uiHoverTarget = JsonNodeHelpers.GetPath(hoveredTargets.StructuredContent, "targets", "pointer");
         if (uiHoverTarget == null)
-            throw new InvalidOperationException("Screen targets did not report an active UI hover target.");
-        if (!string.Equals(ReadRequiredString(uiHoverTarget, "kind"), "ui_element", StringComparison.Ordinal))
-            throw new InvalidOperationException("Screen targets reported the wrong hover target kind for the UI hover check.");
+            throw new InvalidOperationException("Screen targets did not report an active UI pointer target.");
+        if (!string.Equals(ReadRequiredString(uiHoverTarget, "targetKind"), "ui", StringComparison.Ordinal))
+            throw new InvalidOperationException("Screen targets reported the wrong pointer target kind for the UI hover check.");
         if (!string.Equals(ReadRequiredString(uiHoverTarget, "targetId"), initialTargetId, StringComparison.Ordinal))
-            throw new InvalidOperationException("Screen targets reported a different UI hover target id than the one requested.");
+            throw new InvalidOperationException("Screen targets reported a different UI pointer target id than the one requested.");
 
         var clippedScreenshot = await context.CallGameToolAsync("ui_layout.clip_checkbox", "rimworld/take_screenshot", new
         {
@@ -671,21 +672,24 @@ internal static class SmokeScenarioCatalog
         if (JsonNodeHelpers.ReadBoolean(clippedScreenshot.StructuredContent, "clipped") != true)
             throw new InvalidOperationException("The UI control screenshot was not reported as clipped.");
 
-        var clearUiHover = await context.CallGameToolAsync("ui_layout.clear_ui_hover", "rimworld/clear_hover_target", new
+        var clearUiHover = await context.CallGameToolAsync("ui_layout.clear_ui_hover", "rimworld/pointer_clear", new
         {
         }, cancellationToken);
-        context.EnsureSucceeded(clearUiHover, "Clearing the UI hover target after the screenshot capture");
+        context.EnsureSucceeded(clearUiHover, "Clearing the UI pointer after the screenshot capture");
 
         var clearedHoverTargets = await context.CallGameToolAsync("ui_layout.capture_cleared_hover_targets", "rimworld/get_screen_targets", new
         {
         }, cancellationToken);
         context.EnsureSucceeded(clearedHoverTargets, "Capturing screen targets after clearing the UI hover target");
-        if (JsonNodeHelpers.GetPath(clearedHoverTargets.StructuredContent, "targets", "hoverTarget") != null)
-            throw new InvalidOperationException("Screen targets still reported a hover target after the UI hover target was cleared.");
+        if (JsonNodeHelpers.GetPath(clearedHoverTargets.StructuredContent, "targets", "pointer") != null)
+            throw new InvalidOperationException("Screen targets still reported a pointer after the UI pointer was cleared.");
 
-        var clickCheckbox = await context.CallGameToolAsync("ui_layout.click_checkbox", "rimworld/click_ui_target", new
+        var clickCheckbox = await context.CallGameToolAsync("ui_layout.click_checkbox", "rimworld/pointer_gesture", new
         {
-            targetId = initialTargetId,
+            @from = new { kind = "ui", id = initialTargetId },
+            button = "left",
+            durationMs = 0,
+            steps = 0,
             timeoutMs = 3000
         }, cancellationToken);
         context.EnsureSucceeded(clickCheckbox, $"Clicking UI target '{initialTargetId}'");
@@ -706,9 +710,12 @@ internal static class SmokeScenarioCatalog
             throw new InvalidOperationException("Clicking the captured Work-tab checkbox did not change its checked state.");
 
         var restoreTargetId = ReadRequiredString(toggledCheckbox, "targetId");
-        var restoreCheckbox = await context.CallGameToolAsync("ui_layout.restore_checkbox", "rimworld/click_ui_target", new
+        var restoreCheckbox = await context.CallGameToolAsync("ui_layout.restore_checkbox", "rimworld/pointer_gesture", new
         {
-            targetId = restoreTargetId,
+            @from = new { kind = "ui", id = restoreTargetId },
+            button = "left",
+            durationMs = 0,
+            steps = 0,
             timeoutMs = 3000
         }, cancellationToken);
         context.EnsureSucceeded(restoreCheckbox, $"Restoring UI target '{restoreTargetId}' to its original state");
@@ -740,29 +747,30 @@ internal static class SmokeScenarioCatalog
 
         var firstColonist = ResolveFirstColonist(colonists.StructuredContent);
         var firstColonistId = ReadRequiredString(firstColonist, "pawnId");
-        var setPawnHover = await context.CallGameToolAsync("ui_layout.set_pawn_hover", "rimworld/set_hover_target", new
+        var setPawnHover = await context.CallGameToolAsync("ui_layout.set_pawn_hover", "rimworld/pointer_move", new
         {
-            pawnId = firstColonistId
+            target = new { kind = "pawn", id = firstColonistId },
+            persist = true
         }, cancellationToken);
-        context.EnsureSucceeded(setPawnHover, $"Setting a pawn hover target for '{firstColonistId}'");
+        context.EnsureSucceeded(setPawnHover, $"Moving the pointer to pawn '{firstColonistId}'");
 
         var mapHoverTargets = await context.CallGameToolAsync("ui_layout.capture_map_hover_targets", "rimworld/get_screen_targets", new
         {
         }, cancellationToken);
         context.EnsureSucceeded(mapHoverTargets, "Capturing screen targets after setting the pawn hover target");
 
-        var pawnHoverTarget = JsonNodeHelpers.GetPath(mapHoverTargets.StructuredContent, "targets", "hoverTarget");
+        var pawnHoverTarget = JsonNodeHelpers.GetPath(mapHoverTargets.StructuredContent, "targets", "pointer");
         if (pawnHoverTarget == null)
-            throw new InvalidOperationException("Screen targets did not report an active pawn hover target.");
-        if (!string.Equals(ReadRequiredString(pawnHoverTarget, "kind"), "pawn", StringComparison.Ordinal))
-            throw new InvalidOperationException("Screen targets reported the wrong hover target kind for the pawn hover check.");
+            throw new InvalidOperationException("Screen targets did not report an active pawn pointer target.");
+        if (!string.Equals(ReadRequiredString(pawnHoverTarget, "targetKind"), "pawn", StringComparison.Ordinal))
+            throw new InvalidOperationException("Screen targets reported the wrong pointer target kind for the pawn hover check.");
         if (!string.Equals(ReadRequiredString(pawnHoverTarget, "targetId"), firstColonistId, StringComparison.Ordinal))
-            throw new InvalidOperationException("Screen targets reported a different pawn hover target id than the one requested.");
+            throw new InvalidOperationException("Screen targets reported a different pawn pointer target id than the one requested.");
 
-        var clearPawnHover = await context.CallGameToolAsync("ui_layout.clear_pawn_hover", "rimworld/clear_hover_target", new
+        var clearPawnHover = await context.CallGameToolAsync("ui_layout.clear_pawn_hover", "rimworld/pointer_clear", new
         {
         }, cancellationToken);
-        context.EnsureSucceeded(clearPawnHover, "Clearing the pawn hover target after the map hover roundtrip");
+        context.EnsureSucceeded(clearPawnHover, "Clearing the pawn pointer after the map hover roundtrip");
 
         context.SetSummaryValue("uiTargetId", initialTargetId);
         context.SetSummaryValue("checkboxSource", ReadRequiredString(checkbox, "source"));
@@ -1093,22 +1101,17 @@ internal static class SmokeScenarioCatalog
                 cancellationToken);
         }
 
-        var clickDismiss = await context.CallGameToolAsync("target_click.dismiss.click_screen_target", "rimworld/click_screen_target", new
+        var clickDismiss = await context.CallGameToolAsync("target_click.dismiss.close_context_menu", "rimworld/close_context_menu", new
         {
-            targetId = dismissTargetId
         }, cancellationToken);
-        context.EnsureSucceeded(clickDismiss, "Clicking the context-menu dismiss target");
+        context.EnsureSucceeded(clickDismiss, "Closing the context menu after reading its dismiss target");
 
-        if (JsonNodeHelpers.ReadBoolean(clickDismiss.StructuredContent, "after", "floatMenuOpen") == true)
-            throw new InvalidOperationException("Clicking the dismiss target did not close the float menu.");
-        if (!string.Equals(JsonNodeHelpers.ReadString(clickDismiss.StructuredContent, "targetKind"), "window_dismiss", StringComparison.Ordinal))
-            throw new InvalidOperationException("Clicking the dismiss target did not report a window_dismiss target kind.");
-        if (!string.Equals(JsonNodeHelpers.ReadString(clickDismiss.StructuredContent, "actionKind"), "dismiss_window", StringComparison.Ordinal))
-            throw new InvalidOperationException("Clicking the dismiss target did not report a dismiss_window action kind.");
-
-        var dismissClosedWindowTypes = JsonNodeHelpers.ReadArray(clickDismiss.StructuredContent, "closedWindowTypes");
-        if (!dismissClosedWindowTypes.Any(type => string.Equals(JsonNodeHelpers.ReadString(type), "Verse.FloatMenu", StringComparison.Ordinal)))
-            throw new InvalidOperationException("Clicking the dismiss target did not close a Verse.FloatMenu window.");
+        var dismissClosedState = await context.CallGameToolAsync("target_click.dismiss.get_ui_state_after_close", "rimworld/get_ui_state", new
+        {
+        }, cancellationToken);
+        context.EnsureSucceeded(dismissClosedState, "Reading UI state after closing the context menu");
+        if (JsonNodeHelpers.ReadBoolean(dismissClosedState.StructuredContent, "floatMenuOpen") == true)
+            throw new InvalidOperationException("Closing the context menu did not close the float menu.");
 
         var optionMenu = await OpenVanillaContextMenuNearPawnAsync(
             context,
@@ -1142,28 +1145,28 @@ internal static class SmokeScenarioCatalog
                 "Reopened float menu just before the harness clicks a specific context-menu option target id.",
                 [
                     "A float menu should be visible again.",
-                    $"The harness is about to click the option labeled '{optionLabel}' through rimworld/click_screen_target.",
-                    "This demonstrates target-id-based action dispatch rather than generic UI input."
+                    $"The harness is about to click the option labeled '{optionLabel}' through rimworld/pointer_gesture.",
+                    "This demonstrates target-id-based pointer control through a real context-menu option rectangle."
                 ],
                 cancellationToken);
         }
 
-        var clickOption = await context.CallGameToolAsync("target_click.option.click_screen_target", "rimworld/click_screen_target", new
+        var clickOption = await context.CallGameToolAsync("target_click.option.pointer_gesture", "rimworld/pointer_gesture", new
         {
-            targetId = optionTargetId
+            @from = new { kind = "screen", id = optionTargetId },
+            button = "left",
+            durationMs = 0,
+            steps = 0,
+            timeoutMs = 3000
         }, cancellationToken);
         context.EnsureSucceeded(clickOption, $"Clicking context-menu option target '{optionLabel}'");
 
-        if (JsonNodeHelpers.ReadBoolean(clickOption.StructuredContent, "after", "floatMenuOpen") == true)
+        var optionClosedState = await context.CallGameToolAsync("target_click.option.get_ui_state_after_pointer_gesture", "rimworld/get_ui_state", new
+        {
+        }, cancellationToken);
+        context.EnsureSucceeded(optionClosedState, "Reading UI state after clicking the context-menu option target");
+        if (JsonNodeHelpers.ReadBoolean(optionClosedState.StructuredContent, "floatMenuOpen") == true)
             throw new InvalidOperationException("Clicking the context-menu option target did not close the float menu.");
-        if (!string.Equals(JsonNodeHelpers.ReadString(clickOption.StructuredContent, "targetKind"), "context_menu_option", StringComparison.Ordinal))
-            throw new InvalidOperationException("Clicking the option target did not report a context_menu_option target kind.");
-        if (!string.Equals(JsonNodeHelpers.ReadString(clickOption.StructuredContent, "actionKind"), "execute_context_menu_option", StringComparison.Ordinal))
-            throw new InvalidOperationException("Clicking the option target did not report an execute_context_menu_option action kind.");
-        if (JsonNodeHelpers.ReadInt32(clickOption.StructuredContent, "executedOptionIndex") != optionMenu.DirectOptionIndex)
-            throw new InvalidOperationException("Clicking the option target did not execute the expected menu option index.");
-        if (!string.Equals(JsonNodeHelpers.ReadString(clickOption.StructuredContent, "executedLabel"), optionLabel, StringComparison.Ordinal))
-            throw new InvalidOperationException("Clicking the option target did not report the expected menu option label.");
 
         await context.WaitForLongEventIdleAsync("target_click.wait_for_long_event_idle_after_option_click", cancellationToken);
 
@@ -4091,20 +4094,38 @@ internal static class SmokeScenarioCatalog
         foreach (var candidateCell in BuildNearbyCells(pawnPosition.X, pawnPosition.Z))
         {
             attempt++;
-            var result = await context.CallGameToolAsync($"{stepPrefix}.open_context_menu_{attempt}", "rimworld/open_context_menu", new
+            var gesture = await context.CallGameToolAsync($"{stepPrefix}.pointer_context_menu_{attempt}", "rimworld/pointer_gesture", new
             {
-                x = candidateCell.X,
-                z = candidateCell.Z,
-                mode = "vanilla"
+                @from = new { kind = "mapCell", x = candidateCell.X, z = candidateCell.Z },
+                button = "right",
+                durationMs = 0,
+                steps = 0,
+                timeoutMs = 3000,
+                leavePointerAtEnd = true
             }, cancellationToken);
-            context.EnsureSucceeded(result, $"Opening a vanilla context menu near colonist '{pawnName}'");
+            context.EnsureSucceeded(gesture, $"Right-clicking near colonist '{pawnName}' to open a context menu");
+
+            var result = await context.CallGameToolAsync($"{stepPrefix}.get_context_menu_options_{attempt}", "rimworld/get_context_menu_options", new
+            {
+            }, cancellationToken);
+            if (!result.Success)
+                continue;
 
             if (JsonNodeHelpers.ReadInt32(result.StructuredContent, "optionCount").GetValueOrDefault() <= 0)
+            {
+                await context.CallGameToolAsync($"{stepPrefix}.close_empty_context_menu_{attempt}", "rimworld/close_context_menu", new
+                {
+                }, cancellationToken);
                 continue;
+            }
 
             var directOptionIndex = ResolveDirectExecutableOptionIndex(result.StructuredContent);
             if (!requireDirectExecutableOption || directOptionIndex > 0)
                 return (result, candidateCell, directOptionIndex);
+
+            await context.CallGameToolAsync($"{stepPrefix}.close_context_menu_without_direct_option_{attempt}", "rimworld/close_context_menu", new
+            {
+            }, cancellationToken);
         }
 
         if (requireDirectExecutableOption)

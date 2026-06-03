@@ -2,7 +2,7 @@
 
 	<PropertyGroup>
 		<TargetFrameworks>net472;net10.0</TargetFrameworks>
-		<LangVersion>preview</LangVersion>
+		<LangVersion>latest</LangVersion>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<RootNamespace>RimBridgeServer.Extensions.Abstractions</RootNamespace>
 		<AssemblyName>RimBridgeServer.Extensions.Abstractions</AssemblyName>
@@ -24,7 +24,7 @@
 		<DebugSymbols>true</DebugSymbols>
 		<DefineConstants>TRACE;DEBUG</DefineConstants>
 		<Optimize>false</Optimize>
-		<DebugType>embedded</DebugType>
+		<DebugType>portable</DebugType>
 	</PropertyGroup>
 
 	<ItemGroup>

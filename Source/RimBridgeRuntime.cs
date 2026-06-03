@@ -115,6 +115,7 @@ internal static class Root_Update_Patch
         RimBridgeMainThread.Pump();
         RimWorldTickStepper.AdvanceFromRootUpdate(Time.frameCount);
         RimBridgeUiWorkbench.AdvanceFrame(Time.frameCount);
+        RimBridgePointer.AdvanceFrame(Time.frameCount);
         if (PlayDataLoader.Loaded && !LongEventHandler.AnyEventNowOrWaiting && Find.UIRoot != null)
             RimBridgeStartup.OnRuntimeReady();
     }

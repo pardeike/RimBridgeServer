@@ -292,6 +292,8 @@ internal static class RimBridgeUiWorkbench
         public bool RegisteredActiveInteraction { get; set; }
 
         public UiRectSnapshot InteractionRect { get; set; }
+
+        public bool PointerForcePress { get; set; }
     }
 
     private static readonly object Sync = new();
@@ -615,7 +617,8 @@ internal static class RimBridgeUiWorkbench
             var click = _pendingClick;
             var scroll = _pendingScroll;
             var hover = _hoveredElement;
-            if (capture == null && click == null && scroll == null && hover == null)
+            var pointer = RimBridgePointer.ShouldTrackUiSurface();
+            if (capture == null && click == null && scroll == null && hover == null && !pointer)
             {
                 SurfaceStack.Push(null);
                 return;
@@ -626,7 +629,7 @@ internal static class RimBridgeUiWorkbench
             var shouldTrackForClick = click != null && string.Equals(click.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
             var shouldTrackForScroll = scroll != null && string.Equals(scroll.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
             var shouldTrackForHover = hover != null && string.Equals(hover.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
-            if (!shouldCapture && !shouldTrackForClick && !shouldTrackForScroll && !shouldTrackForHover)
+            if (!shouldCapture && !shouldTrackForClick && !shouldTrackForScroll && !shouldTrackForHover && !pointer)
             {
                 SurfaceStack.Push(null);
                 return;
@@ -813,7 +816,7 @@ internal static class RimBridgeUiWorkbench
 
     public static void PrepareControlInteraction(UiPatchControlState state, Rect rect)
     {
-        if (state == null || (!state.ShouldActivate && !state.ShouldHover))
+        if (state == null)
             return;
 
         lock (Sync)
@@ -823,33 +826,57 @@ internal static class RimBridgeUiWorkbench
             if (state.ShouldActivate && _pendingClick != null && _pendingClick.PhaseInjectedFrame == Time.frameCount)
                 return;
 
-            var pointerInverted = UI.GUIToScreenPoint(rect.center);
             var currentEvent = Event.current;
             var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent);
-            injectedEvent.mousePosition = rect.center;
+            var pointerToken = 0;
+            var pointerPrepared = RimBridgePointer.TryPrepareControlEvent(rect, out var pointerEvent, out var pointerEventToken, out var pointerForcePress);
+            if (!pointerPrepared)
+                pointerPrepared = RimBridgePointer.TryPrepareHoverEvent(rect, out pointerEvent, out pointerEventToken);
 
-            if (state.ShouldActivate && _pendingClick != null)
+            if (pointerPrepared)
             {
-                injectedEvent.type = _pendingClick.Phase == ClickPhase.MouseDown ? EventType.MouseDown : EventType.MouseUp;
-                injectedEvent.button = 0;
-                injectedEvent.clickCount = 1;
-                _pendingClick.PhaseInjectedFrame = Time.frameCount;
+                injectedEvent = pointerEvent;
+                pointerToken = pointerEventToken;
+            }
+            else if (state.ShouldActivate || state.ShouldHover)
+            {
+                var pointerInverted = UI.GUIToScreenPoint(rect.center);
+                injectedEvent.mousePosition = rect.center;
+
+                if (state.ShouldActivate && _pendingClick != null)
+                {
+                    injectedEvent.type = _pendingClick.Phase == ClickPhase.MouseDown ? EventType.MouseDown : EventType.MouseUp;
+                    injectedEvent.button = 0;
+                    injectedEvent.clickCount = 1;
+                    _pendingClick.PhaseInjectedFrame = Time.frameCount;
+                }
+
+                pointerToken = RimBridgeVirtualPointer.PushTransientOverride(pointerInverted);
+
+                if (state.ShouldHover)
+                    RimBridgeVirtualPointer.UpdatePersistentPointerPosition(pointerInverted);
+            }
+            else
+            {
+                return;
             }
 
             state.PreviousEvent = currentEvent;
             state.EventOverridden = true;
-            state.TransientPointerToken = RimBridgeVirtualPointer.PushTransientOverride(pointerInverted);
-            state.RegisteredActiveInteraction = true;
+            state.TransientPointerToken = pointerToken;
+            state.PointerForcePress = pointerForcePress;
+            state.RegisteredActiveInteraction = state.ShouldActivate && _pendingClick != null;
             state.InteractionRect = ToSnapshot(rect);
-            _activeInteraction = new ActiveInteractionContext
+            if (state.RegisteredActiveInteraction)
             {
-                Rect = ToSnapshot(rect),
-                ShouldActivate = state.ShouldActivate
-            };
-            Event.current = injectedEvent;
+                _activeInteraction = new ActiveInteractionContext
+                {
+                    Rect = ToSnapshot(rect),
+                    ShouldActivate = state.ShouldActivate
+                };
+            }
 
-            if (state.ShouldHover)
-                RimBridgeVirtualPointer.UpdatePersistentPointerPosition(pointerInverted);
+            Event.current = injectedEvent;
         }
     }
 
@@ -876,7 +903,14 @@ internal static class RimBridgeUiWorkbench
 
     public static void OverrideButtonResultIfPending(UiPatchControlState state, ref bool result)
     {
-        if (result || state == null || !state.ShouldActivate)
+        if (result || state == null)
+            return;
+        if (state.PointerForcePress)
+        {
+            result = true;
+            return;
+        }
+        if (!state.ShouldActivate)
             return;
 
         lock (Sync)
@@ -896,6 +930,9 @@ internal static class RimBridgeUiWorkbench
 
     public static void OverrideDraggableResultIfPending(Rect rect, ref Widgets.DraggableResult result)
     {
+        if (RimBridgePointer.TryOverrideDraggableResult(rect, ref result))
+            return;
+
         lock (Sync)
         {
             if (_pendingClick == null || _pendingClick.Activated)
