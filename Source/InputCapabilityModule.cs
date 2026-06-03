@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace RimBridgeServer;
 
 internal sealed class InputCapabilityModule
@@ -62,38 +60,6 @@ internal sealed class InputCapabilityModule
     public object GetUiLayout(string surfaceId = null, int timeoutMs = 2000)
     {
         return RimBridgeUiWorkbench.GetUiLayoutResponse(surfaceId, timeoutMs);
-    }
-
-    public object PointerMove(
-        Dictionary<string, object> target,
-        Dictionary<string, object> offset = null,
-        int durationMs = 0,
-        int steps = 0,
-        bool persist = true,
-        bool waitForTooltip = false,
-        int timeoutMs = 2000)
-    {
-        return RimBridgePointer.PointerMoveResponse(target, offset, durationMs, steps, persist, waitForTooltip, timeoutMs);
-    }
-
-    public object PointerGesture(
-        Dictionary<string, object> from,
-        Dictionary<string, object> to = null,
-        string button = "left",
-        List<object> modifiers = null,
-        int durationMs = 250,
-        int steps = 8,
-        int holdStartMs = 0,
-        int holdEndMs = 0,
-        int timeoutMs = 3000,
-        bool leavePointerAtEnd = false)
-    {
-        return RimBridgePointer.PointerGestureResponse(from, to, button, modifiers, durationMs, steps, holdStartMs, holdEndMs, timeoutMs, leavePointerAtEnd);
-    }
-
-    public object PointerClear()
-    {
-        return RimBridgePointer.PointerClearResponse();
     }
 
     public object ClickUiTarget(string targetId, int timeoutMs = 2000)

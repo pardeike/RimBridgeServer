@@ -304,8 +304,8 @@ public static class CapabilityScriptReferenceBuilder
                 "Give stable ids to call steps you plan to reference later with $ref.",
                 "Prefer explicit wait tools and continueUntil instead of blind sleeps.",
                 "Use assert, fail, print, and return so scripts behave like higher-level testable tool calls.",
-                "For pointer-driven UI or map interactions, prefer rimworld/pointer_move for hover and tooltip setup and rimworld/pointer_gesture for clicks, right-clicks, holds, and drags.",
-                "For mods that distinguish tap from hold or drag gestures, set holdStartMs, holdEndMs, durationMs, steps, button, and modifiers on rimworld/pointer_gesture so the injected path matches the live interaction pattern.")),
+                "For default pawn-selected map actions such as drafted goto, prefer rimworld/right_click_cell. Use open_context_menu plus execute_context_menu_option when you need to inspect or choose a non-default menu option.",
+                "For mods that distinguish tap from hold on map clicks, set holdDurationMs on rimworld/right_click_cell or rimworld/open_context_menu so the injected click matches the live interaction pattern.")),
             ("examples", Arr(
                 Obj(
                     ("name", "minimal"),

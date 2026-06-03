@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `116` tools total
+- `119` tools total
 - `18` `rimbridge/*` tools
-- `98` `rimworld/*` tools
+- `101` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -591,46 +591,19 @@ Parameters:
 Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata
 
 Returns:
-- A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/pointer_move, rimworld/pointer_gesture, or rimworld/scroll_ui_target.
+- A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/click_ui_target, or rimworld/scroll_ui_target.
 
 Parameters:
 - `surfaceId` (`string`, `optional`, default `null`): Optional surface target id such as a window target from rimworld/get_screen_targets or a main-tab target from rimworld/list_main_tabs
 - `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the requested UI surface to draw on screen
 
-### `rimworld/pointer_move`
+### `rimworld/click_ui_target`
 
-Move the bridge-controlled virtual pointer over a UI, screen, map cell, pawn, thing, or direct screen-point target, optionally persisting it for hover and tooltip testing
-
-Parameters:
-- `target` (`Dictionary<string, object>`, `required`): Target object. Supported forms include {kind:'ui', id:'ui-element:...'}, {kind:'screen', id:'screen-target-id'}, {kind:'mapCell', x:10, z:20}, {kind:'pawn', id:'thing-id'}, {kind:'thing', id:'thing-id'}, or {kind:'screenPoint', x:100, y:200}.
-- `offset` (`Dictionary<string, object>`, `optional`, default `null`): Optional screen-space offset object such as {x:4, y:-2}; target objects may also include offsetX and offsetY.
-- `durationMs` (`int`, `optional`, default `0`): Approximate movement duration in milliseconds. Zero jumps directly to the target.
-- `steps` (`int`, `optional`, default `0`): Explicit number of intermediate frame steps. When zero, the bridge derives steps from durationMs.
-- `persist` (`bool`, `optional`, default `true`): Keep the virtual pointer at the target after the move so hover, mouseover, tooltip, and screenshot flows remain stable.
-- `waitForTooltip` (`bool`, `optional`, default `false`): Wait until RimWorld reports at least one active tooltip after the move.
-- `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for movement and optional tooltip observation.
-
-### `rimworld/pointer_gesture`
-
-Perform a bridge-controlled mouse gesture between two pointer targets, including click, right-click, hold, and drag paths through RimWorld's live input handlers
+Activate an actionable UI control target returned by rimworld/get_ui_layout on the next real draw frame
 
 Parameters:
-- `from` (`Dictionary<string, object>`, `required`): Start target object. Use the same target forms as rimworld/pointer_move.
-- `to` (`Dictionary<string, object>`, `optional`, default `null`): End target object. Omit or null for a click/tap at the start target. Use a different target for drag gestures.
-- `button` (`string`, `optional`, default `"left"`): Mouse button to use: left, right, middle, 0, 1, or 2.
-- `modifiers` (`List<object>`, `optional`, default `null`): Optional modifier list such as ['shift'], ['ctrl'], ['alt'], or ['command'].
-- `durationMs` (`int`, `optional`, default `250`): Approximate drag movement duration in milliseconds.
-- `steps` (`int`, `optional`, default `8`): Explicit drag interpolation steps. When zero, the bridge derives steps from durationMs.
-- `holdStartMs` (`int`, `optional`, default `0`): Milliseconds to hold the button down before movement begins.
-- `holdEndMs` (`int`, `optional`, default `0`): Milliseconds to hold the button down at the destination before releasing.
-- `timeoutMs` (`int`, `optional`, default `3000`): Maximum time to wait for the queued gesture to complete.
-- `leavePointerAtEnd` (`bool`, `optional`, default `false`): Keep the virtual pointer at the destination after the gesture; false clears it after the release.
-
-### `rimworld/pointer_clear`
-
-Clear bridge-controlled pointer hover and any queued pointer gesture
-
-Parameters: none.
+- `targetId` (`string`, `required`): Actionable ui-element target id returned by rimworld/get_ui_layout
+- `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the target control to be redrawn so the click can be injected
 
 ### `rimworld/scroll_ui_target`
 
@@ -643,6 +616,24 @@ Parameters:
 - `targetY` (`float?`, `optional`, default `null`): Optional absolute vertical scroll offset; when provided it overrides deltaY
 - `targetX` (`float?`, `optional`, default `null`): Optional absolute horizontal scroll offset; when provided it overrides deltaX
 - `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the target scroll view to be redrawn so the scroll can be applied
+
+### `rimworld/set_hover_target`
+
+Set a persistent virtual hover target for UI review and screenshots, using either an actionable ui-element target id or a current-map cell, pawn, or thing
+
+Parameters:
+- `targetId` (`string`, `optional`, default `null`): Optional actionable ui-element target id returned by rimworld/get_ui_layout
+- `x` (`int?`, `optional`, default `null`): Current-map cell x coordinate when hovering a map cell
+- `z` (`int?`, `optional`, default `null`): Current-map cell z coordinate when hovering a map cell
+- `thingId` (`string`, `optional`, default `null`): Stable current-map thing id when hovering a spawned thing
+- `pawnName` (`string`, `optional`, default `null`): Optional current-map pawn name when hovering a pawn
+- `pawnId` (`string`, `optional`, default `null`): Optional stable current-map pawn id when hovering a pawn
+
+### `rimworld/clear_hover_target`
+
+Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state
+
+Parameters: none.
 
 ### `rimworld/press_accept`
 
@@ -679,6 +670,13 @@ Open a RimWorld window by short or full .NET type name when the window exposes a
 Parameters:
 - `windowType` (`string`, `required`): Short or full .NET type name for a Verse.Window subtype, such as AchtungMod.SettingsToggles
 - `replaceExisting` (`bool`, `optional`, default `true`): Close already-open windows of the same type before opening a fresh instance
+
+### `rimworld/click_screen_target`
+
+Semantically click a known actionable target id returned by rimworld/get_screen_targets without requiring OS focus
+
+Parameters:
+- `targetId` (`string`, `required`): Actionable target id such as a context-menu option target or window dismiss target
 
 ### `rimworld/switch_language`
 
@@ -964,6 +962,33 @@ Parameters:
 - `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
 - `readiness` (`string`, `optional`, default `AutomationReadiness.DefaultTargetName`): Readiness target: gameData, mapData, currentMap, playable, or visual
 - `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
+
+### `rimworld/open_context_menu`
+
+Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open
+
+Parameters:
+- `targetPawnName` (`string`, `optional`, default `null`): Optional target pawn name on the current map.
+- `targetPawnId` (`string`, `optional`, default `null`): Optional stable target pawn id from rimworld/list_colonists.
+- `x` (`int`, `optional`, default `0`): Target cell x coordinate when no pawn name or id is given
+- `z` (`int`, `optional`, default `0`): Target cell z coordinate when no pawn name or id is given
+- `mode` (`string`, `optional`, default `"vanilla"`): Compatibility hint. 'vanilla', 'auto', and 'live' are accepted; the tool always routes through the live play-UI click path.
+- `button` (`string`, `optional`, default `"right"`): Mouse button to inject. Supported values are 'left', 'right', and 'middle'.
+- `holdDurationMs` (`int`, `optional`, default `0`): How long to hold the mouse button down before releasing it. Use this for mods that distinguish tap from hold on map clicks.
+- `modifiers` (`string`, `optional`, default `null`): Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.
+
+### `rimworld/right_click_cell`
+
+Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
+
+Parameters:
+- `targetPawnName` (`string`, `optional`, default `null`): Optional target pawn name on the current map.
+- `targetPawnId` (`string`, `optional`, default `null`): Optional stable target pawn id from rimworld/list_colonists.
+- `x` (`int`, `optional`, default `0`): Target cell x coordinate when no pawn name or id is given
+- `z` (`int`, `optional`, default `0`): Target cell z coordinate when no pawn name or id is given
+- `button` (`string`, `optional`, default `"right"`): Mouse button to inject. Supported values are 'left', 'right', and 'middle'.
+- `holdDurationMs` (`int`, `optional`, default `0`): How long to hold the mouse button down before releasing it. Use this for mods that distinguish tap from hold on map clicks.
+- `modifiers` (`string`, `optional`, default `null`): Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.
 
 ### `rimworld/get_context_menu_options`
 

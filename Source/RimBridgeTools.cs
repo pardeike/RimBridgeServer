@@ -664,7 +664,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("UI And Input", "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata")]
-    [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata", ResultDescription = "A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/pointer_move, rimworld/pointer_gesture, or rimworld/scroll_ui_target.")]
+    [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata", ResultDescription = "A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/click_ui_target, or rimworld/scroll_ui_target.")]
     public object GetUiLayout(
         [ToolParameter(Description = "Optional surface target id such as a window target from rimworld/get_screen_targets or a main-tab target from rimworld/list_main_tabs")] string surfaceId = null,
         [ToolParameter(Description = "Maximum time to wait for the requested UI surface to draw on screen")] int timeoutMs = 2000)
@@ -672,44 +672,8 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(surfaceId), surfaceId), (nameof(timeoutMs), timeoutMs)));
     }
 
-    [ReadmeTool("UI And Input", "Move the bridge-controlled virtual pointer over a UI, screen, map cell, pawn, thing, or direct screen-point target, optionally persisting it for hover and tooltip testing")]
-    [Tool("rimworld/pointer_move", Description = "Move the bridge-controlled virtual pointer over a UI, screen, map cell, pawn, thing, or direct screen-point target, optionally persisting it for hover and tooltip testing")]
-    public object PointerMove(
-        [ToolParameter(Description = "Target object. Supported forms include {kind:'ui', id:'ui-element:...'}, {kind:'screen', id:'screen-target-id'}, {kind:'mapCell', x:10, z:20}, {kind:'pawn', id:'thing-id'}, {kind:'thing', id:'thing-id'}, or {kind:'screenPoint', x:100, y:200}.")] Dictionary<string, object> target,
-        [ToolParameter(Description = "Optional screen-space offset object such as {x:4, y:-2}; target objects may also include offsetX and offsetY.")] Dictionary<string, object> offset = null,
-        [ToolParameter(Description = "Approximate movement duration in milliseconds. Zero jumps directly to the target.")] int durationMs = 0,
-        [ToolParameter(Description = "Explicit number of intermediate frame steps. When zero, the bridge derives steps from durationMs.")] int steps = 0,
-        [ToolParameter(Description = "Keep the virtual pointer at the target after the move so hover, mouseover, tooltip, and screenshot flows remain stable.")] bool persist = true,
-        [ToolParameter(Description = "Wait until RimWorld reports at least one active tooltip after the move.")] bool waitForTooltip = false,
-        [ToolParameter(Description = "Maximum time to wait for movement and optional tooltip observation.")] int timeoutMs = 2000)
-    {
-        return InvokeAlias(Arguments((nameof(target), target), (nameof(offset), offset), (nameof(durationMs), durationMs), (nameof(steps), steps), (nameof(persist), persist), (nameof(waitForTooltip), waitForTooltip), (nameof(timeoutMs), timeoutMs)));
-    }
-
-    [ReadmeTool("UI And Input", "Perform a bridge-controlled mouse gesture between two pointer targets, including click, right-click, hold, and drag paths through RimWorld's live input handlers")]
-    [Tool("rimworld/pointer_gesture", Description = "Perform a bridge-controlled mouse gesture between two pointer targets, including click, right-click, hold, and drag paths through RimWorld's live input handlers")]
-    public object PointerGesture(
-        [ToolParameter(Description = "Start target object. Use the same target forms as rimworld/pointer_move.")] Dictionary<string, object> from,
-        [ToolParameter(Description = "End target object. Omit or null for a click/tap at the start target. Use a different target for drag gestures.")] Dictionary<string, object> to = null,
-        [ToolParameter(Description = "Mouse button to use: left, right, middle, 0, 1, or 2.")] string button = "left",
-        [ToolParameter(Description = "Optional modifier list such as ['shift'], ['ctrl'], ['alt'], or ['command'].")] List<object> modifiers = null,
-        [ToolParameter(Description = "Approximate drag movement duration in milliseconds.")] int durationMs = 250,
-        [ToolParameter(Description = "Explicit drag interpolation steps. When zero, the bridge derives steps from durationMs.")] int steps = 8,
-        [ToolParameter(Description = "Milliseconds to hold the button down before movement begins.")] int holdStartMs = 0,
-        [ToolParameter(Description = "Milliseconds to hold the button down at the destination before releasing.")] int holdEndMs = 0,
-        [ToolParameter(Description = "Maximum time to wait for the queued gesture to complete.")] int timeoutMs = 3000,
-        [ToolParameter(Description = "Keep the virtual pointer at the destination after the gesture; false clears it after the release.")] bool leavePointerAtEnd = false)
-    {
-        return InvokeAlias(Arguments((nameof(from), from), (nameof(to), to), (nameof(button), button), (nameof(modifiers), modifiers), (nameof(durationMs), durationMs), (nameof(steps), steps), (nameof(holdStartMs), holdStartMs), (nameof(holdEndMs), holdEndMs), (nameof(timeoutMs), timeoutMs), (nameof(leavePointerAtEnd), leavePointerAtEnd)));
-    }
-
-    [ReadmeTool("UI And Input", "Clear bridge-controlled pointer hover and any queued pointer gesture")]
-    [Tool("rimworld/pointer_clear", Description = "Clear bridge-controlled pointer hover and any queued pointer gesture")]
-    public object PointerClear()
-    {
-        return InvokeAlias();
-    }
-
+    [ReadmeTool("UI And Input", "Activate an actionable UI control target returned by rimworld/get_ui_layout on the next real draw frame")]
+    [Tool("rimworld/click_ui_target", Description = "Activate an actionable UI control target returned by rimworld/get_ui_layout on the next real draw frame")]
     public object ClickUiTarget(
         [ToolParameter(Description = "Actionable ui-element target id returned by rimworld/get_ui_layout")] string targetId,
         [ToolParameter(Description = "Maximum time to wait for the target control to be redrawn so the click can be injected")] int timeoutMs = 2000)
@@ -730,6 +694,8 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(deltaY), deltaY), (nameof(deltaX), deltaX), (nameof(targetY), targetY), (nameof(targetX), targetX), (nameof(timeoutMs), timeoutMs)));
     }
 
+    [ReadmeTool("UI And Input", "Set a persistent virtual hover target for UI review and screenshots, using either an actionable ui-element target id or a current-map cell, pawn, or thing")]
+    [Tool("rimworld/set_hover_target", Description = "Set a persistent virtual hover target for UI review and screenshots, using either an actionable ui-element target id or a current-map cell, pawn, or thing")]
     public object SetHoverTarget(
         [ToolParameter(Description = "Optional actionable ui-element target id returned by rimworld/get_ui_layout")] string targetId = null,
         [ToolParameter(Description = "Current-map cell x coordinate when hovering a map cell")] int? x = null,
@@ -741,6 +707,8 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(x), x), (nameof(z), z), (nameof(thingId), thingId), (nameof(pawnName), pawnName), (nameof(pawnId), pawnId)));
     }
 
+    [ReadmeTool("UI And Input", "Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state")]
+    [Tool("rimworld/clear_hover_target", Description = "Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state")]
     public object ClearHoverTarget()
     {
         return InvokeAlias();
@@ -783,6 +751,8 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(windowType), windowType), (nameof(replaceExisting), replaceExisting)));
     }
 
+    [ReadmeTool("UI And Input", "Semantically click a known actionable target id returned by rimworld/get_screen_targets without requiring OS focus")]
+    [Tool("rimworld/click_screen_target", Description = "Semantically click a known actionable target id returned by rimworld/get_screen_targets without requiring OS focus")]
     public object ClickScreenTarget([ToolParameter(Description = "Actionable target id such as a context-menu option target or window dismiss target")] string targetId)
     {
         return InvokeAlias(Arguments((nameof(targetId), targetId)));
@@ -1093,6 +1063,8 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(saveName), saveName), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded)));
     }
 
+    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open")]
+    [Tool("rimworld/open_context_menu", Description = "Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open")]
     public object OpenContextMenu(
         [ToolParameter(Description = "Optional target pawn name on the current map.")] string targetPawnName = null,
         [ToolParameter(Description = "Optional stable target pawn id from rimworld/list_colonists.")] string targetPawnId = null,
@@ -1106,6 +1078,8 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(targetPawnId), targetPawnId), (nameof(x), x), (nameof(z), z), (nameof(mode), mode), (nameof(button), button), (nameof(holdDurationMs), holdDurationMs), (nameof(modifiers), modifiers)));
     }
 
+    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click")]
+    [Tool("rimworld/right_click_cell", Description = "Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click")]
     public object RightClickCell(
         [ToolParameter(Description = "Optional target pawn name on the current map.")] string targetPawnName = null,
         [ToolParameter(Description = "Optional stable target pawn id from rimworld/list_colonists.")] string targetPawnId = null,

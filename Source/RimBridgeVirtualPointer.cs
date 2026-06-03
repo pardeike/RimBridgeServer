@@ -65,22 +65,6 @@ internal static class RimBridgeVirtualPointer
         }
     }
 
-    public static void UpdateTransientOverride(int token, Vector2 screenPositionInverted)
-    {
-        if (token == 0)
-            return;
-
-        lock (Sync)
-        {
-            var index = TransientOverrides.FindLastIndex(entry => entry.Token == token);
-            if (index < 0)
-                return;
-
-            TransientOverrides[index].ScreenPosition = InvertedToBottomLeft(screenPositionInverted);
-            TransientOverrides[index].ScreenPositionInverted = screenPositionInverted;
-        }
-    }
-
     public static void SetPersistentPointer(string kind, string targetId, string label, Vector2 screenPositionInverted, object details)
     {
         lock (Sync)

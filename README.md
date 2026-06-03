@@ -266,15 +266,16 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/open_main_tab` - Open one RimWorld main tab by stable target id, `defName`, label, or tab window type
 - `rimworld/close_main_tab` - Close the currently open RimWorld main tab, optionally asserting which tab is open first
 - `rimworld/get_ui_layout` - Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata
-- `rimworld/pointer_move` - Move the bridge-controlled virtual pointer over a UI, screen, map cell, pawn, thing, or direct screen-point target, optionally persisting it for hover and tooltip testing
-- `rimworld/pointer_gesture` - Perform a bridge-controlled mouse gesture between two pointer targets, including click, right-click, hold, and drag paths through RimWorld's live input handlers
-- `rimworld/pointer_clear` - Clear bridge-controlled pointer hover and any queued pointer gesture
+- `rimworld/click_ui_target` - Activate an actionable UI control target returned by `rimworld/get_ui_layout` on the next real draw frame
 - `rimworld/scroll_ui_target` - Scroll a scroll_view `ui-element` target returned by `rimworld/get_ui_layout` on the next real draw frame
+- `rimworld/set_hover_target` - Set a persistent virtual hover target for UI review and screenshots, using either an actionable `ui-element` target id or a current-map cell, pawn, or thing
+- `rimworld/clear_hover_target` - Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state
 - `rimworld/press_accept` - Send semantic accept input to the active RimWorld window stack without requiring OS focus
 - `rimworld/list_languages` - List installed RimWorld languages, including a recommended ASCII-safe switch query for each language and the currently active language
 - `rimworld/press_cancel` - Send semantic cancel input to the active RimWorld window stack without requiring OS focus
 - `rimworld/close_window` - Close an open RimWorld window by type name or, if omitted, the topmost window
 - `rimworld/open_window_by_type` - Open a RimWorld window by short or full .NET type name when the window exposes a public parameterless constructor
+- `rimworld/click_screen_target` - Semantically click a known actionable target id returned by `rimworld/get_screen_targets` without requiring OS focus
 - `rimworld/switch_language` - Switch RimWorld to an installed language by the recommendedQuery from `rimworld/list_languages` or another exact language name match, mirroring the main-menu language picker and saving prefs
 - `rimworld/start_debug_game` - Start RimWorld's built-in quick test colony from the main menu
 - `rimworld/start_debug_game_ready` - Start RimWorld's built-in quick test colony from the main menu and wait for the requested readiness level
@@ -326,6 +327,8 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 
 ### Context Menus And Map Interaction
 
+- `rimworld/open_context_menu` - Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open
+- `rimworld/right_click_cell` - Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
 - `rimworld/get_context_menu_options` - Get the currently opened debug context menu options
 - `rimworld/execute_context_menu_option` - Execute a context menu option by index or label
 - `rimworld/close_context_menu` - Close the currently opened debug context menu
