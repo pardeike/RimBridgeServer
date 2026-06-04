@@ -139,12 +139,14 @@ Pass those ids to `rimworld/take_screenshot` as `clipTargetId` to crop a screens
 
 ## Third-Party Extension Tools
 
-Third-party mods can expose bridge tools by referencing the `RimBridgeServer.Annotations` NuGet package and annotating ordinary public methods. RimBridgeServer delays its own GAB startup until RimWorld has finished initializing all loaded mods, then scans every loaded mod assembly exactly once, registers all discovered annotated tools exactly once, and exposes them through the same capability registry and top-level GAB tool surface as built-in tools.
+Third-party mods can expose bridge tools by referencing the `RimBridgeServer.Annotations` NuGet package and annotating ordinary public methods. RimBridgeServer delays its own GAB startup until RimWorld has finished initializing all loaded mods, scans the loaded mod assemblies, deduplicates shared-library annotations, and exposes the selected tools through the same capability registry and top-level GAB tool surface as built-in tools.
 
 Practical rules:
 
 - use `RimBridgeServer.Annotations` as the only shared dependency
 - annotate public static methods, public instance methods on your `Verse.Mod` class, or public instance methods on a type with a public parameterless constructor
+- shared singleton libraries may keep their own annotated diagnostics or test tools; when the same compiled method is discovered through multiple dependent mods, RimBridgeServer registers it once
+- public tool names are global across the bridge surface; if different extension methods claim the same name, RimBridgeServer keeps the deterministic first match without startup warning spam
 - use `[ToolParameter]` for argument docs, `Tool.ResultDescription` for a short successful-result summary, and `[ToolResponse]` for response field docs when useful
 - expect per-mod fault isolation: one broken mod should not block discovery for other mods
 - assume that blocking attention is still owned centrally by RimBridgeServer; there is not yet a public cross-mod API for third-party mods to publish their own async attention items directly

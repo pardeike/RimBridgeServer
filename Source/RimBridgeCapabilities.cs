@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using RimBridgeServer.Core;
 using RimBridgeServer.Contracts;
 
@@ -107,7 +108,11 @@ internal static class RimBridgeCapabilities
             module: new ContextMenuCapabilityModule(),
             aliasMetadataType: typeof(RimBridgeTools),
             source: CapabilitySourceKind.Optional));
-        var extensionProviders = RimBridgeExtensionDiscovery.DiscoverProviders();
+        var reservedExtensionAliases = registry.GetCapabilities()
+            .SelectMany(descriptor => descriptor.Aliases)
+            .Where(alias => string.IsNullOrWhiteSpace(alias) == false)
+            .ToList();
+        var extensionProviders = RimBridgeExtensionDiscovery.DiscoverProviders(reservedExtensionAliases);
         var extensionTools = new List<AnnotatedExtensionCapabilityProvider.DiscoveredTool>();
 
         foreach (var provider in extensionProviders)

@@ -58,10 +58,7 @@ internal static class RimBridgeStartup
         foreach (var tool in RimBridgeCapabilities.ExtensionTools)
         {
             if (server.Tools.HasTool(tool.Alias))
-            {
-                Log.Warning($"[RimBridge] Skipping annotated extension tool '{tool.Alias}' because a tool with that name is already registered.");
                 continue;
-            }
 
             server.Tools.RegisterTool(
                 tool.Alias,

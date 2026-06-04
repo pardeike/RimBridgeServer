@@ -548,8 +548,10 @@ Current model:
 
 - third-party mods reference `RimBridgeServer.Annotations`
 - RimBridgeServer delays GAB startup until `LoadedModManager.InitializeMods` has completed
-- once all mods are initialized, the host scans each loaded mod assembly exactly once for annotated public tool methods
-- discovered tools are registered once into both the capability registry and the live GAB tool surface
+- once all mods are initialized, the host scans loaded mod assemblies for annotated public tool methods
+- identical compiled annotated methods are deduplicated globally, so a singleton shared library can own its bridge diagnostics even when multiple mods depend on it
+- public extension tool names are global; if different extension methods claim the same name, deterministic first-wins selection keeps startup quiet
+- selected tools are registered once into both the capability registry and the live GAB tool surface
 - each mod is isolated by `try/catch`, so one failing scan does not block other mods
 
 Supported authoring shapes:
@@ -562,6 +564,7 @@ Design constraints:
 
 - keep the shared package annotation-only so participating mods do not need a heavy runtime dependency
 - keep discovery one-shot and startup-bound rather than re-scanning during live execution
+- use mod-based provider ids for unique mod-local annotated assemblies and assembly-based provider ids for shared assemblies discovered through multiple mods
 - continue to prefer publicized RimWorld APIs for actual game access; reflection is for extension discovery and optional third-party adapters, not routine game logic
 
 ## Testing Strategy
