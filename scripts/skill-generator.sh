@@ -338,20 +338,21 @@ quick_start_lines = [
     "1. Use this skill only when the task actually needs live bridge or in-game interaction; for source-only repo work, do not load it.",
     "2. Prefer the GABS connector in Codex when it is available, because it gives you a stable discovery and call surface even when the mirrored game tools change at runtime.",
     "3. Start by checking session state with `mcp__gabs__games_status` and then use `mcp__gabs__games_connect` when RimWorld is running but not yet attached.",
-    "4. For a cold-start fast path, prefer `mcp__gabs__games_start` -> `rimworld/load_game_ready` when you need a save -> the semantic tool you actually need. Do not insert arbitrary sleeps, redundant reconnects, or a second readiness wait after the composite load tool succeeds.",
-    "5. If `mcp__gabs__games_start` reports that the game started successfully and connected via GABP, do not call `mcp__gabs__games_connect` again. Starting the process is not itself a reason to call `rimbridge/wait_for_game_loaded`: if you need to load a save, call `rimworld/load_game_ready`; if a playable game is already loading or a lifecycle result says `state.automationReady: false`, then call `rimbridge/wait_for_game_loaded`; otherwise proceed to the semantic tool you actually need.",
-    "6. If RimWorld is already running but owned by another live GABS session and you intentionally want this session to take over, prefer `mcp__gabs__games_connect` with `forceTakeover: true` instead of stop/start just to gain ownership.",
-    "7. Discover the live mirrored tool names with `mcp__gabs__games_tool_names` and inspect only the few candidates you might use with `mcp__gabs__games_tool_detail`.",
-    "8. Call the discovered mirrored tool through `mcp__gabs__games_call_tool`. Do not guess how direct tool ids were mirrored, normalized, or prefixed.",
+    "4. For slow mod-heavy starts, pass a larger `timeout` to `mcp__gabs__games_start` or configure GABS `timeouts.startup.gabpConnectSeconds` instead of accepting an early startup return and adding a manual reconnect step.",
+    "5. For a cold-start fast path, prefer `mcp__gabs__games_start` -> `rimworld/load_game_ready` when you need a save -> the semantic tool you actually need. Do not insert arbitrary sleeps, redundant reconnects, or a second readiness wait after the composite load tool succeeds.",
+    "6. If `mcp__gabs__games_start` reports that the game started successfully and connected via GABP, do not call `mcp__gabs__games_connect` again. Starting the process is not itself a reason to call `rimbridge/wait_for_game_loaded`: if you need to load a save, call `rimworld/load_game_ready`; if a playable game is already loading or a lifecycle result says `state.automationReady: false`, then call `rimbridge/wait_for_game_loaded`; otherwise proceed to the semantic tool you actually need.",
+    "7. If RimWorld is already running but owned by another live GABS session and you intentionally want this session to take over, prefer `mcp__gabs__games_connect` with `forceTakeover: true` instead of stop/start just to gain ownership.",
+    "8. Discover the live mirrored tool names with `mcp__gabs__games_tool_names` and inspect only the few candidates you might use with `mcp__gabs__games_tool_detail`.",
+    "9. Call the discovered mirrored tool through `mcp__gabs__games_call_tool`. Do not guess how direct tool ids were mirrored, normalized, or prefixed.",
 ]
 
 if has_direct:
     quick_start_lines.append(
-        "9. If a direct RimBridgeServer MCP connector is already installed in the current Codex session, start with its own status and discovery tools such as `rimbridge/get_bridge_status`, `rimbridge/list_capabilities`, and `rimbridge/wait_for_game_loaded`."
+        "10. If a direct RimBridgeServer MCP connector is already installed in the current Codex session, start with its own status and discovery tools such as `rimbridge/get_bridge_status`, `rimbridge/list_capabilities`, and `rimbridge/wait_for_game_loaded`."
     )
 else:
     quick_start_lines.append(
-        "9. If you are not using GABS, look for the server's direct discovery and status tools before attempting any domain action."
+        "10. If you are not using GABS, look for the server's direct discovery and status tools before attempting any domain action."
     )
 
 skill_md = [
@@ -383,6 +384,7 @@ skill_md.extend(
         "- `mcp__gabs__games_start` already performs a short best-effort GABP attach. If it reports success with GABP connected, do not immediately follow it with `mcp__gabs__games_connect`.",
         "- `mcp__gabs__games_stop` already waits for shutdown or kill fallback; do not insert arbitrary sleeps after a successful stop unless you are debugging a concrete platform-specific issue.",
         "- If the only problem is session ownership, prefer `mcp__gabs__games_connect` with `forceTakeover: true` over stopping and relaunching the game.",
+        "- If attention is open, use `mcp__gabs__games_get_attention` plus bridge diagnostics and lifecycle observation tools such as operation status, log listing, game-loaded wait, and long-event idle wait before acknowledging and retrying normal gameplay or load calls.",
         "- Prefer composite lifecycle tools when the surface exposes them. In particular, use `rimworld/load_game_ready` instead of chaining `rimworld/load_game` and `rimbridge/wait_for_game_loaded` manually.",
         "- Do not call `rimbridge/wait_for_game_loaded` immediately after `mcp__gabs__games_start` just because the game process connected. Use it only when a playable game is already expected to be loading, such as after `rimworld/start_debug_game`, after `rimworld/load_game`, or when a lifecycle result explicitly reports `state.automationReady: false`.",
         "- Use lifecycle results as state signals. If you did call `rimworld/load_game` directly and it returns `state.automationReady: false`, call `rimbridge/wait_for_game_loaded` immediately; if it already returns ready, skip the extra wait.",

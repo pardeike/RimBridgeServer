@@ -256,7 +256,7 @@ internal static class RimWorldWaits
             ["elapsedMs"] = outcome.ElapsedMs,
             ["attempts"] = outcome.Attempts,
             ["probeFailureCount"] = outcome.ProbeFailureCount,
-            ["lastProbeError"] = string.IsNullOrWhiteSpace(outcome.LastProbeError) ? null : outcome.LastProbeError,
+            ["lastProbeError"] = outcome.Satisfied || string.IsNullOrWhiteSpace(outcome.LastProbeError) ? null : outcome.LastProbeError,
             ["state"] = outcome.Snapshot
         };
     }

@@ -40,9 +40,14 @@ When GABS is enforcing attention gating, ordinary game-bound calls are blocked u
 
 Diagnostics still remain available:
 
+- `rimbridge/get_operation`
 - `rimbridge/get_bridge_status`
+- `rimbridge/list_operations`
 - `rimbridge/list_operation_events`
 - `rimbridge/list_logs`
+- `rimbridge/wait_for_operation`
+- `rimbridge/wait_for_game_loaded`
+- `rimbridge/wait_for_long_event_idle`
 - `games.get_attention`
 - `games.ack_attention`
 

@@ -13,6 +13,7 @@ namespace RimBridgeServer;
 internal sealed class LifecycleCapabilityModule
 {
     private static readonly MainThreadDispatcher Dispatcher = new();
+    private static readonly ConditionWaiter Waiter = new();
 
     public object PauseGame(bool pause = true)
     {
@@ -520,6 +521,7 @@ internal sealed class LifecycleCapabilityModule
 
     public object LoadGameReady(string saveName, int timeoutMs = 120000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false)
     {
+        var operationStopwatch = Stopwatch.StartNew();
         var safeName = RimWorldState.SanitizeName(saveName, "rimbridge_save");
         var path = GenFilePaths.FilePathForSavedGame(safeName);
         if (!File.Exists(path))
@@ -527,17 +529,31 @@ internal sealed class LifecycleCapabilityModule
             return new { success = false, message = $"Save '{safeName}' does not exist.", path };
         }
 
-        var queuedState = Dispatcher.Invoke(() =>
+        var mainThreadReady = WaitForAutomationMainThread(timeoutMs, pollIntervalMs);
+        if (mainThreadReady.Satisfied == false)
         {
-            if (Find.WindowStack?.FloatMenu != null)
-                Find.WindowStack.TryRemove(Find.WindowStack.FloatMenu, doCloseSound: false);
-            RimBridgeContextMenus.Clear();
+            return CreateLoadGameReadyQueueFailure(safeName, path, mainThreadReady);
+        }
 
-            GameDataSaveLoader.LoadGame(safeName);
-            return RimWorldState.ToolStateSnapshot();
-        }, timeoutMs: 5000);
+        object queuedState;
+        try
+        {
+            queuedState = Dispatcher.Invoke(() =>
+            {
+                if (Find.WindowStack?.FloatMenu != null)
+                    Find.WindowStack.TryRemove(Find.WindowStack.FloatMenu, doCloseSound: false);
+                RimBridgeContextMenus.Clear();
 
-        var wait = RimWorldWaits.WaitForGameLoadedResult(timeoutMs, pollIntervalMs, readiness, pauseIfNeeded);
+                GameDataSaveLoader.LoadGame(safeName);
+                return RimWorldState.ToolStateSnapshot();
+            }, timeoutMs: ResolveLoadQueueDispatchTimeoutMs(timeoutMs, operationStopwatch.ElapsedMilliseconds));
+        }
+        catch (Exception ex)
+        {
+            return CreateLoadGameReadyQueueFailure(safeName, path, mainThreadReady, ex);
+        }
+
+        var wait = RimWorldWaits.WaitForGameLoadedResult(ResolveRemainingTimeoutMs(timeoutMs, operationStopwatch.ElapsedMilliseconds), pollIntervalMs, readiness, pauseIfNeeded);
         var success = wait.TryGetValue("success", out var successValue) && successValue is bool satisfied && satisfied;
         wait.TryGetValue("message", out var message);
         wait.TryGetValue("state", out var finalState);
@@ -559,6 +575,100 @@ internal sealed class LifecycleCapabilityModule
             },
             ["wait"] = wait
         };
+    }
+
+    private static WaitOutcome WaitForAutomationMainThread(int timeoutMs, int pollIntervalMs)
+    {
+        return Waiter.WaitUntil(
+            () =>
+            {
+                var state = Dispatcher.Invoke(RimWorldState.ToolStateSnapshot, timeoutMs: ResolveProbeDispatchTimeoutMs(timeoutMs));
+                return new WaitProbeResult
+                {
+                    IsSatisfied = true,
+                    Message = "RimWorld main thread accepted automation work.",
+                    Snapshot = state
+                };
+            },
+            new WaitOptions
+            {
+                TimeoutMs = NormalizeTimeoutMs(timeoutMs),
+                PollIntervalMs = NormalizePollIntervalMs(pollIntervalMs),
+                HandleProbeException = ex => new WaitProbeResult
+                {
+                    IsSatisfied = false,
+                    Message = "RimWorld main thread was busy before queueing save load. Retrying.",
+                    BlockingReason = ex.Message
+                },
+                TimeoutMessage = "Timed out waiting for RimWorld main thread before queueing save load."
+            });
+    }
+
+    private static Dictionary<string, object> CreateLoadGameReadyQueueFailure(
+        string safeName,
+        string path,
+        WaitOutcome mainThreadReady,
+        Exception exception = null)
+    {
+        var message = exception == null
+            ? mainThreadReady.Message
+            : $"RimWorld main thread did not queue save '{safeName}': {exception.GetBaseException().Message}";
+
+        return new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["success"] = false,
+            ["saveName"] = safeName,
+            ["path"] = path,
+            ["message"] = message,
+            ["state"] = mainThreadReady.Snapshot,
+            ["queue"] = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["success"] = false,
+                ["message"] = message,
+                ["attempts"] = mainThreadReady.Attempts,
+                ["elapsedMs"] = mainThreadReady.ElapsedMs,
+                ["probeFailureCount"] = mainThreadReady.ProbeFailureCount,
+                ["lastProbeError"] = string.IsNullOrWhiteSpace(mainThreadReady.LastProbeError) ? null : mainThreadReady.LastProbeError,
+                ["blockingReason"] = string.IsNullOrWhiteSpace(mainThreadReady.BlockingReason) ? null : mainThreadReady.BlockingReason
+            }
+        };
+    }
+
+    private static int ResolveProbeDispatchTimeoutMs(int timeoutMs)
+    {
+        if (timeoutMs <= 0)
+            return 0;
+
+        return Math.Min(timeoutMs, 10000);
+    }
+
+    private static int ResolveLoadQueueDispatchTimeoutMs(int timeoutMs, long elapsedMs)
+    {
+        var remainingMs = ResolveRemainingTimeoutMs(timeoutMs, elapsedMs);
+        if (remainingMs <= 0)
+            return 0;
+
+        return remainingMs <= 10000
+            ? remainingMs
+            : Math.Min(remainingMs, 30000);
+    }
+
+    private static int ResolveRemainingTimeoutMs(int timeoutMs, long elapsedMs)
+    {
+        if (timeoutMs <= 0)
+            return 0;
+
+        return Math.Max(1, timeoutMs - (int)Math.Min(int.MaxValue, elapsedMs));
+    }
+
+    private static int NormalizeTimeoutMs(int timeoutMs)
+    {
+        return Math.Max(0, timeoutMs);
+    }
+
+    private static int NormalizePollIntervalMs(int pollIntervalMs)
+    {
+        return Math.Max(25, pollIntervalMs);
     }
 
     private static TimedPlaybackState CapturePlaybackState()
