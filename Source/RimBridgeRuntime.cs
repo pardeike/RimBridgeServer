@@ -116,7 +116,10 @@ internal static class Root_Update_Patch
         RimWorldTickStepper.AdvanceFromRootUpdate(Time.frameCount);
         RimBridgeUiWorkbench.AdvanceFrame(Time.frameCount);
         if (PlayDataLoader.Loaded && !LongEventHandler.AnyEventNowOrWaiting && Find.UIRoot != null)
+        {
+            RimBridgeCameraConfig.KeepFullZoomRange();
             RimBridgeStartup.OnRuntimeReady();
+        }
     }
 }
 
