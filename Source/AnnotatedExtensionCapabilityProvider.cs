@@ -125,6 +125,7 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
                             Title = attribute.Title,
                             Description = attribute.Description,
                             ResultDescription = GetOptionalStringProperty(attribute, "ResultDescription"),
+                            Tags = NormalizeTags(attribute.Tags),
                             RequiresAuth = attribute.RequiresAuth,
                             Parameters = method.GetParameters().Select(CreateToolParameterInfo).ToList(),
                             ResponseFields = method.GetCustomAttributes<AnnotationToolResponseAttribute>(inherit: false)
@@ -140,6 +141,18 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
                         }
                     };
                 }))
+            .ToList();
+    }
+
+    private static List<string> NormalizeTags(IEnumerable<string> tags)
+    {
+        if (tags == null)
+            return [];
+
+        return tags
+            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+            .Select(tag => tag.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 

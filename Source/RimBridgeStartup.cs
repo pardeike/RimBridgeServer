@@ -95,16 +95,6 @@ internal static class RimBridgeStartup
                 .UseAppInfo("RimBridgeServer", version)
                 .UseGabsEnvironmentIfAvailable();
             var usingGabsConfig = Lib.GAB.Gabp.IsRunningUnderGabs();
-            string bridgeConfigError = null;
-            if (!usingGabsConfig && RimBridgeGabsBridgeConfig.TryRead("rimworld", out var bridgeConfig, out bridgeConfigError))
-            {
-                builder.UseExternalConfig(bridgeConfig.Port, bridgeConfig.Token, bridgeConfig.GameId);
-                usingGabsConfig = true;
-            }
-            else if (!string.IsNullOrEmpty(bridgeConfigError))
-            {
-                Log.Warning($"[RimBridge] Could not read GABS bridge config: {bridgeConfigError}");
-            }
 
             _server = builder
                 .UsePortIfNotSet(5174)

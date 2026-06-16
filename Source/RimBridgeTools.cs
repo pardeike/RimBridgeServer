@@ -8,35 +8,35 @@ namespace RimBridgeServer;
 public class RimBridgeTools
 {
     [ReadmeTool("Bridge Diagnostics", "Connectivity test. Returns 'pong'.")]
-    [Tool("rimbridge/ping", Description = "Connectivity test. Returns 'pong'.")]
+    [Tool("rimbridge/ping", Description = "Connectivity test. Returns 'pong'.", Tags = new string[] { "diagnostic", "read-only" })]
     public object Ping()
     {
         return InvokeAlias();
     }
 
     [ReadmeTool("Bridge Diagnostics", "Get basic information about the current RimWorld game")]
-    [Tool("rimworld/get_game_info", Description = "Get basic information about the current RimWorld game")]
+    [Tool("rimworld/get_game_info", Description = "Get basic information about the current RimWorld game", Tags = new string[] { "diagnostic", "read-only" })]
     public object GetGameInfo()
     {
         return InvokeAlias();
     }
 
     [ReadmeTool("Bridge Diagnostics", "Get the latest retained journal snapshot for a specific operation id, including any bounded retained result payload")]
-    [Tool("rimbridge/get_operation", Description = "Get the latest retained journal snapshot for a specific operation id, including any bounded retained result payload")]
+    [Tool("rimbridge/get_operation", Description = "Get the latest retained journal snapshot for a specific operation id, including any bounded retained result payload", Tags = new string[] { "diagnostic", "read-only" })]
     public object GetOperation([ToolParameter(Description = "Operation id returned in tool metadata")] string operationId)
     {
         return InvokeAlias(Arguments((nameof(operationId), operationId)));
     }
 
     [ReadmeTool("Bridge Diagnostics", "Get the current bridge and RimWorld state snapshot without mutating game state")]
-    [Tool("rimbridge/get_bridge_status", Description = "Get the current bridge and RimWorld state snapshot without mutating game state")]
+    [Tool("rimbridge/get_bridge_status", Description = "Get the current bridge and RimWorld state snapshot without mutating game state", Tags = new string[] { "diagnostic", "status", "read-only" })]
     public object GetBridgeStatus()
     {
         return InvokeAlias();
     }
 
     [ReadmeTool("Bridge Diagnostics", "List registered bridge capabilities so an agent can discover the live bridge surface instead of relying on hardcoded tool knowledge")]
-    [Tool("rimbridge/list_capabilities", Description = "List registered bridge capabilities so an agent can discover the live bridge surface instead of relying on hardcoded tool knowledge")]
+    [Tool("rimbridge/list_capabilities", Description = "List registered bridge capabilities so an agent can discover the live bridge surface instead of relying on hardcoded tool knowledge", Tags = new string[] { "diagnostic", "read-only" })]
     public object ListCapabilities(
         [ToolParameter(Description = "Maximum number of capabilities to return")] int limit = 200,
         [ToolParameter(Description = "Optional exact provider id filter")] string providerId = null,
@@ -49,14 +49,14 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("Bridge Diagnostics", "Get one registered bridge capability descriptor by capability id or alias")]
-    [Tool("rimbridge/get_capability", Description = "Get one registered bridge capability descriptor by capability id or alias")]
+    [Tool("rimbridge/get_capability", Description = "Get one registered bridge capability descriptor by capability id or alias", Tags = new string[] { "diagnostic", "read-only" })]
     public object GetCapability([ToolParameter(Description = "Capability id or alias such as rimworld/select_pawn")] string capabilityIdOrAlias)
     {
         return InvokeAlias(Arguments((nameof(capabilityIdOrAlias), capabilityIdOrAlias)));
     }
 
     [ReadmeTool("Bridge Diagnostics", "List recent bridge operations from the in-memory operation journal, optionally expanding retained result payloads")]
-    [Tool("rimbridge/list_operations", Description = "List recent bridge operations from the in-memory operation journal, optionally expanding retained result payloads")]
+    [Tool("rimbridge/list_operations", Description = "List recent bridge operations from the in-memory operation journal, optionally expanding retained result payloads", Tags = new string[] { "diagnostic", "read-only" })]
     public object ListOperations(
         [ToolParameter(Description = "Maximum number of operations to return")] int limit = 20,
         [ToolParameter(Description = "Include bounded retained result payloads instead of summary-only operation envelopes")] bool includeResults = false)
@@ -65,7 +65,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("Bridge Diagnostics", "List recent bridge operation lifecycle events from the in-memory event journal")]
-    [Tool("rimbridge/list_operation_events", Description = "List recent bridge operation lifecycle events from the in-memory event journal")]
+    [Tool("rimbridge/list_operation_events", Description = "List recent bridge operation lifecycle events from the in-memory event journal", Tags = new string[] { "diagnostic", "lifecycle", "read-only" })]
     public object ListOperationEvents(
         [ToolParameter(Description = "Maximum number of events to return")] int limit = 50,
         [ToolParameter(Description = "Optional event type filter, such as operation.failed")] string eventType = null,
@@ -77,7 +77,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("Bridge Diagnostics", "List recent captured RimWorld and bridge log entries from the in-memory log journal, including operation correlation when available")]
-    [Tool("rimbridge/list_logs", Description = "List recent captured RimWorld and bridge log entries from the in-memory log journal, including operation correlation when available")]
+    [Tool("rimbridge/list_logs", Description = "List recent captured RimWorld and bridge log entries from the in-memory log journal, including operation correlation when available", Tags = new string[] { "diagnostic", "read-only" })]
     public object ListLogs(
         [ToolParameter(Description = "Maximum number of log entries to return")] int limit = 50,
         [ToolParameter(Description = "Minimum level to include: info, warning, error, or fatal")] string minimumLevel = "info",
@@ -90,7 +90,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("Bridge Diagnostics", "Wait for an operation in the journal to reach a terminal status")]
-    [Tool("rimbridge/wait_for_operation", Description = "Wait for an operation in the journal to reach a terminal status")]
+    [Tool("rimbridge/wait_for_operation", Description = "Wait for an operation in the journal to reach a terminal status", Tags = new string[] { "diagnostic", "lifecycle" })]
     public object WaitForOperation(
         [ToolParameter(Description = "Operation id returned in tool metadata")] string operationId,
         [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 10000,
@@ -100,7 +100,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("Bridge Diagnostics", "Wait until RimWorld reaches the requested loaded-game readiness level")]
-    [Tool("rimbridge/wait_for_game_loaded", Description = "Wait until RimWorld reaches the requested loaded-game readiness level")]
+    [Tool("rimbridge/wait_for_game_loaded", Description = "Wait until RimWorld reaches the requested loaded-game readiness level", Tags = new string[] { "diagnostic", "lifecycle" })]
     public object WaitForGameLoaded(
         [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 30000,
         [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 50,
@@ -111,7 +111,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("Bridge Diagnostics", "Wait until RimWorld reports no long events in progress")]
-    [Tool("rimbridge/wait_for_long_event_idle", Description = "Wait until RimWorld reports no long events in progress")]
+    [Tool("rimbridge/wait_for_long_event_idle", Description = "Wait until RimWorld reports no long events in progress", Tags = new string[] { "diagnostic", "lifecycle", "read-only" })]
     public object WaitForLongEventIdle(
         [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 30000,
         [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 100)

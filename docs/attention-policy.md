@@ -38,7 +38,7 @@ That keeps the attention protocol out of ordinary tool code.
 
 When GABS is enforcing attention gating, ordinary game-bound calls are blocked until the current attention item is acknowledged.
 
-Diagnostics still remain available:
+Diagnostics still remain available because RimBridgeServer publishes diagnostic, status, lifecycle, and read-only tags for these tools:
 
 - `rimbridge/get_operation`
 - `rimbridge/get_bridge_status`
