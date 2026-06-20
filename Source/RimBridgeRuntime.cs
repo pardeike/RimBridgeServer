@@ -115,6 +115,8 @@ internal static class Root_Update_Patch
         RimBridgeMainThread.Pump();
         RimWorldTickStepper.AdvanceFromRootUpdate(Time.frameCount);
         RimBridgeUiWorkbench.AdvanceFrame(Time.frameCount);
+        RimWorldHover.ClearHoverTargetForRealInputState();
+        RimWorldHover.ClearExpiredHoverTarget();
         if (PlayDataLoader.Loaded && !LongEventHandler.AnyEventNowOrWaiting && Find.UIRoot != null)
         {
             RimBridgeCameraConfig.KeepFullZoomRange();

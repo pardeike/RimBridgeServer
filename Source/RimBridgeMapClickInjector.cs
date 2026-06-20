@@ -112,6 +112,7 @@ internal static class RimBridgeMapClickInjector
     public static void BeginUiRootInjection(ref InjectionState state)
     {
         state = null;
+        RimWorldHover.ClearHoverTargetForRealInput(Event.current);
 
         lock (Sync)
         {

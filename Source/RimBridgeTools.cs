@@ -694,21 +694,39 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(deltaY), deltaY), (nameof(deltaX), deltaX), (nameof(targetY), targetY), (nameof(targetX), targetX), (nameof(timeoutMs), timeoutMs)));
     }
 
-    [ReadmeTool("UI And Input", "Set a persistent virtual hover target for UI review and screenshots, using either an actionable ui-element target id or a current-map cell, pawn, or thing")]
-    [Tool("rimworld/set_hover_target", Description = "Set a persistent virtual hover target for UI review and screenshots, using either an actionable ui-element target id or a current-map cell, pawn, or thing")]
+    [ReadmeTool("UI And Input", "Set a bounded virtual cursor/hover target for UI review and screenshots, using a ui-element or screen target id, explicit screen coordinates, or a current-map cell, pawn, or thing")]
+    [Tool("rimworld/set_hover_target", Description = "Set a bounded virtual cursor/hover target for UI review and screenshots, using a ui-element or screen target id, explicit screen coordinates, or a current-map cell, pawn, or thing")]
     public object SetHoverTarget(
-        [ToolParameter(Description = "Optional actionable ui-element target id returned by rimworld/get_ui_layout")] string targetId = null,
+        [ToolParameter(Description = "Optional ui-element target id returned by rimworld/get_ui_layout, or a screen target id from rimworld/get_screen_targets")] string targetId = null,
         [ToolParameter(Description = "Current-map cell x coordinate when hovering a map cell")] int? x = null,
         [ToolParameter(Description = "Current-map cell z coordinate when hovering a map cell")] int? z = null,
         [ToolParameter(Description = "Stable current-map thing id when hovering a spawned thing")] string thingId = null,
         [ToolParameter(Description = "Optional current-map pawn name when hovering a pawn")] string pawnName = null,
-        [ToolParameter(Description = "Optional stable current-map pawn id when hovering a pawn")] string pawnId = null)
+        [ToolParameter(Description = "Optional stable current-map pawn id when hovering a pawn")] string pawnId = null,
+        [ToolParameter(Description = "Anchor inside target rectangles for targetId: center, top, bottom, left, right, topLeft, topRight, bottomLeft, or bottomRight")] string anchor = "center",
+        [ToolParameter(Description = "Logical-pixel horizontal offset added after resolving the target point or map point")] float offsetX = 0f,
+        [ToolParameter(Description = "Logical-pixel vertical offset added after resolving the target point or map point")] float offsetY = 0f,
+        [ToolParameter(Description = "Explicit screen-space x coordinate, in RimWorld UI logical pixels, when no targetId or map target is supplied")] float? screenX = null,
+        [ToolParameter(Description = "Explicit screen-space y coordinate, in RimWorld UI logical pixels from the top edge, when no targetId or map target is supplied")] float? screenY = null,
+        [ToolParameter(Description = "Optional lifetime for the virtual cursor in milliseconds. Values are clamped to a safe bounded range and real mouse input clears it immediately.")] int? durationMs = null)
     {
-        return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(x), x), (nameof(z), z), (nameof(thingId), thingId), (nameof(pawnName), pawnName), (nameof(pawnId), pawnId)));
+        return InvokeAlias(Arguments(
+            (nameof(targetId), targetId),
+            (nameof(x), x),
+            (nameof(z), z),
+            (nameof(thingId), thingId),
+            (nameof(pawnName), pawnName),
+            (nameof(pawnId), pawnId),
+            (nameof(anchor), anchor),
+            (nameof(offsetX), offsetX),
+            (nameof(offsetY), offsetY),
+            (nameof(screenX), screenX),
+            (nameof(screenY), screenY),
+            (nameof(durationMs), durationMs)));
     }
 
-    [ReadmeTool("UI And Input", "Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state")]
-    [Tool("rimworld/clear_hover_target", Description = "Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state")]
+    [ReadmeTool("UI And Input", "Clear the current virtual cursor/hover target so screenshots, mouseover-driven UI, and map clicks return to the real cursor state")]
+    [Tool("rimworld/clear_hover_target", Description = "Clear the current virtual cursor/hover target so screenshots, mouseover-driven UI, and map clicks return to the real cursor state")]
     public object ClearHoverTarget()
     {
         return InvokeAlias();

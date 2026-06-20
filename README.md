@@ -270,8 +270,8 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/get_ui_layout` - Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata
 - `rimworld/click_ui_target` - Activate an actionable UI control target returned by `rimworld/get_ui_layout` on the next real draw frame
 - `rimworld/scroll_ui_target` - Scroll a scroll_view `ui-element` target returned by `rimworld/get_ui_layout` on the next real draw frame
-- `rimworld/set_hover_target` - Set a persistent virtual hover target for UI review and screenshots, using either an actionable `ui-element` target id or a current-map cell, pawn, or thing
-- `rimworld/clear_hover_target` - Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state
+- `rimworld/set_hover_target` - Set a bounded virtual cursor/hover target for UI review and screenshots, using a `ui-element` or screen target id, explicit screen coordinates, or a current-map cell, pawn, or thing
+- `rimworld/clear_hover_target` - Clear the current virtual cursor/hover target so screenshots, mouseover-driven UI, and map clicks return to the real cursor state
 - `rimworld/press_accept` - Send semantic accept input to the active RimWorld window stack without requiring OS focus
 - `rimworld/list_languages` - List installed RimWorld languages, including a recommended ASCII-safe switch query for each language and the currently active language
 - `rimworld/press_cancel` - Send semantic cancel input to the active RimWorld window stack without requiring OS focus

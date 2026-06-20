@@ -619,19 +619,25 @@ Parameters:
 
 ### `rimworld/set_hover_target`
 
-Set a persistent virtual hover target for UI review and screenshots, using either an actionable ui-element target id or a current-map cell, pawn, or thing
+Set a bounded virtual cursor/hover target for UI review and screenshots, using a ui-element or screen target id, explicit screen coordinates, or a current-map cell, pawn, or thing
 
 Parameters:
-- `targetId` (`string`, `optional`, default `null`): Optional actionable ui-element target id returned by rimworld/get_ui_layout
+- `targetId` (`string`, `optional`, default `null`): Optional ui-element target id returned by rimworld/get_ui_layout, or a screen target id from rimworld/get_screen_targets
 - `x` (`int?`, `optional`, default `null`): Current-map cell x coordinate when hovering a map cell
 - `z` (`int?`, `optional`, default `null`): Current-map cell z coordinate when hovering a map cell
 - `thingId` (`string`, `optional`, default `null`): Stable current-map thing id when hovering a spawned thing
 - `pawnName` (`string`, `optional`, default `null`): Optional current-map pawn name when hovering a pawn
 - `pawnId` (`string`, `optional`, default `null`): Optional stable current-map pawn id when hovering a pawn
+- `anchor` (`string`, `optional`, default `"center"`): Anchor inside target rectangles for targetId: center, top, bottom, left, right, topLeft, topRight, bottomLeft, or bottomRight
+- `offsetX` (`float`, `optional`, default `0f`): Logical-pixel horizontal offset added after resolving the target point or map point
+- `offsetY` (`float`, `optional`, default `0f`): Logical-pixel vertical offset added after resolving the target point or map point
+- `screenX` (`float?`, `optional`, default `null`): Explicit screen-space x coordinate, in RimWorld UI logical pixels, when no targetId or map target is supplied
+- `screenY` (`float?`, `optional`, default `null`): Explicit screen-space y coordinate, in RimWorld UI logical pixels from the top edge, when no targetId or map target is supplied
+- `durationMs` (`int?`, `optional`, default `null`): Optional lifetime for the virtual cursor in milliseconds. Values are clamped to a safe bounded range and real mouse input clears it immediately.
 
 ### `rimworld/clear_hover_target`
 
-Clear the current virtual hover target so screenshots and mouseover-driven UI return to the real cursor state
+Clear the current virtual cursor/hover target so screenshots, mouseover-driven UI, and map clicks return to the real cursor state
 
 Parameters: none.
 

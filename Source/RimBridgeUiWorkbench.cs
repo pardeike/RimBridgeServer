@@ -222,6 +222,12 @@ internal static class RimBridgeUiWorkbench
         public UiRectSnapshot Rect { get; set; } = new();
 
         public int Depth { get; set; }
+
+        public string Anchor { get; set; } = "center";
+
+        public float OffsetX { get; set; }
+
+        public float OffsetY { get; set; }
     }
 
     private sealed class RegisteredElementFingerprint
@@ -454,11 +460,11 @@ internal static class RimBridgeUiWorkbench
         return CreateScrollResponse(request);
     }
 
-    public static object SetHoverTargetResponse(string targetId)
+    public static object SetHoverTargetResponse(string targetId, string anchor = "center", float offsetX = 0f, float offsetY = 0f, int? durationMs = null)
     {
         try
         {
-            var description = RimBridgeMainThread.Invoke(() => SetHoveredElement(targetId), timeoutMs: 5000);
+            var description = RimBridgeMainThread.Invoke(() => SetHoveredElement(targetId, anchor, offsetX, offsetY, durationMs), timeoutMs: 5000);
             return new
             {
                 success = true,
@@ -501,7 +507,10 @@ internal static class RimBridgeUiWorkbench
                 elementIndex = _hoveredElement.ElementIndex,
                 elementKind = _hoveredElement.Kind,
                 source = _hoveredElement.Source,
-                label = string.IsNullOrWhiteSpace(_hoveredElement.Label) ? null : _hoveredElement.Label
+                label = string.IsNullOrWhiteSpace(_hoveredElement.Label) ? null : _hoveredElement.Label,
+                anchor = _hoveredElement.Anchor,
+                offsetX = _hoveredElement.OffsetX,
+                offsetY = _hoveredElement.OffsetY
             };
         }
     }
@@ -849,7 +858,13 @@ internal static class RimBridgeUiWorkbench
             Event.current = injectedEvent;
 
             if (state.ShouldHover)
-                RimBridgeVirtualPointer.UpdatePersistentPointerPosition(pointerInverted);
+            {
+                var hover = _hoveredElement;
+                if (hover != null)
+                    RimBridgeVirtualPointer.UpdatePersistentPointerPosition(RimWorldHover.ResolveRectPoint(ToScreenSnapshot(rect), hover.Anchor, hover.OffsetX, hover.OffsetY));
+                else
+                    RimBridgeVirtualPointer.UpdatePersistentPointerPosition(pointerInverted);
+            }
         }
     }
 
@@ -1200,7 +1215,7 @@ internal static class RimBridgeUiWorkbench
         }
     }
 
-    private static object SetHoveredElement(string targetId)
+    private static object SetHoveredElement(string targetId, string anchor, float offsetX, float offsetY, int? durationMs)
     {
         lock (Sync)
         {
@@ -1209,8 +1224,8 @@ internal static class RimBridgeUiWorkbench
 
             if (!TryResolveTarget(target, out var surface, out var element))
                 throw new InvalidOperationException($"UI layout target '{targetId}' is no longer available. Capture a fresh layout snapshot.");
-            if (element == null || !element.Actionable)
-                throw new InvalidOperationException($"UI layout target '{targetId}' is not hoverable through the interactive widget seam. Use an actionable UI element target.");
+            if (element == null)
+                throw new InvalidOperationException($"UI layout target '{targetId}' is no longer available. Capture a fresh layout snapshot.");
 
             _hoveredElement = new HoverRequest
             {
@@ -1221,22 +1236,37 @@ internal static class RimBridgeUiWorkbench
                 Source = element.Source,
                 Label = element.Label ?? string.Empty,
                 Rect = element.Rect,
-                Depth = element.Depth
+                Depth = element.Depth,
+                Anchor = string.IsNullOrWhiteSpace(anchor) ? "center" : anchor,
+                OffsetX = offsetX,
+                OffsetY = offsetY
             };
 
             var pointerRect = element.ScreenRect ?? element.Rect;
-            var center = new Vector2(pointerRect.X + pointerRect.Width / 2f, pointerRect.Y + pointerRect.Height / 2f);
+            var pointer = RimWorldHover.ResolveRectPoint(pointerRect, anchor, offsetX, offsetY);
             RimBridgeVirtualPointer.SetPersistentPointer(
                 kind: "ui_element",
                 targetId,
                 label: string.IsNullOrWhiteSpace(element.Label) ? element.Kind : element.Label,
-                screenPositionInverted: center,
+                screenPositionInverted: pointer,
                 details: new
                 {
                     surfaceTargetId = surface.SurfaceTargetId,
                     elementKind = element.Kind,
-                    source = element.Source
-                });
+                    source = element.Source,
+                    actionable = element.Actionable,
+                    anchor = string.IsNullOrWhiteSpace(anchor) ? "center" : anchor,
+                    offsetX,
+                    offsetY,
+                    rect = new
+                    {
+                        x = pointerRect.X,
+                        y = pointerRect.Y,
+                        width = pointerRect.Width,
+                        height = pointerRect.Height
+                    }
+                },
+                durationMs: durationMs);
 
             return DescribeHoveredElement();
         }
