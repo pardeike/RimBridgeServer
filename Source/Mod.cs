@@ -10,9 +10,15 @@ public class RimBridgeServerMod : Mod
     {
         try
         {
-            RimBridgeMainThread.Initialize();
-            RimBridgePatches.Apply();
-            RimBridgeStartup.OnModConstructed();
+            using (RimBridgeStartupTiming.Phase("mod-constructor.total"))
+            {
+                using (RimBridgeStartupTiming.Phase("main-thread.initialize"))
+                    RimBridgeMainThread.Initialize();
+                using (RimBridgeStartupTiming.Phase("harmony.startup-patches"))
+                    RimBridgePatches.Apply();
+                using (RimBridgeStartupTiming.Phase("startup.on-mod-constructed"))
+                    RimBridgeStartup.OnModConstructed();
+            }
         }
         catch (Exception ex)
         {

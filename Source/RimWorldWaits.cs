@@ -37,6 +37,16 @@ internal static class RimWorldWaits
         return WaitForGameLoadedResult(timeoutMs, pollIntervalMs, readiness, pauseIfNeeded);
     }
 
+    public static string ResolveReadinessInput(string readiness, string targetReadiness = null, bool waitForVisualReady = false)
+    {
+        if (waitForVisualReady)
+            return "visual";
+
+        return string.IsNullOrWhiteSpace(targetReadiness)
+            ? readiness
+            : targetReadiness;
+    }
+
     public static Dictionary<string, object> WaitForGameLoadedResult(int timeoutMs = 30000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false)
     {
         if (AutomationReadiness.TryParseTarget(readiness, out var target) == false)

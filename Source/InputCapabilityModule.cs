@@ -57,6 +57,16 @@ internal sealed class InputCapabilityModule
         return RimWorldMainTabs.CloseMainTabResponse(mainTabId);
     }
 
+    public object ListInspectTabs(bool includeHidden = false)
+    {
+        return RimWorldInspectTabs.ListInspectTabsResponse(includeHidden);
+    }
+
+    public object OpenInspectTab(string inspectTabId)
+    {
+        return RimWorldInspectTabs.OpenInspectTabResponse(inspectTabId);
+    }
+
     public object GetUiLayout(string surfaceId = null, int timeoutMs = 2000)
     {
         return RimBridgeUiWorkbench.GetUiLayoutResponse(surfaceId, timeoutMs);
@@ -84,9 +94,10 @@ internal sealed class InputCapabilityModule
         float offsetY = 0f,
         float? screenX = null,
         float? screenY = null,
-        int? durationMs = null)
+        int? durationMs = null,
+        int settleMs = RimWorldHover.DefaultHoverSettleMs)
     {
-        return RimWorldHover.SetHoverTargetResponse(targetId, x, z, thingId, pawnName, pawnId, anchor, offsetX, offsetY, screenX, screenY, durationMs);
+        return RimWorldHover.SetHoverTargetResponse(targetId, x, z, thingId, pawnName, pawnId, anchor, offsetX, offsetY, screenX, screenY, durationMs, settleMs);
     }
 
     public object ClearHoverTarget()

@@ -230,6 +230,27 @@ internal static class RimBridgeUiWorkbench
         public float OffsetY { get; set; }
     }
 
+    private sealed class SurfaceDescriptor
+    {
+        public string SurfaceTargetId { get; set; } = string.Empty;
+
+        public string SurfaceKind { get; set; } = string.Empty;
+
+        public string Type { get; set; } = string.Empty;
+
+        public string Title { get; set; }
+
+        public string Label { get; set; }
+
+        public string SemanticKind { get; set; } = string.Empty;
+
+        public object SemanticDetails { get; set; }
+
+        public UiRectSnapshot Rect { get; set; } = new();
+
+        public UiRectSnapshot ScreenRect { get; set; }
+    }
+
     private sealed class RegisteredElementFingerprint
     {
         public int ElementIndex { get; set; }
@@ -311,6 +332,7 @@ internal static class RimBridgeUiWorkbench
     private static ActiveInteractionContext _activeInteraction;
     private static int _nextCaptureId = 1;
     private const int MaxRetainedCaptures = 8;
+    internal const string SelectionGizmosSurfaceId = "selection-gizmos";
 
     public static object GetUiLayoutResponse(string surfaceId = null, int timeoutMs = 2000)
     {
@@ -460,17 +482,19 @@ internal static class RimBridgeUiWorkbench
         return CreateScrollResponse(request);
     }
 
-    public static object SetHoverTargetResponse(string targetId, string anchor = "center", float offsetX = 0f, float offsetY = 0f, int? durationMs = null)
+    public static object SetHoverTargetResponse(string targetId, string anchor = "center", float offsetX = 0f, float offsetY = 0f, int? durationMs = null, int settleMs = RimWorldHover.DefaultHoverSettleMs)
     {
         try
         {
             var description = RimBridgeMainThread.Invoke(() => SetHoveredElement(targetId, anchor, offsetX, offsetY, durationMs), timeoutMs: 5000);
+            RimWorldHover.SettleHoverIfRequested(settleMs);
             return new
             {
                 success = true,
                 command = "set_hover_target",
                 message = $"Hover target '{targetId}' is active.",
-                hoverTarget = description
+                hoverTarget = description,
+                settleMs = RimWorldHover.NormalizeHoverSettleMs(settleMs)
             };
         }
         catch (Exception ex)
@@ -608,7 +632,46 @@ internal static class RimBridgeUiWorkbench
 
     public static void BeginSurface(Window window)
     {
-        if (window == null)
+        BeginSurface(window == null ? null : DescribeSurface(window));
+    }
+
+    public static void BeginSelectedGizmosSurface()
+    {
+        BeginSurface(new SurfaceDescriptor
+        {
+            SurfaceTargetId = SelectionGizmosSurfaceId,
+            SurfaceKind = "selection_gizmos",
+            Type = typeof(GizmoGridDrawer).FullName ?? nameof(GizmoGridDrawer),
+            Label = "Selected gizmos",
+            SemanticKind = "selection_gizmos",
+            SemanticDetails = DescribeSelectedGizmosSurface(),
+            Rect = ToSnapshot(new Rect(0f, 0f, UI.screenWidth, UI.screenHeight))
+        });
+    }
+
+    public static void BeginInspectTabsSurface(IInspectPane pane)
+    {
+        if (pane == null)
+        {
+            BeginSurface((SurfaceDescriptor)null);
+            return;
+        }
+
+        BeginSurface(new SurfaceDescriptor
+        {
+            SurfaceTargetId = ScreenTargetIds.CreateMainTabTargetId(MainButtonDefOf.Inspect.defName),
+            SurfaceKind = "main_tab",
+            Type = typeof(MainTabWindow_Inspect).FullName ?? nameof(MainTabWindow_Inspect),
+            Label = MainButtonDefOf.Inspect.LabelCap.ToString(),
+            SemanticKind = "inspect_tabs",
+            SemanticDetails = DescribeInspectTabsSurface(pane),
+            Rect = ToSnapshot(CreateInspectTabsSurfaceRect(pane))
+        });
+    }
+
+    private static void BeginSurface(SurfaceDescriptor descriptor)
+    {
+        if (descriptor == null)
         {
             lock (Sync)
             {
@@ -630,8 +693,9 @@ internal static class RimBridgeUiWorkbench
                 return;
             }
 
-            var descriptor = DescribeSurface(window);
-            var shouldCapture = capture != null && SurfaceMatches(capture.SurfaceTargetId, descriptor.SurfaceTargetId);
+            var shouldCapture = capture != null
+                && Event.current?.type == EventType.Repaint
+                && SurfaceMatches(capture.SurfaceTargetId, descriptor.SurfaceTargetId);
             var shouldTrackForClick = click != null && string.Equals(click.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
             var shouldTrackForScroll = scroll != null && string.Equals(scroll.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
             var shouldTrackForHover = hover != null && string.Equals(hover.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
@@ -661,7 +725,7 @@ internal static class RimBridgeUiWorkbench
                         SemanticKind = descriptor.SemanticKind,
                         SemanticDetails = descriptor.SemanticDetails,
                         Rect = descriptor.Rect,
-                        ScreenRect = descriptor.Rect
+                        ScreenRect = descriptor.ScreenRect ?? descriptor.Rect
                     };
                     capture.Snapshot.Surfaces.Add(captureSurface);
                 }
@@ -674,7 +738,8 @@ internal static class RimBridgeUiWorkbench
             {
                 SurfaceTargetId = descriptor.SurfaceTargetId,
                 TrackingEnabled = true,
-                CaptureSurface = captureSurface
+                CaptureSurface = captureSurface,
+                ElementIndex = captureSurface?.Elements.Count ?? 0
             });
         }
     }
@@ -1418,7 +1483,7 @@ internal static class RimBridgeUiWorkbench
             && Math.Abs(first.Height - second.Height) <= tolerance;
     }
 
-    private static (string SurfaceTargetId, string SurfaceKind, string Type, string Title, string Label, string SemanticKind, object SemanticDetails, UiRectSnapshot Rect) DescribeSurface(Window window)
+    private static SurfaceDescriptor DescribeSurface(Window window)
     {
         var type = window.GetType().FullName ?? window.GetType().Name;
         string semanticKind = string.Empty;
@@ -1427,26 +1492,121 @@ internal static class RimBridgeUiWorkbench
 
         if (window is MainTabWindow mainTabWindow && mainTabWindow.def != null && !string.IsNullOrWhiteSpace(mainTabWindow.def.defName))
         {
-            return (
-                ScreenTargetIds.CreateMainTabTargetId(mainTabWindow.def.defName),
-                "main_tab",
-                type,
-                null,
-                string.IsNullOrWhiteSpace(mainTabWindow.def.label) ? mainTabWindow.def.defName : mainTabWindow.def.LabelCap.ToString(),
-                semanticKind,
-                semanticDetails,
-                ToSnapshot(window.windowRect));
+            return new SurfaceDescriptor
+            {
+                SurfaceTargetId = ScreenTargetIds.CreateMainTabTargetId(mainTabWindow.def.defName),
+                SurfaceKind = "main_tab",
+                Type = type,
+                Label = string.IsNullOrWhiteSpace(mainTabWindow.def.label) ? mainTabWindow.def.defName : mainTabWindow.def.LabelCap.ToString(),
+                SemanticKind = semanticKind,
+                SemanticDetails = semanticDetails,
+                Rect = ToSnapshot(window.windowRect)
+            };
         }
 
-        return (
-            ScreenTargetIds.CreateWindowTargetId(window.ID, type),
-            "window",
-            type,
-            string.IsNullOrWhiteSpace(window.optionalTitle) ? null : window.optionalTitle,
-            null,
-            semanticKind,
-            semanticDetails,
-            ToSnapshot(window.windowRect));
+        return new SurfaceDescriptor
+        {
+            SurfaceTargetId = ScreenTargetIds.CreateWindowTargetId(window.ID, type),
+            SurfaceKind = "window",
+            Type = type,
+            Title = string.IsNullOrWhiteSpace(window.optionalTitle) ? null : window.optionalTitle,
+            SemanticKind = semanticKind,
+            SemanticDetails = semanticDetails,
+            Rect = ToSnapshot(window.windowRect)
+        };
+    }
+
+    private static object DescribeSelectedGizmosSurface()
+    {
+        var selectedCount = Find.Selector?.SelectedObjectsListForReading?.Count ?? 0;
+        return new
+        {
+            selectedCount
+        };
+    }
+
+    private static object DescribeInspectTabsSurface(IInspectPane pane)
+    {
+        var openTabType = pane is MainTabWindow_Inspect inspectPane ? inspectPane.OpenTabType : null;
+        var tabs = pane.CurTabs?
+            .Where(tab => tab != null && SafeBool(() => tab.IsVisible) && !SafeBool(() => tab.Hidden))
+            .Select((tab, index) => new
+            {
+                ordinal = index + 1,
+                label = TranslateTabLabel(tab),
+                labelKey = string.IsNullOrWhiteSpace(tab.labelKey) ? null : tab.labelKey,
+                tutorTag = string.IsNullOrWhiteSpace(tab.tutorTag) ? null : tab.tutorTag,
+                type = tab.GetType().FullName ?? tab.GetType().Name,
+                isOpen = openTabType != null && tab.GetType() == openTabType
+            })
+            .ToList()
+            ?? [];
+
+        return new
+        {
+            selectedCount = Find.Selector?.SelectedObjectsListForReading?.Count ?? 0,
+            tabCount = tabs.Count,
+            tabs
+        };
+    }
+
+    private static Rect CreateInspectTabsSurfaceRect(IInspectPane pane)
+    {
+        var paneWidth = (float)UI.screenWidth;
+        var paneTopY = (float)UI.screenHeight;
+
+        try
+        {
+            paneWidth = InspectPaneUtility.PaneWidthFor(pane);
+        }
+        catch
+        {
+            // Some modded inspect panes can throw while selection is changing.
+        }
+
+        try
+        {
+            paneTopY = pane.PaneTopY;
+        }
+        catch
+        {
+            // Keep a conservative full-width fallback if the pane is in flux.
+        }
+
+        var tabsTopY = Mathf.Max(0f, paneTopY - 30f);
+        var bottomY = (float)UI.screenHeight;
+        var inspectWindow = MainButtonDefOf.Inspect?.TabWindow as MainTabWindow_Inspect;
+        if (inspectWindow != null)
+            bottomY = Mathf.Max(bottomY, inspectWindow.windowRect.yMax);
+
+        return new Rect(0f, tabsTopY, Mathf.Max(1f, paneWidth), Mathf.Max(30f, bottomY - tabsTopY));
+    }
+
+    private static string TranslateTabLabel(InspectTabBase tab)
+    {
+        if (tab == null || string.IsNullOrWhiteSpace(tab.labelKey))
+            return null;
+
+        try
+        {
+            return tab.labelKey.Translate().ToString();
+        }
+        catch
+        {
+            return tab.labelKey;
+        }
+    }
+
+    private static bool SafeBool(Func<bool> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static UiRectSnapshot ToSnapshot(Rect rect)
@@ -1509,7 +1669,7 @@ internal static class RimBridgeUiWorkbench
     private static string BuildTimeoutMessage(string surfaceId, int timeoutMs)
     {
         if (string.IsNullOrWhiteSpace(surfaceId))
-            return $"Timed out waiting {timeoutMs}ms for a UI surface to draw. Open a dialog or main tab and retry.";
+            return $"Timed out waiting {timeoutMs}ms for a UI surface to draw. Open a dialog, main tab, or selected gizmo grid and retry.";
 
         return $"Timed out waiting {timeoutMs}ms for UI surface '{surfaceId}' to draw. Verify that the surface is open and retry.";
     }
@@ -1705,6 +1865,36 @@ internal static class Window_InnerWindowOnGUI_UiWorkbench_Patch
         RimBridgeUiWorkbench.BeginSurface(__instance);
     }
 
+    public static void Postfix()
+    {
+        RimBridgeUiWorkbench.EndSurface();
+    }
+}
+
+[HarmonyPatch(typeof(InspectPaneUtility), nameof(InspectPaneUtility.DoTabs), new[] { typeof(IInspectPane) })]
+internal static class InspectPaneUtility_DoTabs_UiWorkbench_Patch
+{
+    public static void Prefix(IInspectPane pane)
+    {
+        RimBridgeUiWorkbench.BeginInspectTabsSurface(pane);
+    }
+
+    public static void Postfix()
+    {
+        RimBridgeUiWorkbench.EndSurface();
+    }
+}
+
+[HarmonyPatch(typeof(GizmoGridDrawer), nameof(GizmoGridDrawer.DrawGizmoGrid))]
+internal static class GizmoGridDrawer_DrawGizmoGrid_UiWorkbench_Patch
+{
+    [HarmonyPriority(Priority.First)]
+    public static void Prefix()
+    {
+        RimBridgeUiWorkbench.BeginSelectedGizmosSurface();
+    }
+
+    [HarmonyPriority(Priority.Last)]
     public static void Postfix()
     {
         RimBridgeUiWorkbench.EndSurface();
@@ -2200,9 +2390,18 @@ internal static class Widgets_ButtonInvisible_UiWorkbench_Patch
 internal static class Widgets_ButtonInvisibleDraggable_UiWorkbench_Patch
 {
     [HarmonyPriority(Priority.First)]
-    public static void Postfix(Rect butRect, ref Widgets.DraggableResult __result)
+    public static void Prefix(Rect butRect, ref RimBridgeUiWorkbench.UiPatchControlState __state)
+    {
+        __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "widgets.button_invisible_draggable", butRect, actionable: true);
+        RimBridgeUiWorkbench.PrepareControlInteraction(__state, butRect);
+    }
+
+    public static void Postfix(Rect butRect, ref Widgets.DraggableResult __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         RimBridgeUiWorkbench.OverrideDraggableResultIfPending(butRect, ref __result);
+        var activated = __result == Widgets.DraggableResult.Pressed || __result == Widgets.DraggableResult.DraggedThenPressed;
+        RimBridgeUiWorkbench.ObserveControlResult(__state, activated, "Activated a draggable invisible button UI target on the current surface.");
+        RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
 

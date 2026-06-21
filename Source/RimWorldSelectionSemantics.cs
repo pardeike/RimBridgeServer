@@ -90,6 +90,13 @@ internal static class RimWorldSelectionSemantics
         };
     }
 
+    public static object DescribeCurrentSelectionSnapshot(bool includeInspectDetails = false)
+    {
+        var selectedObjects = GetSelectedObjects();
+        var selectionFingerprint = CreateSelectionFingerprint(selectedObjects);
+        return DescribeSelectionSnapshot(selectedObjects, selectionFingerprint, includeInspectDetails);
+    }
+
     public static object ExecuteGizmoResponse(string gizmoId)
     {
         if (Current.Game == null)

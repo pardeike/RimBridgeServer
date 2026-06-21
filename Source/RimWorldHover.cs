@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using UnityEngine;
 using Verse;
 
@@ -6,6 +7,9 @@ namespace RimBridgeServer;
 
 internal static class RimWorldHover
 {
+    internal const int DefaultHoverSettleMs = 600;
+    private const int MaximumHoverSettleMs = 3000;
+
     public static object SetHoverTargetResponse(
         string targetId = null,
         int? x = null,
@@ -18,7 +22,8 @@ internal static class RimWorldHover
         float offsetY = 0f,
         float? screenX = null,
         float? screenY = null,
-        int? durationMs = null)
+        int? durationMs = null,
+        int settleMs = DefaultHoverSettleMs)
     {
         var hasUiTarget = !string.IsNullOrWhiteSpace(targetId);
         var hasCellTarget = x.HasValue || z.HasValue;
@@ -51,9 +56,9 @@ internal static class RimWorldHover
         if (hasUiTarget)
         {
             if (targetId.Trim().StartsWith("ui-", StringComparison.OrdinalIgnoreCase))
-                return RimBridgeUiWorkbench.SetHoverTargetResponse(targetId, anchor, offsetX, offsetY, durationMs);
+                return RimBridgeUiWorkbench.SetHoverTargetResponse(targetId, anchor, offsetX, offsetY, durationMs, settleMs);
 
-            return SetScreenTargetHoverTargetResponse(targetId, anchor, offsetX, offsetY, durationMs);
+            return SetScreenTargetHoverTargetResponse(targetId, anchor, offsetX, offsetY, durationMs, settleMs);
         }
 
         if (hasScreenTarget)
@@ -73,12 +78,14 @@ internal static class RimWorldHover
                 var hoverTarget = RimBridgeMainThread.Invoke(
                     () => SetScreenHoverTarget(screenX.Value, screenY.Value, durationMs),
                     timeoutMs: 5000);
+                SettleHoverIfRequested(settleMs);
                 return new
                 {
                     success = true,
                     command = "set_hover_target",
                     message = "Hover target is active.",
-                    hoverTarget
+                    hoverTarget,
+                    settleMs = NormalizeHoverSettleMs(settleMs)
                 };
             }
             catch (Exception ex)
@@ -107,12 +114,14 @@ internal static class RimWorldHover
             var hoverTarget = RimBridgeMainThread.Invoke(
                 () => SetMapHoverTarget(x, z, thingId, pawnName, pawnId, offsetX, offsetY, durationMs),
                 timeoutMs: 5000);
+            SettleHoverIfRequested(settleMs);
             return new
             {
                 success = true,
                 command = "set_hover_target",
                 message = "Hover target is active.",
-                hoverTarget
+                hoverTarget,
+                settleMs = NormalizeHoverSettleMs(settleMs)
             };
         }
         catch (Exception ex)
@@ -208,19 +217,33 @@ internal static class RimWorldHover
         return new Vector2(x + offsetX, y + offsetY);
     }
 
-    private static object SetScreenTargetHoverTargetResponse(string targetId, string anchor, float offsetX, float offsetY, int? durationMs)
+    internal static int NormalizeHoverSettleMs(int settleMs)
+    {
+        return Mathf.Clamp(settleMs, 0, MaximumHoverSettleMs);
+    }
+
+    internal static void SettleHoverIfRequested(int settleMs)
+    {
+        var normalizedSettleMs = NormalizeHoverSettleMs(settleMs);
+        if (normalizedSettleMs > 0)
+            Thread.Sleep(normalizedSettleMs);
+    }
+
+    private static object SetScreenTargetHoverTargetResponse(string targetId, string anchor, float offsetX, float offsetY, int? durationMs, int settleMs)
     {
         try
         {
             var hoverTarget = RimBridgeMainThread.Invoke(
                 () => SetScreenTargetHoverTarget(targetId, anchor, offsetX, offsetY, durationMs),
                 timeoutMs: 5000);
+            SettleHoverIfRequested(settleMs);
             return new
             {
                 success = true,
                 command = "set_hover_target",
                 message = $"Hover target '{targetId}' is active.",
-                hoverTarget
+                hoverTarget,
+                settleMs = NormalizeHoverSettleMs(settleMs)
             };
         }
         catch (Exception ex)

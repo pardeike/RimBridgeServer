@@ -275,8 +275,9 @@ internal sealed class LifecycleCapabilityModule
         return StartDebugGameCore();
     }
 
-    public object StartDebugGameReady(int timeoutMs = 120000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false)
+    public object StartDebugGameReady(int timeoutMs = 120000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false, string targetReadiness = null, bool waitForVisualReady = false)
     {
+        readiness = RimWorldWaits.ResolveReadinessInput(readiness, targetReadiness, waitForVisualReady);
         var stopwatch = Stopwatch.StartNew();
         var entry = RimWorldWaits.WaitForEntrySceneReadyResult(timeoutMs, pollIntervalMs);
         if (entry.TryGetValue("success", out var entrySuccessValue) == false || entrySuccessValue is not bool entrySuccess || entrySuccess == false)
@@ -519,8 +520,9 @@ internal sealed class LifecycleCapabilityModule
         };
     }
 
-    public object LoadGameReady(string saveName, int timeoutMs = 120000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false)
+    public object LoadGameReady(string saveName, int timeoutMs = 120000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false, string targetReadiness = null, bool waitForVisualReady = false)
     {
+        readiness = RimWorldWaits.ResolveReadinessInput(readiness, targetReadiness, waitForVisualReady);
         var operationStopwatch = Stopwatch.StartNew();
         var safeName = RimWorldState.SanitizeName(saveName, "rimbridge_save");
         var path = GenFilePaths.FilePathForSavedGame(safeName);

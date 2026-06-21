@@ -49,7 +49,8 @@ internal static class RimBridgePatches
                 optionalPatchAttemptCount = _optionalPatchAttemptCount,
                 optionalPatchSuccessCount = _optionalPatchSuccessCount,
                 optionalPatchFailureCount = OptionalPatchFailures.Count,
-                optionalPatchFailures = OptionalPatchFailures.ToArray()
+                optionalPatchFailures = OptionalPatchFailures.ToArray(),
+                lateInputPatches = RimBridgeVirtualPointer.DescribeLateInputPatchStatus()
             };
         }
     }
@@ -115,6 +116,7 @@ internal static class Root_Update_Patch
         RimBridgeMainThread.Pump();
         RimWorldTickStepper.AdvanceFromRootUpdate(Time.frameCount);
         RimBridgeUiWorkbench.AdvanceFrame(Time.frameCount);
+        RimBridgeVirtualPointer.ClearExpiredSyntheticMouseState();
         RimWorldHover.ClearHoverTargetForRealInputState();
         RimWorldHover.ClearExpiredHoverTarget();
         if (PlayDataLoader.Loaded && !LongEventHandler.AnyEventNowOrWaiting && Find.UIRoot != null)

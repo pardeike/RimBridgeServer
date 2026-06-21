@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `119` tools total
+- `123` tools total
 - `18` `rimbridge/*` tools
-- `101` `rimworld/*` tools
+- `105` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -99,6 +99,8 @@ Parameters:
 - `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
 - `readiness` (`string`, `optional`, default `AutomationReadiness.DefaultTargetName`): Readiness target: gameData, mapData, currentMap, playable, or visual
 - `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
+- `targetReadiness` (`string`, `optional`, default `null`): Alias for readiness; useful when callers naturally name the requested readiness target explicitly
+- `waitForVisualReady` (`bool`, `optional`, default `false`): Convenience alias that forces readiness to visual when true
 
 ### `rimbridge/wait_for_long_event_idle`
 
@@ -586,15 +588,29 @@ Close the currently open RimWorld main tab, optionally asserting which tab is op
 Parameters:
 - `mainTabId` (`string`, `optional`, default `null`): Optional stable main-tab target id or exact defName / label / tab window type expected to be open
 
-### `rimworld/get_ui_layout`
+### `rimworld/list_inspect_tabs`
 
-Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata
-
-Returns:
-- A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/click_ui_target, or rimworld/scroll_ui_target.
+List the current selection's dynamic RimWorld inspect tabs such as Health, Needs, Gear, and mod-provided tabs with stable selection-scoped inspect-tab ids
 
 Parameters:
-- `surfaceId` (`string`, `optional`, default `null`): Optional surface target id such as a window target from rimworld/get_screen_targets or a main-tab target from rimworld/list_main_tabs
+- `includeHidden` (`bool`, `optional`, default `false`): Include inspect tabs whose current tab instance reports hidden or not visible
+
+### `rimworld/open_inspect_tab`
+
+Open one current RimWorld inspect tab by inspect-tab id, translated label, label key, tutor tag, or .NET type name
+
+Parameters:
+- `inspectTabId` (`string`, `required`): Current inspect-tab id from rimworld/list_inspect_tabs, or a dynamic match such as Health, ITab_Pawn_Health, RimWorld.ITab_Pawn_Health, or the tab's tutor tag
+
+### `rimworld/get_ui_layout`
+
+Capture a generic structured layout snapshot of the current dialogs, windows, main tabs, dynamic inspect tab strip, or selected gizmo grid, including actionable controls, crop-ready screen rects, and scroll-view metadata
+
+Returns:
+- A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/click_ui_target, rimworld/scroll_ui_target, or rimworld/set_hover_target.
+
+Parameters:
+- `surfaceId` (`string`, `optional`, default `null`): Optional surface target id such as a window target from rimworld/get_screen_targets, a main-tab target from rimworld/list_main_tabs, or selection-gizmos for the selected-pawn gizmo grid
 - `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the requested UI surface to draw on screen
 
 ### `rimworld/click_ui_target`
@@ -634,6 +650,7 @@ Parameters:
 - `screenX` (`float?`, `optional`, default `null`): Explicit screen-space x coordinate, in RimWorld UI logical pixels, when no targetId or map target is supplied
 - `screenY` (`float?`, `optional`, default `null`): Explicit screen-space y coordinate, in RimWorld UI logical pixels from the top edge, when no targetId or map target is supplied
 - `durationMs` (`int?`, `optional`, default `null`): Optional lifetime for the virtual cursor in milliseconds. Values are clamped to a safe bounded range and real mouse input clears it immediately.
+- `settleMs` (`int`, `optional`, default `600`): Optional post-hover wait in milliseconds so repaint-driven hover effects and RimWorld's normal tooltip delay can become visible before follow-up screenshots. Values are clamped to a safe bounded range.
 
 ### `rimworld/clear_hover_target`
 
@@ -706,6 +723,8 @@ Parameters:
 - `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
 - `readiness` (`string`, `optional`, default `AutomationReadiness.DefaultTargetName`): Readiness target: gameData, mapData, currentMap, playable, or visual
 - `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
+- `targetReadiness` (`string`, `optional`, default `null`): Alias for readiness; useful when callers naturally name the requested readiness target explicitly
+- `waitForVisualReady` (`bool`, `optional`, default `false`): Convenience alias that forces readiness to visual when true
 
 ### `rimworld/go_to_main_menu`
 
@@ -968,6 +987,8 @@ Parameters:
 - `pollIntervalMs` (`int`, `optional`, default `50`): Polling interval in milliseconds
 - `readiness` (`string`, `optional`, default `AutomationReadiness.DefaultTargetName`): Readiness target: gameData, mapData, currentMap, playable, or visual
 - `pauseIfNeeded` (`bool`, `optional`, default `false`): Pause the game before returning success if it is still running
+- `targetReadiness` (`string`, `optional`, default `null`): Alias for readiness; useful when callers naturally name the requested readiness target explicitly
+- `waitForVisualReady` (`bool`, `optional`, default `false`): Convenience alias that forces readiness to visual when true
 
 ### `rimworld/open_context_menu`
 
@@ -994,6 +1015,30 @@ Parameters:
 - `z` (`int`, `optional`, default `0`): Target cell z coordinate when no pawn name or id is given
 - `button` (`string`, `optional`, default `"right"`): Mouse button to inject. Supported values are 'left', 'right', and 'middle'.
 - `holdDurationMs` (`int`, `optional`, default `0`): How long to hold the mouse button down before releasing it. Use this for mods that distinguish tap from hold on map clicks.
+- `modifiers` (`string`, `optional`, default `null`): Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.
+
+### `rimworld/click_cell`
+
+Dispatch a live map click at a current-map cell without requiring OS focus, using left, right, or middle mouse button and reporting before/after selection
+
+Parameters:
+- `x` (`int`, `optional`, default `0`): Target cell x coordinate
+- `z` (`int`, `optional`, default `0`): Target cell z coordinate
+- `button` (`string`, `optional`, default `"left"`): Mouse button to inject. Supported values are 'left', 'right', and 'middle'.
+- `holdDurationMs` (`int`, `optional`, default `0`): How long to hold the mouse button down before releasing it. Use this for mods that distinguish tap from hold on map clicks.
+- `modifiers` (`string`, `optional`, default `null`): Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.
+
+### `rimworld/drag_cell`
+
+Dispatch a literal live map mouse drag from one current-map cell to another without requiring OS focus, publishing mouse position plus held/down/up button state so vanilla and modded input handlers see the gesture. Left drag can select, right drag can drive drafted formation targets, and middle drag can pan the camera.
+
+Parameters:
+- `fromX` (`int`, `optional`, default `0`): Start cell x coordinate
+- `fromZ` (`int`, `optional`, default `0`): Start cell z coordinate
+- `toX` (`int`, `optional`, default `0`): End cell x coordinate
+- `toZ` (`int`, `optional`, default `0`): End cell z coordinate
+- `button` (`string`, `optional`, default `"left"`): Mouse button to inject. Supported values are 'left', 'right', and 'middle'. The gesture is not translated into a fake action; RimWorld and mods receive the real synthetic mouse button state.
+- `holdDurationMs` (`int`, `optional`, default `0`): How long to hold the drag at the end cell before releasing it. Use this for mods that distinguish tap from hold on map drags.
 - `modifiers` (`string`, `optional`, default `null`): Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.
 
 ### `rimworld/get_context_menu_options`

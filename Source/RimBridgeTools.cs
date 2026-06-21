@@ -105,9 +105,11 @@ public class RimBridgeTools
         [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 30000,
         [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 50,
         [ToolParameter(Description = "Readiness target: gameData, mapData, currentMap, playable, or visual")] string readiness = AutomationReadiness.DefaultTargetName,
-        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false)
+        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false,
+        [ToolParameter(Description = "Alias for readiness; useful when callers naturally name the requested readiness target explicitly")] string targetReadiness = null,
+        [ToolParameter(Description = "Convenience alias that forces readiness to visual when true")] bool waitForVisualReady = false)
     {
-        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded)));
+        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded), (nameof(targetReadiness), targetReadiness), (nameof(waitForVisualReady), waitForVisualReady)));
     }
 
     [ReadmeTool("Bridge Diagnostics", "Wait until RimWorld reports no long events in progress")]
@@ -663,10 +665,24 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(mainTabId), mainTabId)));
     }
 
-    [ReadmeTool("UI And Input", "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata")]
-    [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata", ResultDescription = "A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/click_ui_target, or rimworld/scroll_ui_target.")]
+    [ReadmeTool("UI And Input", "List the current selection's dynamic RimWorld inspect tabs such as Health, Needs, Gear, and mod-provided tabs with stable selection-scoped inspect-tab ids")]
+    [Tool("rimworld/list_inspect_tabs", Description = "List the current selection's dynamic RimWorld inspect tabs such as Health, Needs, Gear, and mod-provided tabs with stable selection-scoped inspect-tab ids")]
+    public object ListInspectTabs([ToolParameter(Description = "Include inspect tabs whose current tab instance reports hidden or not visible")] bool includeHidden = false)
+    {
+        return InvokeAlias(Arguments((nameof(includeHidden), includeHidden)));
+    }
+
+    [ReadmeTool("UI And Input", "Open one current RimWorld inspect tab by inspect-tab id, translated label, label key, tutor tag, or .NET type name")]
+    [Tool("rimworld/open_inspect_tab", Description = "Open one current RimWorld inspect tab by inspect-tab id, translated label, label key, tutor tag, or .NET type name")]
+    public object OpenInspectTab([ToolParameter(Description = "Current inspect-tab id from rimworld/list_inspect_tabs, or a dynamic match such as Health, ITab_Pawn_Health, RimWorld.ITab_Pawn_Health, or the tab's tutor tag")] string inspectTabId)
+    {
+        return InvokeAlias(Arguments((nameof(inspectTabId), inspectTabId)));
+    }
+
+    [ReadmeTool("UI And Input", "Capture a generic structured layout snapshot of the current dialogs, windows, main tabs, dynamic inspect tab strip, or selected gizmo grid, including actionable controls, crop-ready screen rects, and scroll-view metadata")]
+    [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, main tabs, dynamic inspect tab strip, or selected gizmo grid, including actionable controls, crop-ready screen rects, and scroll-view metadata", ResultDescription = "A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/click_ui_target, rimworld/scroll_ui_target, or rimworld/set_hover_target.")]
     public object GetUiLayout(
-        [ToolParameter(Description = "Optional surface target id such as a window target from rimworld/get_screen_targets or a main-tab target from rimworld/list_main_tabs")] string surfaceId = null,
+        [ToolParameter(Description = "Optional surface target id such as a window target from rimworld/get_screen_targets, a main-tab target from rimworld/list_main_tabs, or selection-gizmos for the selected-pawn gizmo grid")] string surfaceId = null,
         [ToolParameter(Description = "Maximum time to wait for the requested UI surface to draw on screen")] int timeoutMs = 2000)
     {
         return InvokeAlias(Arguments((nameof(surfaceId), surfaceId), (nameof(timeoutMs), timeoutMs)));
@@ -708,7 +724,8 @@ public class RimBridgeTools
         [ToolParameter(Description = "Logical-pixel vertical offset added after resolving the target point or map point")] float offsetY = 0f,
         [ToolParameter(Description = "Explicit screen-space x coordinate, in RimWorld UI logical pixels, when no targetId or map target is supplied")] float? screenX = null,
         [ToolParameter(Description = "Explicit screen-space y coordinate, in RimWorld UI logical pixels from the top edge, when no targetId or map target is supplied")] float? screenY = null,
-        [ToolParameter(Description = "Optional lifetime for the virtual cursor in milliseconds. Values are clamped to a safe bounded range and real mouse input clears it immediately.")] int? durationMs = null)
+        [ToolParameter(Description = "Optional lifetime for the virtual cursor in milliseconds. Values are clamped to a safe bounded range and real mouse input clears it immediately.")] int? durationMs = null,
+        [ToolParameter(Description = "Optional post-hover wait in milliseconds so repaint-driven hover effects and RimWorld's normal tooltip delay can become visible before follow-up screenshots. Values are clamped to a safe bounded range.")] int settleMs = 600)
     {
         return InvokeAlias(Arguments(
             (nameof(targetId), targetId),
@@ -722,7 +739,8 @@ public class RimBridgeTools
             (nameof(offsetY), offsetY),
             (nameof(screenX), screenX),
             (nameof(screenY), screenY),
-            (nameof(durationMs), durationMs)));
+            (nameof(durationMs), durationMs),
+            (nameof(settleMs), settleMs)));
     }
 
     [ReadmeTool("UI And Input", "Clear the current virtual cursor/hover target so screenshots, mouseover-driven UI, and map clicks return to the real cursor state")]
@@ -796,9 +814,11 @@ public class RimBridgeTools
         [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 120000,
         [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 50,
         [ToolParameter(Description = "Readiness target: gameData, mapData, currentMap, playable, or visual")] string readiness = AutomationReadiness.DefaultTargetName,
-        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false)
+        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false,
+        [ToolParameter(Description = "Alias for readiness; useful when callers naturally name the requested readiness target explicitly")] string targetReadiness = null,
+        [ToolParameter(Description = "Convenience alias that forces readiness to visual when true")] bool waitForVisualReady = false)
     {
-        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded)));
+        return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded), (nameof(targetReadiness), targetReadiness), (nameof(waitForVisualReady), waitForVisualReady)));
     }
 
     [ReadmeTool("UI And Input", "Return to the RimWorld main menu entry scene, or no-op if already there")]
@@ -1076,9 +1096,11 @@ public class RimBridgeTools
         [ToolParameter(Description = "Maximum time to wait in milliseconds")] int timeoutMs = 120000,
         [ToolParameter(Description = "Polling interval in milliseconds")] int pollIntervalMs = 50,
         [ToolParameter(Description = "Readiness target: gameData, mapData, currentMap, playable, or visual")] string readiness = AutomationReadiness.DefaultTargetName,
-        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false)
+        [ToolParameter(Description = "Pause the game before returning success if it is still running")] bool pauseIfNeeded = false,
+        [ToolParameter(Description = "Alias for readiness; useful when callers naturally name the requested readiness target explicitly")] string targetReadiness = null,
+        [ToolParameter(Description = "Convenience alias that forces readiness to visual when true")] bool waitForVisualReady = false)
     {
-        return InvokeAlias(Arguments((nameof(saveName), saveName), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded)));
+        return InvokeAlias(Arguments((nameof(saveName), saveName), (nameof(timeoutMs), timeoutMs), (nameof(pollIntervalMs), pollIntervalMs), (nameof(readiness), readiness), (nameof(pauseIfNeeded), pauseIfNeeded), (nameof(targetReadiness), targetReadiness), (nameof(waitForVisualReady), waitForVisualReady)));
     }
 
     [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open")]
@@ -1108,6 +1130,32 @@ public class RimBridgeTools
         [ToolParameter(Description = "Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.")] string modifiers = null)
     {
         return InvokeAlias(Arguments((nameof(targetPawnName), targetPawnName), (nameof(targetPawnId), targetPawnId), (nameof(x), x), (nameof(z), z), (nameof(button), button), (nameof(holdDurationMs), holdDurationMs), (nameof(modifiers), modifiers)));
+    }
+
+    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a live map click at a current-map cell without requiring OS focus, using left, right, or middle mouse button and reporting before/after selection")]
+    [Tool("rimworld/click_cell", Description = "Dispatch a live map click at a current-map cell without requiring OS focus, using left, right, or middle mouse button and reporting before/after selection")]
+    public object ClickCell(
+        [ToolParameter(Description = "Target cell x coordinate")] int x = 0,
+        [ToolParameter(Description = "Target cell z coordinate")] int z = 0,
+        [ToolParameter(Description = "Mouse button to inject. Supported values are 'left', 'right', and 'middle'.")] string button = "left",
+        [ToolParameter(Description = "How long to hold the mouse button down before releasing it. Use this for mods that distinguish tap from hold on map clicks.")] int holdDurationMs = 0,
+        [ToolParameter(Description = "Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.")] string modifiers = null)
+    {
+        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(button), button), (nameof(holdDurationMs), holdDurationMs), (nameof(modifiers), modifiers)));
+    }
+
+    [ReadmeTool("Context Menus And Map Interaction", "Dispatch a literal live map mouse drag from one current-map cell to another without requiring OS focus, using left, right, or middle mouse button")]
+    [Tool("rimworld/drag_cell", Description = "Dispatch a literal live map mouse drag from one current-map cell to another without requiring OS focus, publishing mouse position plus held/down/up button state so vanilla and modded input handlers see the gesture. Left drag can select, right drag can drive drafted formation targets, and middle drag can pan the camera.")]
+    public object DragCell(
+        [ToolParameter(Description = "Start cell x coordinate")] int fromX = 0,
+        [ToolParameter(Description = "Start cell z coordinate")] int fromZ = 0,
+        [ToolParameter(Description = "End cell x coordinate")] int toX = 0,
+        [ToolParameter(Description = "End cell z coordinate")] int toZ = 0,
+        [ToolParameter(Description = "Mouse button to inject. Supported values are 'left', 'right', and 'middle'. The gesture is not translated into a fake action; RimWorld and mods receive the real synthetic mouse button state.")] string button = "left",
+        [ToolParameter(Description = "How long to hold the drag at the end cell before releasing it. Use this for mods that distinguish tap from hold on map drags.")] int holdDurationMs = 0,
+        [ToolParameter(Description = "Optional comma-, space-, or plus-separated event modifiers such as 'shift', 'ctrl', 'alt', or 'command'.")] string modifiers = null)
+    {
+        return InvokeAlias(Arguments((nameof(fromX), fromX), (nameof(fromZ), fromZ), (nameof(toX), toX), (nameof(toZ), toZ), (nameof(button), button), (nameof(holdDurationMs), holdDurationMs), (nameof(modifiers), modifiers)));
     }
 
     [ReadmeTool("Context Menus And Map Interaction", "Get the currently opened debug context menu options")]

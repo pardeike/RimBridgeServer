@@ -121,6 +121,19 @@ Release-facing assets are kept in source control so the in-game metadata, GitHub
 - `Source/Originals/Steam-Post.txt` and `Source/Originals/Ludean-Post.txt` hold the maintained workshop/forum copy
 - `scripts/render-mod-icon.swift` regenerates `About/ModIcon.png` from the preview art
 
+## Local Deploy Targets
+
+`RIMWORLD_MOD_DIR` is a parent directory deploy target: builds copy the mod to `$RIMWORLD_MOD_DIR/RimBridgeServer` and write `$RIMWORLD_MOD_DIR/RimBridgeServer.zip`.
+
+When the enabled RimWorld mod is a specific Steam Workshop item folder or another exact active mod root, use `RIMWORLD_MOD_TARGET_DIR` instead. That deploys directly into the named folder and writes a zip beside it unless `RIMWORLD_MOD_ZIP_PATH` is set.
+
+```bash
+dotnet build -c Release RimBridgeServer.sln \
+  -p:RIMWORLD_MOD_TARGET_DIR="$HOME/Library/Application Support/Steam/steamapps/workshop/content/294100/3727949765"
+```
+
+Before live smoke testing after a redeploy, confirm the active mod root with `rimworld/get_mod_configuration_status`; the game must load the same directory that the build just updated.
+
 ## Beginner Start
 
 If you only need the shortest possible mental model, use this:
@@ -267,7 +280,9 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 - `rimworld/list_main_tabs` - List RimWorld main tabs such as Work, Assign, Research, and mod-provided tabs with stable `main-tab` target ids
 - `rimworld/open_main_tab` - Open one RimWorld main tab by stable target id, `defName`, label, or tab window type
 - `rimworld/close_main_tab` - Close the currently open RimWorld main tab, optionally asserting which tab is open first
-- `rimworld/get_ui_layout` - Capture a generic structured layout snapshot of the current dialogs, windows, or main tabs, including actionable controls, crop-ready screen rects, and scroll-view metadata
+- `rimworld/list_inspect_tabs` - List the current selection's dynamic RimWorld inspect tabs such as Health, Needs, Gear, and mod-provided tabs with stable selection-scoped inspect-tab ids
+- `rimworld/open_inspect_tab` - Open one current RimWorld inspect tab by inspect-tab id, translated label, label key, tutor tag, or .NET type name
+- `rimworld/get_ui_layout` - Capture a generic structured layout snapshot of the current dialogs, windows, main tabs, dynamic inspect tab strip, or selected gizmo grid, including actionable controls, crop-ready screen rects, and scroll-view metadata
 - `rimworld/click_ui_target` - Activate an actionable UI control target returned by `rimworld/get_ui_layout` on the next real draw frame
 - `rimworld/scroll_ui_target` - Scroll a scroll_view `ui-element` target returned by `rimworld/get_ui_layout` on the next real draw frame
 - `rimworld/set_hover_target` - Set a bounded virtual cursor/hover target for UI review and screenshots, using a `ui-element` or screen target id, explicit screen coordinates, or a current-map cell, pawn, or thing
@@ -331,6 +346,8 @@ Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, n
 
 - `rimworld/open_context_menu` - Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open
 - `rimworld/right_click_cell` - Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
+- `rimworld/click_cell` - Dispatch a live map click at a current-map cell without requiring OS focus, using left, right, or middle mouse button and reporting before/after selection
+- `rimworld/drag_cell` - Dispatch a literal live map mouse drag from one current-map cell to another without requiring OS focus, using left, right, or middle mouse button
 - `rimworld/get_context_menu_options` - Get the currently opened debug context menu options
 - `rimworld/execute_context_menu_option` - Execute a context menu option by index or label
 - `rimworld/close_context_menu` - Close the currently opened debug context menu
