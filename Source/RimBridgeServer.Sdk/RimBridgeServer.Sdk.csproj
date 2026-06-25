@@ -7,6 +7,7 @@
 		<RootNamespace>RimBridgeServer.Sdk</RootNamespace>
 		<AssemblyName>RimBridgeServer.Sdk</AssemblyName>
 		<ProjectGuid>{91DF98D9-995C-4D75-9BB2-E0D1DC01E699}</ProjectGuid>
+		<PackageId>RimBridgeServer.Sdk</PackageId>
 		<Version>$(ModVersion)</Version>
 		<AssemblyVersion>$(ModVersion)</AssemblyVersion>
 		<FileVersion>$(ModVersion)</FileVersion>
@@ -16,6 +17,10 @@
 		<Company>Brrainz</Company>
 		<PackageProjectUrl>$(Repository)</PackageProjectUrl>
 		<RepositoryUrl>$(Repository)</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageTags>RimWorld;RimBridgeServer;SDK;automation;testing</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<Description>Compile-time SDK for RimBridgeServer companion tool assemblies.</Description>
 	</PropertyGroup>
 
@@ -37,6 +42,10 @@
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 
 </Project>

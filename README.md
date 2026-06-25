@@ -112,6 +112,14 @@ dotnet pack ../Lib.GAB/Lib.GAB/Lib.GAB.csproj \
   -p:PackageVersion=1.0.0-local.1
 ```
 
+Pack the RimBridgeServer companion SDK into that same local source with:
+
+```bash
+scripts/pack-sdk.sh
+```
+
+Use `scripts/pack-sdk.sh --out <dir>` when a different local NuGet source should receive the package.
+
 ## Release Assets
 
 Release-facing assets are kept in source control so the in-game metadata, GitHub release packaging, and external post copy stay aligned.
@@ -128,11 +136,17 @@ Release-facing assets are kept in source control so the in-game metadata, GitHub
 When the enabled RimWorld mod is a specific Steam Workshop item folder or another exact active mod root, use `RIMWORLD_MOD_TARGET_DIR` instead. That deploys directly into the named folder and writes a zip beside it unless `RIMWORLD_MOD_ZIP_PATH` is set.
 
 ```bash
-dotnet build -c Release RimBridgeServer.sln \
-  -p:RIMWORLD_MOD_TARGET_DIR="$HOME/Library/Application Support/Steam/steamapps/workshop/content/294100/3727949765"
+scripts/deploy-local-mod.sh \
+  --target-dir "$HOME/Library/Application Support/Steam/steamapps/workshop/content/294100/3727949765"
 ```
 
 Before live smoke testing after a redeploy, confirm the active mod root with `rimworld/get_mod_configuration_status`; the game must load the same directory that the build just updated.
+
+For a source-only build that cannot deploy even when RimWorld deploy environment variables are set, use:
+
+```bash
+scripts/build-mod.sh --test
+```
 
 ## Beginner Start
 
