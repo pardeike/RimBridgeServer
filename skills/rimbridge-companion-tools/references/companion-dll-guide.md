@@ -138,30 +138,36 @@ public sealed class SomeModBridgeTools
         [ToolParameter(Description = "Save name to load first", DefaultValue = "fixture")] string saveName = "fixture",
         [ToolParameter(Description = "Ticks to advance per pose", DefaultValue = 1)] int poseTicks = 1)
     {
-        var load = await ctx.Tools.CallAsync<object>(
+        var load = await ctx.Tools.CallAsync(
             "rimworld/load_game_ready",
             new { saveName },
             cancellationToken: cancellationToken);
-        if (!load.Success)
-            return new { success = false, stage = "load", error = load.Error };
+        if (!load.Succeeded())
+            return new { success = false, stage = "load", error = load.Error, load = load.Result };
 
         var screenshotTool = ctx.Tools.Get("rimworld/screenshot_cell_rect");
         var companionTools = ctx.Tools.List(new RimBridgeToolQuery { Text = "somemod/" });
+        var manifest = RimBridgeEvidence.CreateManifest("somemod/render_pose_sweep");
+        manifest.saveName = saveName;
+        manifest.assertions.Add(RimBridgeEvidence.ToolSucceeded("load save", load));
 
         await ctx.Game.StepTicksAsync(poseTicks, cancellationToken: cancellationToken);
 
-        var shot = await ctx.Tools.CallAsync<object>(
+        var shot = await ctx.Tools.CallAsync(
             screenshotTool.Id,
             new { fileName = "somemod-pose-01", cellX = 100, cellZ = 100, paddingCells = 2 },
             cancellationToken: cancellationToken);
 
-        return new
+        manifest.assertions.Add(RimBridgeEvidence.ToolSucceeded("capture screenshot", shot));
+        manifest.captures.Add(new RimBridgeEvidenceCapture
         {
-            success = shot.Success,
-            toolQuery = new { matchingCapabilityCount = companionTools.Count, screenshotTool = screenshotTool.Id },
-            screenshot = shot.Result,
-            ticked = poseTicks
-        };
+            label = "pose-01",
+            kind = "cell_rect",
+            path = shot.TryReadResult<string>(out var path, "path") ? path : string.Empty,
+            details = new { screenshot = shot.Result, companionToolCount = companionTools.Count, screenshotTool = screenshotTool.Id }
+        });
+        RimBridgeEvidence.Complete(manifest);
+        return manifest;
     }
 }
 ```
@@ -169,10 +175,14 @@ public sealed class SomeModBridgeTools
 Notes:
 
 - `IRimBridgeContext` and `CancellationToken` are injected and are not exposed in the public tool schema.
-- `ctx.Tools.CallAsync<T>` returns `RimBridgeToolCallResult<T>` with `Success`, `Result`, and `Error`.
+- `ctx.Tools.CallAsync` returns `RimBridgeToolCallResult<object>` for dynamic payloads; `ctx.Tools.CallAsync<T>` returns `RimBridgeToolCallResult<T>` for typed DTO payloads.
+- Use `result.Succeeded()`, `result.PayloadSuccess()`, `result.ReadResult<T>(...)`, and `result.TryReadResult<T>(...)` instead of local reflection helpers when inspecting dictionary-shaped or anonymous-object payloads.
+- Use `RimBridgeEvidenceManifest` and `RimBridgeEvidence` helpers for repeatable evidence suites that should return captures, assertions, errors, and environment details.
 - `ctx.Tools.Get` throws if the tool is missing; use `Exists` when optional behavior is acceptable.
 - `ctx.Tools.QueueAsync` is for starting a registered operation in the background and returning an operation id.
 - Use `ctx.Game.StepTicksAsync` for paused deterministic ticks and `ctx.Game.RunForTicksAsync` or `RunUntilAsync` when the game needs real running time.
+- After GABS reports the bridge tool surface, call `rimworld/load_game_ready` directly for a prepared save or `rimworld/start_debug_game_ready` directly for a fresh dev colony. These tools queue RimWorld long-event work and wait to the requested readiness target; `rimbridge/wait_for_game_loaded` is for already-loaded games or independent long-event operations.
+- If a companion tool is missing or fails after SDK changes, call `rimbridge/get_bridge_status` and inspect `version`, `sdk`, and `companions.diagnostics`. Stale host/companion SDK mismatches are reported there and in operation errors as `capability.sdk_mismatch`.
 - Avoid arbitrary sleeps. Let RimBridgeServer advance frames/ticks through the SDK.
 
 ## Validation Checklist

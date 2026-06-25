@@ -122,9 +122,11 @@ internal static class RimBridgeCapabilities
             {
                 registry.RegisterProvider(provider);
                 extensionTools.AddRange(provider.Tools);
+                RimBridgeExtensionDiscovery.MarkProviderRegistered(provider.ProviderId, provider.Tools.Count);
             }
             catch (Exception ex)
             {
+                RimBridgeExtensionDiscovery.MarkProviderRegistrationFailed(provider.ProviderId, ex);
                 Verse.Log.Error($"[RimBridge] Failed to register annotated extension provider '{provider.ProviderId}': {ex}");
             }
         }

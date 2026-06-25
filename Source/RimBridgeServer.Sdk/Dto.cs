@@ -43,7 +43,22 @@ public sealed class RimBridgeToolParameter
     public object DefaultValue { get; set; }
 }
 
-public sealed class RimBridgeToolCallResult<T>
+public interface IRimBridgeToolCallResult
+{
+    bool Success { get; set; }
+
+    string OperationId { get; set; }
+
+    string CapabilityId { get; set; }
+
+    string Status { get; set; }
+
+    object RawResult { get; }
+
+    RimBridgeOperationError Error { get; set; }
+}
+
+public sealed class RimBridgeToolCallResult<T> : IRimBridgeToolCallResult
 {
     public bool Success { get; set; }
 
@@ -54,6 +69,8 @@ public sealed class RimBridgeToolCallResult<T>
     public string Status { get; set; } = string.Empty;
 
     public T Result { get; set; }
+
+    object IRimBridgeToolCallResult.RawResult => Result;
 
     public RimBridgeOperationError Error { get; set; }
 }

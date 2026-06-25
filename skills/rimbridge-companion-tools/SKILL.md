@@ -14,7 +14,7 @@ Use this skill for source work in a RimWorld mod that wants to expose tools thro
 3. Reference `RimBridgeServer.Sdk` for compile-time annotations and runtime interfaces, but do not deploy `RimBridgeServer.Sdk.dll` with the companion. RimBridgeServer resolves it to the host copy.
 4. Reference the owning mod DLL from the companion assembly so the companion can call mod helpers after RimWorld loads the normal mod assembly.
 5. Wire the main mod build so it builds the companion after the main mod DLL exists and before local deploy/copy/zip steps run.
-6. Prefer async SDK orchestration for real in-game test harnesses: `IRimBridgeContext`, `ctx.Tools.List/Get/CallAsync/QueueAsync`, and `ctx.Game.StepTicksAsync/RunForTicksAsync/RunUntilAsync`.
+6. Prefer async SDK orchestration for real in-game test harnesses: `IRimBridgeContext`, `ctx.Tools.List/Get/CallAsync/CallAsync<T>/QueueAsync`, result helpers such as `Succeeded()` and `ReadResult<T>(...)`, `RimBridgeEvidenceManifest`/`RimBridgeEvidence` for stable evidence results, and `ctx.Game.StepTicksAsync/RunForTicksAsync/RunUntilAsync`.
 7. Validate in three layers: source build, deployed files, then live GABS discovery/call of the companion tool.
 
 ## Rules
@@ -25,6 +25,9 @@ Use this skill for source work in a RimWorld mod that wants to expose tools thro
 - Keep constructors and static initializers boring. They must not query `RimBridge.Current` or the tool registry because companion registration is still in progress.
 - Treat `IRimBridgeContext` and `CancellationToken` as injectable method parameters. They are hidden from the public schema.
 - Prefer `Task<object>` or strongly typed DTO results for non-trivial harnesses. Return clear `success`, `message`, and artifact-path fields.
+- For repeatable screenshot or behavior suites, return `RimBridgeEvidenceManifest` with captures, assertions, errors, and environment fields instead of inventing a fresh manifest shape.
+- For prepared-save or dev-colony setup after the bridge tool surface is available, call `rimworld/load_game_ready` or `rimworld/start_debug_game_ready` directly; do not add a separate pre-wait unless the game should already be loaded.
+- If companion tools are missing or fail after SDK changes, call `rimbridge/get_bridge_status` and inspect `version`, `sdk`, and `companions.diagnostics` before guessing at GABS or save-load problems.
 - For global companion tools with private helper DLLs, use a first-level bundle folder under global `BridgeTools`. Loose global DLLs are fine only when there are no private dependency-name collision risks.
 - For mod-specific companions, place the companion beside the load folder's `Assemblies` directory, for example `SomeMod/1.6/BridgeTools/SomeMod.BridgeTools.dll`.
 

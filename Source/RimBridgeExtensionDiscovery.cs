@@ -39,11 +39,14 @@ internal static class RimBridgeExtensionDiscovery
     private static readonly object ResolverSync = new();
     private static readonly Dictionary<string, DependencyScope> ScopesByAssemblyPath = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, Assembly> LoadedAssembliesByPath = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, CompanionDiscoveryDiagnostic> DiagnosticsByAssemblyPath = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> AssemblyPathsByProviderId = new(StringComparer.Ordinal);
     private static bool _resolverInstalled;
 
     public static IReadOnlyList<AnnotatedExtensionCapabilityProvider> DiscoverProviders(IEnumerable<string> reservedAliases = null)
     {
         InstallResolver();
+        ResetDiagnostics();
         var loadedAssemblies = LoadCompanionAssemblies();
         var candidates = new List<DiscoveredMethodCandidate>();
 
@@ -62,18 +65,66 @@ internal static class RimBridgeExtensionDiscovery
         return BuildProviders(candidates);
     }
 
+    public static IReadOnlyList<CompanionDiscoveryDiagnostic> GetDiagnostics()
+    {
+        lock (ResolverSync)
+        {
+            return DiagnosticsByAssemblyPath.Values
+                .OrderBy(diagnostic => diagnostic.AssemblyPath, StringComparer.OrdinalIgnoreCase)
+                .Select(diagnostic => diagnostic.Clone())
+                .ToList();
+        }
+    }
+
+    public static object GetSdkStatus()
+    {
+        var sdkAssembly = typeof(ToolAttribute).Assembly;
+        return new
+        {
+            sdkAssembly = sdkAssembly.GetName().Name,
+            sdkVersion = sdkAssembly.GetName().Version?.ToString() ?? string.Empty,
+            sdkInformationalVersion = GetInformationalVersion(sdkAssembly),
+            companionCount = GetDiagnostics().Count,
+            companionWarningCount = GetDiagnostics().Sum(diagnostic => diagnostic.Warnings.Count),
+            companionErrorCount = GetDiagnostics().Sum(diagnostic => diagnostic.Errors.Count)
+        };
+    }
+
+    public static void MarkProviderRegistered(string providerId, int toolCount)
+    {
+        UpdateDiagnostic(providerId, diagnostic =>
+        {
+            diagnostic.Status = "registered";
+            diagnostic.Success = true;
+            diagnostic.ToolCount = toolCount;
+        });
+    }
+
+    public static void MarkProviderRegistrationFailed(string providerId, Exception exception)
+    {
+        UpdateDiagnostic(providerId, diagnostic =>
+        {
+            diagnostic.Status = "registration_failed";
+            diagnostic.Success = false;
+            AddError(diagnostic, exception);
+        });
+    }
+
     private static IReadOnlyList<LoadedCompanionAssembly> LoadCompanionAssemblies()
     {
         var result = new List<LoadedCompanionAssembly>();
         foreach (var candidate in DiscoverCompanionCandidates())
         {
+            var diagnostic = CreateDiagnostic(candidate);
+            StoreDiagnostic(diagnostic);
             try
             {
                 RegisterScope(candidate);
-                WarnAboutLocalSdk(candidate);
+                WarnAboutLocalSdk(candidate, diagnostic);
                 var assembly = LoadScopedAssembly(candidate.AssemblyPath, CreateScope(candidate));
                 if (assembly != null)
                 {
+                    MarkLoaded(diagnostic, assembly);
                     result.Add(new LoadedCompanionAssembly
                     {
                         Assembly = assembly,
@@ -83,6 +134,8 @@ internal static class RimBridgeExtensionDiscovery
             }
             catch (Exception ex)
             {
+                diagnostic.Status = "load_failed";
+                AddError(diagnostic, ex);
                 Log.Error($"[RimBridge] Failed to load companion assembly '{candidate.AssemblyPath}': {ex}");
             }
         }
@@ -171,6 +224,8 @@ internal static class RimBridgeExtensionDiscovery
 
     private static void CollectToolCandidates(LoadedCompanionAssembly loaded, IList<DiscoveredMethodCandidate> discovered)
     {
+        var beforeCount = discovered.Count;
+        var diagnostic = GetDiagnostic(loaded.Candidate.AssemblyPath);
         foreach (var type in SafeGetTypes(loaded.Assembly, loaded.Candidate).OrderBy(type => type.FullName ?? type.Name, StringComparer.Ordinal))
         {
             try
@@ -194,8 +249,16 @@ internal static class RimBridgeExtensionDiscovery
             }
             catch (Exception ex)
             {
+                AddError(diagnostic, ex);
                 Log.Error($"[RimBridge] Failed to inspect companion tool type '{type?.FullName ?? type?.Name ?? "unknown-type"}' from '{loaded.Candidate.AssemblyPath}': {ex}");
             }
+        }
+
+        if (diagnostic != null)
+        {
+            diagnostic.Status = "scanned";
+            diagnostic.ToolCount = discovered.Count - beforeCount;
+            Touch(diagnostic);
         }
     }
 
@@ -224,6 +287,7 @@ internal static class RimBridgeExtensionDiscovery
 
                     if (!TryCreateInstance(typeGroup.Key, methods, out var instance, out var error))
                     {
+                        AddWarning(assemblyGroup.Key, error);
                         Log.Warning($"[RimBridge] Skipping companion tool type '{typeGroup.Key.FullName ?? typeGroup.Key.Name}' from '{assemblyGroup.Key}': {error}");
                         continue;
                     }
@@ -245,8 +309,10 @@ internal static class RimBridgeExtensionDiscovery
                 continue;
 
             var representative = providerCandidates[0].Candidate;
+            var providerId = CreateProviderId(representative);
+            MarkPrepared(assemblyGroup.Key, providerId, toolClasses.Count, toolClasses.Sum(toolClass => toolClass.Methods.Count));
             providers.Add(new AnnotatedExtensionCapabilityProvider(
-                providerId: CreateProviderId(representative),
+                providerId: providerId,
                 category: "extension",
                 toolClasses: toolClasses));
         }
@@ -431,7 +497,7 @@ internal static class RimBridgeExtensionDiscovery
         };
     }
 
-    private static void WarnAboutLocalSdk(CompanionAssemblyCandidate candidate)
+    private static void WarnAboutLocalSdk(CompanionAssemblyCandidate candidate, CompanionDiscoveryDiagnostic diagnostic)
     {
         foreach (var directory in new[] { candidate.BundleDirectory, candidate.BridgeToolsRoot }
             .Where(directory => string.IsNullOrWhiteSpace(directory) == false)
@@ -439,7 +505,12 @@ internal static class RimBridgeExtensionDiscovery
         {
             var sdkPath = Path.Combine(directory, CompanionFileDiscovery.SdkAssemblyFileName);
             if (File.Exists(sdkPath))
+            {
+                diagnostic.LocalSdkPaths.Add(sdkPath);
+                diagnostic.Warnings.Add($"Ignoring companion-local SDK copy '{sdkPath}'. Companion tools must bind to the SDK shipped by RimBridgeServer.");
                 Log.Warning($"[RimBridge] Ignoring companion-local SDK copy '{sdkPath}'. Companion tools must bind to the SDK shipped by RimBridgeServer.");
+                Touch(diagnostic);
+            }
         }
     }
 
@@ -471,5 +542,166 @@ internal static class RimBridgeExtensionDiscovery
         {
             return 0;
         }
+    }
+
+    private static void ResetDiagnostics()
+    {
+        lock (ResolverSync)
+        {
+            DiagnosticsByAssemblyPath.Clear();
+            AssemblyPathsByProviderId.Clear();
+        }
+    }
+
+    private static CompanionDiscoveryDiagnostic CreateDiagnostic(CompanionAssemblyCandidate candidate)
+    {
+        var sdkAssembly = typeof(ToolAttribute).Assembly;
+        return new CompanionDiscoveryDiagnostic
+        {
+            AssemblyPath = candidate.AssemblyPath,
+            BridgeToolsRoot = candidate.BridgeToolsRoot,
+            BundleDirectory = candidate.BundleDirectory ?? string.Empty,
+            OwnerId = candidate.OwnerId,
+            RootKind = candidate.RootKind.ToString(),
+            IsBundled = candidate.IsBundled,
+            HostSdkVersion = sdkAssembly.GetName().Version?.ToString() ?? string.Empty,
+            HostSdkInformationalVersion = GetInformationalVersion(sdkAssembly),
+            Status = "discovered"
+        };
+    }
+
+    private static void StoreDiagnostic(CompanionDiscoveryDiagnostic diagnostic)
+    {
+        lock (ResolverSync)
+        {
+            DiagnosticsByAssemblyPath[Path.GetFullPath(diagnostic.AssemblyPath)] = diagnostic;
+        }
+    }
+
+    private static CompanionDiscoveryDiagnostic GetDiagnostic(string assemblyPath)
+    {
+        if (string.IsNullOrWhiteSpace(assemblyPath))
+            return null;
+
+        lock (ResolverSync)
+        {
+            return DiagnosticsByAssemblyPath.TryGetValue(Path.GetFullPath(assemblyPath), out var diagnostic)
+                ? diagnostic
+                : null;
+        }
+    }
+
+    private static void MarkLoaded(CompanionDiscoveryDiagnostic diagnostic, Assembly assembly)
+    {
+        diagnostic.AssemblyName = assembly.GetName().Name ?? string.Empty;
+        diagnostic.AssemblyVersion = assembly.GetName().Version?.ToString() ?? string.Empty;
+        diagnostic.ReferencedSdkVersion = FindReferencedSdkVersion(assembly);
+        diagnostic.Status = "loaded";
+        CheckReferencedSdkVersion(diagnostic);
+        Touch(diagnostic);
+    }
+
+    private static void MarkPrepared(string assemblyPath, string providerId, int toolClassCount, int toolCount)
+    {
+        var diagnostic = GetDiagnostic(assemblyPath);
+        if (diagnostic == null)
+            return;
+
+        diagnostic.ProviderId = providerId;
+        diagnostic.ToolClassCount = toolClassCount;
+        diagnostic.ToolCount = toolCount;
+        diagnostic.Status = "prepared";
+        Touch(diagnostic);
+
+        lock (ResolverSync)
+        {
+            AssemblyPathsByProviderId[providerId] = Path.GetFullPath(assemblyPath);
+        }
+    }
+
+    private static void UpdateDiagnostic(string providerId, Action<CompanionDiscoveryDiagnostic> update)
+    {
+        if (string.IsNullOrWhiteSpace(providerId) || update == null)
+            return;
+
+        CompanionDiscoveryDiagnostic diagnostic = null;
+        lock (ResolverSync)
+        {
+            if (AssemblyPathsByProviderId.TryGetValue(providerId, out var assemblyPath))
+                DiagnosticsByAssemblyPath.TryGetValue(assemblyPath, out diagnostic);
+        }
+
+        if (diagnostic == null)
+            return;
+
+        update(diagnostic);
+        Touch(diagnostic);
+    }
+
+    private static void AddWarning(string assemblyPath, string warning)
+    {
+        var diagnostic = GetDiagnostic(assemblyPath);
+        if (diagnostic == null || string.IsNullOrWhiteSpace(warning))
+            return;
+
+        diagnostic.Warnings.Add(warning);
+        Touch(diagnostic);
+    }
+
+    private static void AddError(CompanionDiscoveryDiagnostic diagnostic, Exception exception)
+    {
+        if (diagnostic == null || exception == null)
+            return;
+
+        diagnostic.Errors.Add(exception.Message);
+        Touch(diagnostic);
+    }
+
+    private static string FindReferencedSdkVersion(Assembly assembly)
+    {
+        try
+        {
+            return assembly
+                .GetReferencedAssemblies()
+                .FirstOrDefault(name => string.Equals(name.Name, CompanionFileDiscovery.SdkAssemblyName, StringComparison.OrdinalIgnoreCase))
+                ?.Version
+                ?.ToString()
+                ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static void CheckReferencedSdkVersion(CompanionDiscoveryDiagnostic diagnostic)
+    {
+        if (string.IsNullOrWhiteSpace(diagnostic.ReferencedSdkVersion)
+            || string.IsNullOrWhiteSpace(diagnostic.HostSdkVersion))
+            return;
+
+        if (Version.TryParse(diagnostic.ReferencedSdkVersion, out var referenced) == false
+            || Version.TryParse(diagnostic.HostSdkVersion, out var host) == false)
+            return;
+
+        if (referenced.Major != host.Major || referenced.Minor != host.Minor)
+        {
+            diagnostic.Warnings.Add(
+                $"Companion references RimBridgeServer.Sdk {diagnostic.ReferencedSdkVersion}, but the running host provides {diagnostic.HostSdkVersion}. Rebuild/redeploy the companion and restart RimWorld if tool calls fail.");
+        }
+    }
+
+    private static string GetInformationalVersion(Assembly assembly)
+    {
+        return assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+            ?? assembly.GetName().Version?.ToString()
+            ?? string.Empty;
+    }
+
+    private static void Touch(CompanionDiscoveryDiagnostic diagnostic)
+    {
+        diagnostic.UpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 }

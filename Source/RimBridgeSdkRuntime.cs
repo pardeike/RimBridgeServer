@@ -188,6 +188,11 @@ internal sealed class RimBridgeToolClient : IRimBridgeToolClient
         }
     }
 
+    public Task<RimBridgeToolCallResult<object>> CallAsync(string idOrAlias, object args = null, RimBridgeToolCallOptions options = null, CancellationToken cancellationToken = default)
+    {
+        return CallAsync<object>(idOrAlias, args, options, cancellationToken);
+    }
+
     public async Task<RimBridgeToolCallResult<T>> CallAsync<T>(string idOrAlias, object args = null, RimBridgeToolCallOptions options = null, CancellationToken cancellationToken = default)
     {
         EnsureRegistrationComplete();

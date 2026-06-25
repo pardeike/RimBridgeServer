@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using RimBridgeServer.Contracts;
 
@@ -109,6 +111,17 @@ public sealed class OperationRunner
     private static OperationError CreateError(Exception exception, string code)
     {
         var root = exception.InnerException ?? exception;
+        if (IsLikelySdkCompatibilityException(exception, root))
+        {
+            return new OperationError
+            {
+                Code = "capability.sdk_mismatch",
+                Message = "A companion tool was built against a different RimBridgeServer.Sdk API than the running RimBridgeServer host provides. Rebuild/redeploy RimBridgeServer and the companion mod, then restart RimWorld so both load the same SDK version.",
+                ExceptionType = root.GetType().FullName ?? root.GetType().Name,
+                Details = exception.ToString()
+            };
+        }
+
         return new OperationError
         {
             Code = code,
@@ -116,5 +129,34 @@ public sealed class OperationRunner
             ExceptionType = root.GetType().FullName ?? root.GetType().Name,
             Details = exception.ToString()
         };
+    }
+
+    private static bool IsLikelySdkCompatibilityException(Exception exception, Exception root)
+    {
+        return IsSdkCompatibilityException(root) || Flatten(exception).Any(IsSdkCompatibilityException);
+    }
+
+    private static bool IsSdkCompatibilityException(Exception exception)
+    {
+        if (exception == null)
+            return false;
+
+        var typeName = exception.GetType().FullName ?? exception.GetType().Name;
+        return (exception is MissingMethodException || exception is MissingFieldException || exception is TypeLoadException)
+            && (ContainsSdkName(exception.Message) || ContainsSdkName(typeName) || ContainsSdkName(exception.ToString()));
+    }
+
+    private static IEnumerable<Exception> Flatten(Exception exception)
+    {
+        for (var current = exception; current != null; current = current.InnerException)
+        {
+            yield return current;
+        }
+    }
+
+    private static bool ContainsSdkName(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) == false
+            && value.IndexOf("RimBridgeServer.Sdk", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 }

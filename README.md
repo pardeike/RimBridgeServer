@@ -190,8 +190,12 @@ Practical rules:
 - public tool names are global across the bridge surface; collisions are rejected and reported instead of silently choosing one tool
 - use `[ToolParameter]` for argument docs, `Tool.ResultDescription` for a short successful-result summary, and `[ToolResponse]` for response field docs when useful
 - expect per-mod fault isolation: one broken mod should not block discovery for other mods
-- query and call tools dynamically with `ctx.Tools.List(...)`, `ctx.Tools.Get(...)`, `ctx.Tools.CallAsync<T>(...)`, and `ctx.Tools.QueueAsync(...)`
+- query and call tools dynamically with `ctx.Tools.List(...)`, `ctx.Tools.Get(...)`, `ctx.Tools.CallAsync(...)`, typed `ctx.Tools.CallAsync<T>(...)`, and `ctx.Tools.QueueAsync(...)`
+- use `result.Succeeded()`, `result.PayloadSuccess()`, and `result.ReadResult<T>(...)` when a called tool returns dictionary-shaped or anonymous-object payloads
+- use `RimBridgeEvidenceManifest` and `RimBridgeEvidence` helpers for repeatable suites that should return screenshots, assertions, errors, and environment details in a stable shape
 - let real RimWorld time pass inside structured tools with `ctx.Game.NextFrameAsync()`, `ctx.Game.FramesAsync(...)`, `ctx.Game.StepTicksAsync(...)`, `ctx.Game.RunForTicksAsync(...)`, and `ctx.Game.RunUntilAsync(...)`
+- after GABS reports the bridge tool surface, call `rimworld/load_game_ready` for a prepared save or `rimworld/start_debug_game_ready` for a fresh dev colony; those tools queue RimWorld long-event work and wait to the requested readiness target
+- if a companion tool is missing or fails with an SDK mismatch, call `rimbridge/get_bridge_status`; the response includes the host SDK version, companion discovery records, local SDK-copy warnings, and companion load/register errors
 
 Minimal example:
 
@@ -226,12 +230,47 @@ public sealed class MyModHarness
     [Tool("mymod/run_particle_test")]
     public async Task<object> RunParticleTest(IRimBridgeContext ctx, string pawnId)
     {
-        await ctx.Tools.CallAsync<object>("mymod/spawn_test_effect", new { pawnId });
+        var spawn = await ctx.Tools.CallAsync("mymod/spawn_test_effect", new { pawnId });
+        if (!spawn.Succeeded())
+            return new { success = false, stage = "spawn", error = spawn.Error, spawn = spawn.Result };
+
         await ctx.Game.RunForTicksAsync(120);
-        var state = await ctx.Tools.CallAsync<object>("mymod/read_effect_state", new { pawnId });
-        return new { success = state.Success, state = state.Result };
+        var state = await ctx.Tools.CallAsync("mymod/read_effect_state", new { pawnId });
+        return new
+        {
+            success = state.Succeeded(),
+            particleCount = state.TryReadResult<int>(out var count, "particleCount") ? count : 0,
+            state = state.Result
+        };
     }
 }
+```
+
+For stable contracts, use a typed DTO instead of a dynamic object payload:
+
+```csharp
+var load = await ctx.Tools.CallAsync<LoadGameReadyResult>(
+    "rimworld/load_game_ready",
+    new { saveName, readiness = "visual", pauseIfNeeded = true });
+if (!load.Succeeded())
+    return new { success = false, stage = "load", error = load.Error, load = load.Result };
+```
+
+Evidence suites can use the SDK's small manifest/assertion helpers without adopting a separate runner:
+
+```csharp
+var manifest = RimBridgeEvidence.CreateManifest("mymod/render-sweep", runId);
+manifest.saveName = saveName;
+manifest.assertions.Add(RimBridgeEvidence.ToolSucceeded("load save", load));
+manifest.captures.Add(new RimBridgeEvidenceCapture
+{
+    label = "north",
+    kind = "cell_rect",
+    path = shot.TryReadResult<string>(out var path, "path") ? path : string.Empty,
+    details = shot.Result
+});
+RimBridgeEvidence.Complete(manifest);
+return manifest;
 ```
 
 ## Tool Surface

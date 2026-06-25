@@ -61,6 +61,27 @@ public class OperationRunnerTests
     }
 
     [Fact]
+    public void ConvertsSdkAbiExceptionsIntoActionableFailedOperationEnvelopes()
+    {
+        var dispatcher = new FakeDispatcher();
+        var runner = new OperationRunner(dispatcher);
+
+        var envelope = runner.Run(
+            () => throw new MissingMethodException("Method not found: RimBridgeServer.Sdk.IRimBridgeToolClient.CallAsync"),
+            new OperationExecutionOptions
+            {
+                CapabilityId = "mymod/run_suite",
+                MarshalToMainThread = false,
+                FailureCode = "capability.failed"
+            });
+
+        Assert.False(envelope.Success);
+        Assert.Equal(OperationStatus.Failed, envelope.Status);
+        Assert.Equal("capability.sdk_mismatch", envelope.Error.Code);
+        Assert.Contains("Rebuild/redeploy RimBridgeServer and the companion mod", envelope.Error.Message);
+    }
+
+    [Fact]
     public void ConvertsTimeoutExceptionsIntoTimedOutOperationEnvelopes()
     {
         var dispatcher = new TimeoutDispatcher();

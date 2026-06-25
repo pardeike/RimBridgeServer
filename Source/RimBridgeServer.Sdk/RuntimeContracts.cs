@@ -31,6 +31,8 @@ public interface IRimBridgeToolClient
 
     bool Exists(string idOrAlias);
 
+    Task<RimBridgeToolCallResult<object>> CallAsync(string idOrAlias, object args = null, RimBridgeToolCallOptions options = null, CancellationToken cancellationToken = default);
+
     Task<RimBridgeToolCallResult<T>> CallAsync<T>(string idOrAlias, object args = null, RimBridgeToolCallOptions options = null, CancellationToken cancellationToken = default);
 
     Task<RimBridgeOperationInfo> QueueAsync(string idOrAlias, object args = null, RimBridgeToolCallOptions options = null, CancellationToken cancellationToken = default);

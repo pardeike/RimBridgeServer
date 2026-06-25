@@ -63,7 +63,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4633" GeneratePathProperty="true" />
+		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4850" GeneratePathProperty="true" />
 		<PackageReference Include="Lib.GAB" Version="$(LibGabPackageVersion)" />
 		<PackageReference Include="Lib.Harmony.Ref" Version="2.4.2" />
 		<PackageReference Include="Microsoft.NETCore.Platforms" Version="7.0.4" />

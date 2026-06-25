@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using RimBridgeServer.Core;
+using RimBridgeServer.Sdk;
 using Verse;
 
 namespace RimBridgeServer;
@@ -17,6 +19,20 @@ internal static class RimWorldWaits
         {
             success = true,
             state,
+            version = new
+            {
+                bridgeVersion = GetInformationalVersion(typeof(RimBridgeTools).Assembly),
+                bridgeAssemblyVersion = typeof(RimBridgeTools).Assembly.GetName().Version?.ToString() ?? string.Empty,
+                sdkVersion = typeof(ToolAttribute).Assembly.GetName().Version?.ToString() ?? string.Empty,
+                sdkInformationalVersion = GetInformationalVersion(typeof(ToolAttribute).Assembly)
+            },
+            sdk = RimBridgeExtensionDiscovery.GetSdkStatus(),
+            companions = new
+            {
+                totalCount = RimBridgeExtensionDiscovery.GetDiagnostics().Count,
+                registeredToolCount = RimBridgeCapabilities.ExtensionTools?.Count ?? 0,
+                diagnostics = RimBridgeExtensionDiscovery.GetDiagnostics()
+            },
             patches = RimBridgePatches.DescribeStatus(),
             recentOperationCount = journal.OperationCount,
             trackedOperationCount = journal.OperationCount,
@@ -147,6 +163,15 @@ internal static class RimWorldWaits
     private static object SnapshotState()
     {
         return Dispatcher.Invoke(RimWorldState.ToolStateSnapshot, timeoutMs: 5000);
+    }
+
+    private static string GetInformationalVersion(Assembly assembly)
+    {
+        return assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+            ?? assembly.GetName().Version?.ToString()
+            ?? string.Empty;
     }
 
     private static WaitOutcome WaitUntilMainThreadProbe(Func<WaitProbeResult> probe, WaitOptions options)
