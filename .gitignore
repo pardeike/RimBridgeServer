@@ -27,6 +27,7 @@ TestResult.xml
 [Rr]elease*/
 publish/
 artifacts/
+dist/
 
 ## Node
 node_modules/
