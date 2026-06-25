@@ -129,6 +129,16 @@ Release-facing assets are kept in source control so the in-game metadata, GitHub
 - `Source/Originals/Steam-Post.txt` and `Source/Originals/Ludean-Post.txt` hold the maintained workshop/forum copy
 - `scripts/render-mod-icon.swift` regenerates `About/ModIcon.png` from the preview art
 
+## Codex Skills
+
+Install or refresh the local Codex skills maintained by this repo with:
+
+```bash
+scripts/install-skills.sh
+```
+
+That command refreshes the generated `rimbridge-server` live bridge skill from `README.md` and `docs/tool-reference.md`, then installs repo-owned skills from `skills/`, including `rimbridge-companion-tools` for adding `RimBridgeServer.Sdk` companion DLLs to RimWorld mods.
+
 ## Local Deploy Targets
 
 `RIMWORLD_MOD_DIR` is a parent directory deploy target: builds copy the mod to `$RIMWORLD_MOD_DIR/RimBridgeServer` and write `$RIMWORLD_MOD_DIR/RimBridgeServer.zip`.

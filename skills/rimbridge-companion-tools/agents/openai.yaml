@@ -1,0 +1,7 @@
+interface:
+  display_name: "RimBridge Companion Tools"
+  short_description: "Build RimBridgeServer companion DLLs"
+  default_prompt: "Use $rimbridge-companion-tools when adding or migrating a RimWorld mod to RimBridgeServer.Sdk companion DLL tools."
+
+policy:
+  allow_implicit_invocation: true

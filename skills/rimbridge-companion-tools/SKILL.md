@@ -1,0 +1,33 @@
+---
+name: rimbridge-companion-tools
+description: Use when adding, migrating, reviewing, or testing RimBridgeServer 2.x companion DLL tools for a RimWorld mod. Covers RimBridgeServer.Sdk package references, BridgeTools folder layout, companion csproj wiring, async IRimBridgeContext tool orchestration, local NuGet/package use, build/deploy automation, and GABS validation of mod-owned [Tool] methods.
+---
+
+# RimBridge Companion Tools
+
+Use this skill for source work in a RimWorld mod that wants to expose tools through RimBridgeServer 2.x. Do not use it for ordinary live bridge calls; use the `rimbridge-server` skill for running-game interaction.
+
+## Workflow
+
+1. Check the target mod's current build/deploy layout before editing. Preserve its existing publicized RimWorld reference pattern and local deploy scripts.
+2. Move bridge-only `[Tool]` methods into a companion assembly that builds to the active load folder's `BridgeTools` directory, normally `1.6/BridgeTools`.
+3. Reference `RimBridgeServer.Sdk` for compile-time annotations and runtime interfaces, but do not deploy `RimBridgeServer.Sdk.dll` with the companion. RimBridgeServer resolves it to the host copy.
+4. Reference the owning mod DLL from the companion assembly so the companion can call mod helpers after RimWorld loads the normal mod assembly.
+5. Wire the main mod build so it builds the companion after the main mod DLL exists and before local deploy/copy/zip steps run.
+6. Prefer async SDK orchestration for real in-game test harnesses: `IRimBridgeContext`, `ctx.Tools.List/Get/CallAsync/QueueAsync`, and `ctx.Game.StepTicksAsync/RunForTicksAsync/RunUntilAsync`.
+7. Validate in three layers: source build, deployed files, then live GABS discovery/call of the companion tool.
+
+## Rules
+
+- Do not keep new public `[Tool]` methods in the main mod assembly when migrating to RimBridgeServer 2.x; enabled mods are discovered through explicit `BridgeTools` folders.
+- Use globally unique tool ids such as `mymod/render_pose_sweep`. Collisions are rejected at registration time.
+- Keep tool classes public. Use public static methods, or public instance methods on public parameterless classes.
+- Keep constructors and static initializers boring. They must not query `RimBridge.Current` or the tool registry because companion registration is still in progress.
+- Treat `IRimBridgeContext` and `CancellationToken` as injectable method parameters. They are hidden from the public schema.
+- Prefer `Task<object>` or strongly typed DTO results for non-trivial harnesses. Return clear `success`, `message`, and artifact-path fields.
+- For global companion tools with private helper DLLs, use a first-level bundle folder under global `BridgeTools`. Loose global DLLs are fine only when there are no private dependency-name collision risks.
+- For mod-specific companions, place the companion beside the load folder's `Assemblies` directory, for example `SomeMod/1.6/BridgeTools/SomeMod.BridgeTools.dll`.
+
+## Reference
+
+Read `references/companion-dll-guide.md` before editing project files or writing companion tools. It contains the current csproj patterns, SDK API examples, build target wiring, and validation checklist.
