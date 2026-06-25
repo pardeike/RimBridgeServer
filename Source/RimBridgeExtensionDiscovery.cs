@@ -1,153 +1,214 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
-using RimBridgeServer.Annotations;
 using RimBridgeServer.Core;
+using RimBridgeServer.Sdk;
 using Verse;
 
 namespace RimBridgeServer;
 
 internal static class RimBridgeExtensionDiscovery
 {
+    private sealed class DependencyScope
+    {
+        public string BridgeToolsRoot { get; set; }
+
+        public string BundleDirectory { get; set; }
+
+        public string OwnerId { get; set; }
+    }
+
+    private sealed class LoadedCompanionAssembly
+    {
+        public Assembly Assembly { get; set; }
+
+        public CompanionAssemblyCandidate Candidate { get; set; }
+    }
+
     private sealed class DiscoveredMethodCandidate
     {
-        public ModContentPack Mod { get; set; }
+        public CompanionAssemblyCandidate Candidate { get; set; }
 
         public Type Type { get; set; }
 
         public MethodInfo Method { get; set; }
-
-        public ExtensionToolDiscoveryCandidate SelectionCandidate { get; set; }
     }
+
+    private static readonly object ResolverSync = new();
+    private static readonly Dictionary<string, DependencyScope> ScopesByAssemblyPath = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, Assembly> LoadedAssembliesByPath = new(StringComparer.OrdinalIgnoreCase);
+    private static bool _resolverInstalled;
 
     public static IReadOnlyList<AnnotatedExtensionCapabilityProvider> DiscoverProviders(IEnumerable<string> reservedAliases = null)
     {
-        var loadedModHandles = LoadedModManager.ModHandles?
-            .OfType<Mod>()
-            .Where(handle => handle != null)
-            .ToDictionary(handle => handle.GetType(), handle => handle)
-            ?? new Dictionary<Type, Mod>();
-        var runningMods = LoadedModManager.RunningModsListForReading?
-            .OfType<ModContentPack>()
-            .Where(mod => mod != null)
-            .OrderBy(mod => mod.PackageId ?? mod.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-            .ToList()
-            ?? [];
+        InstallResolver();
+        var loadedAssemblies = LoadCompanionAssemblies();
         var candidates = new List<DiscoveredMethodCandidate>();
-        var nextCandidateId = 1;
 
-        foreach (var mod in runningMods)
+        foreach (var loaded in loadedAssemblies)
         {
             try
             {
-                CollectToolCandidates(mod, candidates, ref nextCandidateId);
+                CollectToolCandidates(loaded, candidates);
             }
             catch (Exception ex)
             {
-                Log.Error($"[RimBridge] Failed to scan annotated tools for mod '{DescribeMod(mod)}': {ex}");
+                Log.Error($"[RimBridge] Failed to scan companion assembly '{loaded.Candidate.AssemblyPath}': {ex}");
             }
         }
 
-        var selectedCandidates = ExtensionToolCandidateSelector.Select(
-            candidates.Select(candidate => candidate.SelectionCandidate),
-            reservedAliases);
-        var candidatesById = candidates.ToDictionary(candidate => candidate.SelectionCandidate.CandidateId, StringComparer.Ordinal);
-        return BuildProviders(selectedCandidates, candidatesById, loadedModHandles);
+        return BuildProviders(candidates);
     }
 
-    private static void CollectToolCandidates(ModContentPack mod, IList<DiscoveredMethodCandidate> discovered, ref int nextCandidateId)
+    private static IReadOnlyList<LoadedCompanionAssembly> LoadCompanionAssemblies()
     {
-        var seenAssemblies = new HashSet<Assembly>();
-        var assemblies = mod.assemblies?.loadedAssemblies?
-            .OfType<Assembly>()
-            .Where(assembly => assembly != null && !assembly.IsDynamic)
-            .ToList()
-            ?? [];
-        var modProviderId = CreateProviderId(mod);
-        var modSortKey = CreateModSortKey(mod);
-
-        foreach (var assembly in assemblies)
+        var result = new List<LoadedCompanionAssembly>();
+        foreach (var candidate in DiscoverCompanionCandidates())
         {
-            if (!seenAssemblies.Add(assembly))
-                continue;
-
             try
             {
-                var assemblyName = GetAssemblyName(assembly);
-                var assemblyFullName = GetAssemblyFullName(assembly);
-                var assemblyIdentity = CreateAssemblyIdentity(assembly);
-                foreach (var type in SafeGetTypes(mod, assembly).OrderBy(type => type.FullName ?? type.Name, StringComparer.Ordinal))
+                RegisterScope(candidate);
+                WarnAboutLocalSdk(candidate);
+                var assembly = LoadScopedAssembly(candidate.AssemblyPath, CreateScope(candidate));
+                if (assembly != null)
                 {
-                    try
+                    result.Add(new LoadedCompanionAssembly
                     {
-                        if (type == null || type.IsAbstract || type.ContainsGenericParameters)
-                            continue;
-
-                        var annotatedMethods = GetAnnotatedMethods(type);
-                        if (annotatedMethods.Count == 0)
-                            continue;
-
-                        foreach (var method in annotatedMethods)
-                        {
-                            var attribute = method.GetCustomAttribute<ToolAttribute>(inherit: false);
-                            if (attribute == null)
-                                continue;
-
-                            var candidateId = "extension-tool-" + nextCandidateId.ToString(CultureInfo.InvariantCulture);
-                            nextCandidateId++;
-                            discovered.Add(new DiscoveredMethodCandidate
-                            {
-                                Mod = mod,
-                                Type = type,
-                                Method = method,
-                                SelectionCandidate = new ExtensionToolDiscoveryCandidate
-                                {
-                                    CandidateId = candidateId,
-                                    ToolName = attribute.Name,
-                                    MethodIdentity = CreateMethodIdentity(method),
-                                    AssemblyIdentity = assemblyIdentity,
-                                    AssemblyName = assemblyName,
-                                    AssemblyFullName = assemblyFullName,
-                                    ModProviderId = modProviderId,
-                                    ModSortKey = modSortKey,
-                                    TypeName = type.FullName ?? type.Name,
-                                    MethodName = method.Name,
-                                    MetadataToken = GetMetadataToken(method)
-                                }
-                            });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error($"[RimBridge] Failed to inspect annotated tool type '{type?.FullName ?? type?.Name ?? "unknown-type"}' from mod '{DescribeMod(mod)}': {ex}");
-                    }
+                        Assembly = assembly,
+                        Candidate = candidate
+                    });
                 }
             }
             catch (Exception ex)
             {
-                Log.Error($"[RimBridge] Failed to inspect assembly '{assembly.FullName ?? assembly.GetName().Name ?? "unknown-assembly"}' for mod '{DescribeMod(mod)}': {ex}");
+                Log.Error($"[RimBridge] Failed to load companion assembly '{candidate.AssemblyPath}': {ex}");
+            }
+        }
+
+        return result;
+    }
+
+    private static IEnumerable<CompanionAssemblyCandidate> DiscoverCompanionCandidates()
+    {
+        var globalRoot = TryGetGlobalBridgeToolsRoot();
+        if (string.IsNullOrWhiteSpace(globalRoot) == false)
+        {
+            foreach (var candidate in CompanionFileDiscovery.DiscoverBridgeToolsRoot(globalRoot, CompanionRootKind.Global, "global"))
+                yield return candidate;
+        }
+
+        var runningMods = LoadedModManager.RunningModsListForReading?
+            .OfType<ModContentPack>()
+            .Where(mod => mod != null)
+            .ToList()
+            ?? [];
+
+        foreach (var mod in runningMods)
+        {
+            foreach (var candidate in DiscoverModBridgeTools(mod))
+                yield return candidate;
+        }
+    }
+
+    private static IEnumerable<CompanionAssemblyCandidate> DiscoverModBridgeTools(ModContentPack mod)
+    {
+        var folders = mod.foldersToLoadDescendingOrder?
+            .Where(folder => string.IsNullOrWhiteSpace(folder) == false)
+            .ToList()
+            ?? [];
+        var discovered = new List<(string RelativeKey, CompanionAssemblyCandidate Candidate)>();
+
+        for (var i = folders.Count - 1; i >= 0; i--)
+        {
+            var folder = folders[i];
+            var root = Path.Combine(folder, CompanionFileDiscovery.BridgeToolsFolderName);
+            foreach (var candidate in CompanionFileDiscovery.DiscoverBridgeToolsRoot(root, CompanionRootKind.Mod, CreateOwnerId(mod)))
+            {
+                discovered.Add((CreateRelativeKey(candidate), candidate));
+            }
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = discovered.Count - 1; i >= 0; i--)
+        {
+            var entry = discovered[i];
+            if (seen.Add(entry.RelativeKey) == false)
+                discovered.RemoveAt(i);
+        }
+
+        foreach (var entry in discovered)
+            yield return entry.Candidate;
+    }
+
+    private static string TryGetGlobalBridgeToolsRoot()
+    {
+        try
+        {
+            var modsFolder = GenFilePaths.ModsFolderPath;
+            var parent = Directory.GetParent(modsFolder);
+            return parent == null
+                ? null
+                : Path.Combine(parent.FullName, CompanionFileDiscovery.BridgeToolsFolderName);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[RimBridge] Could not resolve global BridgeTools folder: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static string CreateRelativeKey(CompanionAssemblyCandidate candidate)
+    {
+        var root = candidate.BridgeToolsRoot?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) ?? string.Empty;
+        var path = candidate.AssemblyPath ?? string.Empty;
+        if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            return path.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return Path.GetFileName(path);
+    }
+
+    private static void CollectToolCandidates(LoadedCompanionAssembly loaded, IList<DiscoveredMethodCandidate> discovered)
+    {
+        foreach (var type in SafeGetTypes(loaded.Assembly, loaded.Candidate).OrderBy(type => type.FullName ?? type.Name, StringComparer.Ordinal))
+        {
+            try
+            {
+                if (type == null || type.IsAbstract || type.ContainsGenericParameters)
+                    continue;
+
+                var annotatedMethods = GetAnnotatedMethods(type);
+                if (annotatedMethods.Count == 0)
+                    continue;
+
+                foreach (var method in annotatedMethods)
+                {
+                    discovered.Add(new DiscoveredMethodCandidate
+                    {
+                        Candidate = loaded.Candidate,
+                        Type = type,
+                        Method = method
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[RimBridge] Failed to inspect companion tool type '{type?.FullName ?? type?.Name ?? "unknown-type"}' from '{loaded.Candidate.AssemblyPath}': {ex}");
             }
         }
     }
 
-    private static IReadOnlyList<AnnotatedExtensionCapabilityProvider> BuildProviders(
-        IEnumerable<SelectedExtensionToolCandidate> selectedCandidates,
-        IReadOnlyDictionary<string, DiscoveredMethodCandidate> candidatesById,
-        IReadOnlyDictionary<Type, Mod> loadedModHandles)
+    private static IReadOnlyList<AnnotatedExtensionCapabilityProvider> BuildProviders(IEnumerable<DiscoveredMethodCandidate> candidates)
     {
         var providers = new List<AnnotatedExtensionCapabilityProvider>();
 
-        foreach (var providerGroup in selectedCandidates
-            .Where(selected => candidatesById.ContainsKey(selected.CandidateId))
-            .GroupBy(selected => selected.ProviderId, StringComparer.Ordinal)
-            .OrderBy(group => group.Key, StringComparer.Ordinal))
+        foreach (var assemblyGroup in candidates
+            .GroupBy(candidate => candidate.Candidate.AssemblyPath, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
         {
+            var providerCandidates = assemblyGroup.ToList();
             var toolClasses = new List<AnnotatedExtensionCapabilityProvider.ToolClass>();
-            var providerCandidates = providerGroup
-                .Select(selected => candidatesById[selected.CandidateId])
-                .ToList();
 
             foreach (var typeGroup in providerCandidates
                 .GroupBy(candidate => candidate.Type)
@@ -155,19 +216,15 @@ internal static class RimBridgeExtensionDiscovery
             {
                 try
                 {
-                    var representative = typeGroup
-                        .OrderBy(candidate => CreateModSortKey(candidate.Mod), StringComparer.OrdinalIgnoreCase)
-                        .ThenBy(candidate => candidate.SelectionCandidate.CandidateId, StringComparer.Ordinal)
-                        .First();
                     var methods = typeGroup
                         .Select(candidate => candidate.Method)
                         .OrderBy(method => method.Name, StringComparer.Ordinal)
                         .ThenBy(GetMetadataToken)
                         .ToList();
 
-                    if (!TryCreateInstance(representative.Mod, typeGroup.Key, loadedModHandles, methods, out var instance, out var error))
+                    if (!TryCreateInstance(typeGroup.Key, methods, out var instance, out var error))
                     {
-                        Log.Warning($"[RimBridge] Skipping annotated tool type '{typeGroup.Key.FullName ?? typeGroup.Key.Name}' from mod '{DescribeMod(representative.Mod)}': {error}");
+                        Log.Warning($"[RimBridge] Skipping companion tool type '{typeGroup.Key.FullName ?? typeGroup.Key.Name}' from '{assemblyGroup.Key}': {error}");
                         continue;
                     }
 
@@ -180,15 +237,16 @@ internal static class RimBridgeExtensionDiscovery
                 }
                 catch (Exception ex)
                 {
-                    Log.Error($"[RimBridge] Failed to prepare annotated tool type '{typeGroup.Key?.FullName ?? typeGroup.Key?.Name ?? "unknown-type"}': {ex}");
+                    Log.Error($"[RimBridge] Failed to prepare companion tool type '{typeGroup.Key?.FullName ?? typeGroup.Key?.Name ?? "unknown-type"}': {ex}");
                 }
             }
 
             if (toolClasses.Count == 0)
                 continue;
 
+            var representative = providerCandidates[0].Candidate;
             providers.Add(new AnnotatedExtensionCapabilityProvider(
-                providerId: providerGroup.Key,
+                providerId: CreateProviderId(representative),
                 category: "extension",
                 toolClasses: toolClasses));
         }
@@ -197,9 +255,7 @@ internal static class RimBridgeExtensionDiscovery
     }
 
     private static bool TryCreateInstance(
-        ModContentPack mod,
         Type type,
-        IReadOnlyDictionary<Type, Mod> loadedModHandles,
         IReadOnlyCollection<MethodInfo> annotatedMethods,
         out object instance,
         out string error)
@@ -209,18 +265,6 @@ internal static class RimBridgeExtensionDiscovery
 
         if (annotatedMethods.All(method => method.IsStatic))
             return true;
-
-        if (loadedModHandles.TryGetValue(type, out var existingHandle))
-        {
-            instance = existingHandle;
-            return true;
-        }
-
-        if (typeof(Mod).IsAssignableFrom(type))
-        {
-            error = $"type '{type.FullName ?? type.Name}' derives from Verse.Mod but no loaded mod handle instance was available for '{DescribeMod(mod)}'.";
-            return false;
-        }
 
         var constructor = type.GetConstructor(Type.EmptyTypes);
         if (constructor == null)
@@ -251,7 +295,7 @@ internal static class RimBridgeExtensionDiscovery
             .ToList();
     }
 
-    private static IEnumerable<Type> SafeGetTypes(ModContentPack mod, Assembly assembly)
+    private static IEnumerable<Type> SafeGetTypes(Assembly assembly, CompanionAssemblyCandidate candidate)
     {
         try
         {
@@ -262,98 +306,170 @@ internal static class RimBridgeExtensionDiscovery
             if (ex.LoaderExceptions != null)
             {
                 foreach (var loaderException in ex.LoaderExceptions.Where(exception => exception != null))
-                    Log.Warning($"[RimBridge] Loader exception while scanning mod '{DescribeMod(mod)}' assembly '{assembly.FullName ?? assembly.GetName().Name ?? "unknown-assembly"}': {loaderException.Message}");
+                    Log.Warning($"[RimBridge] Loader exception while scanning companion assembly '{candidate.AssemblyPath}': {loaderException.Message}");
             }
 
             return ex.Types.Where(type => type != null);
         }
     }
 
-    private static string CreateProviderId(ModContentPack mod)
+    private static void InstallResolver()
     {
-        var packageId = (mod.PackageId ?? mod.Name ?? mod.FolderName ?? "unknown-mod").Trim();
-        var rootDir = (mod.RootDir ?? string.Empty).Trim();
-        return ModConfigurationIds.CreateId(packageId, rootDir).Replace(':', '.') + "/annotations";
+        lock (ResolverSync)
+        {
+            if (_resolverInstalled)
+                return;
+
+            AppDomain.CurrentDomain.AssemblyResolve += ResolveCompanionAssembly;
+            _resolverInstalled = true;
+        }
     }
 
-    private static string CreateModSortKey(ModContentPack mod)
+    private static Assembly ResolveCompanionAssembly(object sender, ResolveEventArgs args)
     {
-        return string.Join("\n", mod?.PackageId ?? mod?.Name ?? mod?.FolderName ?? "unknown-mod", mod?.RootDir ?? string.Empty);
+        var requestedName = new AssemblyName(args.Name);
+        if (string.Equals(requestedName.Name, CompanionFileDiscovery.SdkAssemblyName, StringComparison.OrdinalIgnoreCase))
+            return typeof(ToolAttribute).Assembly;
+
+        var scope = TryGetScope(args.RequestingAssembly);
+        if (scope != null)
+        {
+            foreach (var directory in GetResolutionDirectories(scope))
+            {
+                var path = Path.Combine(directory, requestedName.Name + ".dll");
+                if (File.Exists(path))
+                    return LoadScopedAssembly(path, scope);
+            }
+        }
+
+        return AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(assembly =>
+            {
+                try
+                {
+                    return string.Equals(assembly.GetName().FullName, args.Name, StringComparison.Ordinal);
+                }
+                catch
+                {
+                    return false;
+                }
+            });
     }
 
-    private static string CreateAssemblyIdentity(Assembly assembly)
+    private static IEnumerable<string> GetResolutionDirectories(DependencyScope scope)
     {
+        if (string.IsNullOrWhiteSpace(scope.BundleDirectory) == false)
+            yield return scope.BundleDirectory;
+        if (string.IsNullOrWhiteSpace(scope.BridgeToolsRoot) == false)
+            yield return scope.BridgeToolsRoot;
+    }
+
+    private static DependencyScope TryGetScope(Assembly requestingAssembly)
+    {
+        if (requestingAssembly == null || requestingAssembly.IsDynamic)
+            return null;
+
         try
         {
-            return GetAssemblyFullName(assembly) + "|" + CreateModuleIdentity(assembly.ManifestModule);
+            var location = requestingAssembly.Location;
+            if (string.IsNullOrWhiteSpace(location))
+                return null;
+
+            lock (ResolverSync)
+            {
+                return ScopesByAssemblyPath.TryGetValue(Path.GetFullPath(location), out var scope)
+                    ? scope
+                    : null;
+            }
         }
         catch
         {
-            return GetAssemblyFullName(assembly) + "|unknown-module";
+            return null;
         }
     }
 
-    private static string CreateMethodIdentity(MethodInfo method)
+    private static Assembly LoadScopedAssembly(string path, DependencyScope scope)
     {
-        var moduleIdentity = CreateModuleIdentity(method.Module);
-        var metadataToken = GetMetadataToken(method);
-        if (metadataToken != 0)
-            return moduleIdentity + ":" + metadataToken.ToString(CultureInfo.InvariantCulture);
+        var fullPath = Path.GetFullPath(path);
+        if (string.Equals(Path.GetFileName(fullPath), CompanionFileDiscovery.SdkAssemblyFileName, StringComparison.OrdinalIgnoreCase))
+            return typeof(ToolAttribute).Assembly;
 
-        var parameters = string.Join(",", method.GetParameters().Select(parameter => parameter.ParameterType.FullName ?? parameter.ParameterType.Name));
-        return moduleIdentity + ":" + (method.DeclaringType?.FullName ?? method.DeclaringType?.Name ?? "unknown-type") + "." + method.Name + "(" + parameters + ")";
+        lock (ResolverSync)
+        {
+            if (LoadedAssembliesByPath.TryGetValue(fullPath, out var existing))
+                return existing;
+
+            ScopesByAssemblyPath[fullPath] = scope;
+        }
+
+        var assembly = Assembly.LoadFile(fullPath);
+        lock (ResolverSync)
+        {
+            LoadedAssembliesByPath[fullPath] = assembly;
+            ScopesByAssemblyPath[fullPath] = scope;
+        }
+
+        return assembly;
     }
 
-    private static string CreateModuleIdentity(Module module)
+    private static void RegisterScope(CompanionAssemblyCandidate candidate)
+    {
+        var scope = CreateScope(candidate);
+        lock (ResolverSync)
+        {
+            ScopesByAssemblyPath[Path.GetFullPath(candidate.AssemblyPath)] = scope;
+        }
+    }
+
+    private static DependencyScope CreateScope(CompanionAssemblyCandidate candidate)
+    {
+        return new DependencyScope
+        {
+            BridgeToolsRoot = candidate.BridgeToolsRoot,
+            BundleDirectory = candidate.BundleDirectory,
+            OwnerId = candidate.OwnerId
+        };
+    }
+
+    private static void WarnAboutLocalSdk(CompanionAssemblyCandidate candidate)
+    {
+        foreach (var directory in new[] { candidate.BundleDirectory, candidate.BridgeToolsRoot }
+            .Where(directory => string.IsNullOrWhiteSpace(directory) == false)
+            .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var sdkPath = Path.Combine(directory, CompanionFileDiscovery.SdkAssemblyFileName);
+            if (File.Exists(sdkPath))
+                Log.Warning($"[RimBridge] Ignoring companion-local SDK copy '{sdkPath}'. Companion tools must bind to the SDK shipped by RimBridgeServer.");
+        }
+    }
+
+    private static string CreateProviderId(CompanionAssemblyCandidate candidate)
+    {
+        var owner = ReflectedCapabilityBinding.ToKebabCase(candidate.OwnerId);
+        if (string.IsNullOrWhiteSpace(owner))
+            owner = candidate.RootKind == CompanionRootKind.Global ? "global" : "mod";
+
+        var assembly = ReflectedCapabilityBinding.ToKebabCase(Path.GetFileNameWithoutExtension(candidate.AssemblyPath));
+        if (string.IsNullOrWhiteSpace(assembly))
+            assembly = "companion";
+
+        return $"extension.{candidate.RootKind.ToString().ToLowerInvariant()}/{owner}/{assembly}";
+    }
+
+    private static string CreateOwnerId(ModContentPack mod)
+    {
+        return mod?.PackageId ?? mod?.Name ?? mod?.FolderName ?? "unknown-mod";
+    }
+
+    private static int GetMetadataToken(MethodInfo method)
     {
         try
         {
-            return module.ModuleVersionId.ToString("N");
-        }
-        catch
-        {
-            return module.Name ?? "unknown-module";
-        }
-    }
-
-    private static string GetAssemblyName(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetName().Name ?? "unknown-assembly";
-        }
-        catch
-        {
-            return "unknown-assembly";
-        }
-    }
-
-    private static string GetAssemblyFullName(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetName().FullName ?? assembly.FullName ?? GetAssemblyName(assembly);
-        }
-        catch
-        {
-            return assembly.FullName ?? GetAssemblyName(assembly);
-        }
-    }
-
-    private static int GetMetadataToken(MemberInfo member)
-    {
-        try
-        {
-            return member.MetadataToken;
+            return method.MetadataToken;
         }
         catch
         {
             return 0;
         }
-    }
-
-    private static string DescribeMod(ModContentPack mod)
-    {
-        return string.IsNullOrWhiteSpace(mod?.PackageId) ? mod?.Name ?? "unknown-mod" : mod.PackageId;
     }
 }

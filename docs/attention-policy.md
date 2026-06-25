@@ -60,9 +60,9 @@ This split is intentional:
 
 There is not yet a public cross-mod API for another RimWorld mod to publish its own async attention item directly through RimBridgeServer.
 
-That means third-party extension tools can already:
+That means third-party companion tools can already:
 
-- expose tools through `RimBridgeServer.Annotations`
+- expose tools through `RimBridgeServer.Sdk` and `BridgeTools` companion DLLs
 - benefit from the central attention system when severe logs or failed bridge operations occur
 
 But they cannot yet:

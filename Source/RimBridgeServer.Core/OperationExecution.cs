@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using RimBridgeServer.Contracts;
 
 namespace RimBridgeServer.Core;
@@ -58,6 +59,37 @@ public sealed class OperationRunner
                 ? _dispatcher.Invoke(func, options.TimeoutMs)
                 : func();
 
+            return OperationEnvelope.Completed(operationId, options.CapabilityId, startedAtUtc, result);
+        }
+        catch (OperationCanceledException ex)
+        {
+            return OperationEnvelope.Cancelled(operationId, options.CapabilityId, startedAtUtc, CreateError(ex, options.CancellationCode));
+        }
+        catch (TimeoutException ex)
+        {
+            return OperationEnvelope.TimedOut(operationId, options.CapabilityId, startedAtUtc, CreateError(ex, options.TimeoutCode));
+        }
+        catch (Exception ex)
+        {
+            return OperationEnvelope.Failed(operationId, options.CapabilityId, startedAtUtc, CreateError(ex, options.FailureCode));
+        }
+    }
+
+    public async Task<OperationEnvelope> RunAsync(Func<Task<object>> func, OperationExecutionOptions options)
+    {
+        if (func == null)
+            throw new ArgumentNullException(nameof(func));
+        if (options == null)
+            throw new ArgumentNullException(nameof(options));
+
+        var operationId = string.IsNullOrWhiteSpace(options.OperationId)
+            ? "op_" + Guid.NewGuid().ToString("N")
+            : options.OperationId;
+        var startedAtUtc = options.StartedAtUtc ?? DateTimeOffset.UtcNow;
+
+        try
+        {
+            var result = await func().ConfigureAwait(false);
             return OperationEnvelope.Completed(operationId, options.CapabilityId, startedAtUtc, result);
         }
         catch (OperationCanceledException ex)

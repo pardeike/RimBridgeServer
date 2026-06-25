@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using RimBridgeServer.Contracts;
 using RimBridgeServer.Extensions.Abstractions;
 
@@ -9,6 +10,17 @@ namespace RimBridgeServer.Core;
 
 public sealed class CapabilityRegistry
 {
+    private sealed class StartedInvocation
+    {
+        public RimBridgeCapabilityRegistration Registration { get; set; }
+
+        public CapabilityDescriptor Descriptor { get; set; }
+
+        public CapabilityInvocation Invocation { get; set; }
+
+        public DateTimeOffset RequestedAtUtc { get; set; }
+    }
+
     private readonly Dictionary<string, RimBridgeCapabilityRegistration> _registrationsById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _idsByAlias = new(StringComparer.OrdinalIgnoreCase);
     private readonly OperationJournal _journal;
@@ -44,8 +56,55 @@ public sealed class CapabilityRegistry
 
     public OperationEnvelope Invoke(string idOrAlias, IDictionary<string, object> arguments = null, CancellationToken cancellationToken = default)
     {
+        return InvokeAsync(idOrAlias, arguments, cancellationToken).GetAwaiter().GetResult();
+    }
+
+    public Task<OperationEnvelope> InvokeAsync(string idOrAlias, IDictionary<string, object> arguments = null, CancellationToken cancellationToken = default)
+    {
+        var started = StartInvocation(idOrAlias, arguments, CapabilityExecutionMode.Wait);
+        return CompleteInvocationAsync(started, cancellationToken);
+    }
+
+    public OperationEnvelope Queue(string idOrAlias, IDictionary<string, object> arguments = null, CancellationToken cancellationToken = default)
+    {
+        return QueueAsync(idOrAlias, arguments, cancellationToken).GetAwaiter().GetResult();
+    }
+
+    public Task<OperationEnvelope> QueueAsync(string idOrAlias, IDictionary<string, object> arguments = null, CancellationToken cancellationToken = default)
+    {
+        var started = StartInvocation(idOrAlias, arguments, CapabilityExecutionMode.Queue);
+        var running = _journal?.GetOperation(started.Invocation.OperationId, includeResult: false) ?? new OperationEnvelope
+        {
+            OperationId = started.Invocation.OperationId,
+            CapabilityId = started.Descriptor.Id,
+            Status = OperationStatus.Running,
+            StartedAtUtc = started.RequestedAtUtc,
+            Metadata = new Dictionary<string, object>(StringComparer.Ordinal)
+        };
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await CompleteInvocationAsync(started, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // CompleteInvocationAsync owns journal failure recording. This guard prevents
+                // unobserved task exceptions if cancellation is raised before the handler starts.
+            }
+        }, CancellationToken.None);
+
+        return Task.FromResult(running);
+    }
+
+    private StartedInvocation StartInvocation(string idOrAlias, IDictionary<string, object> arguments, CapabilityExecutionMode requestedMode)
+    {
         var registration = ResolveRegistration(idOrAlias);
         var descriptor = registration.Descriptor;
+        if (descriptor.SupportsMode(requestedMode) == false && requestedMode != CapabilityExecutionMode.Wait)
+            throw new InvalidOperationException($"Capability '{descriptor.Id}' does not support execution mode '{requestedMode}'.");
+
         var operationId = "op_" + Guid.NewGuid().ToString("N");
         var requestedAtUtc = DateTimeOffset.UtcNow;
         var correlation = OperationContext.Capture();
@@ -76,6 +135,30 @@ public sealed class CapabilityRegistry
 
         _journal?.RecordStarted(operationId, descriptor.Id, metadata, requestedAtUtc);
 
+        return new StartedInvocation
+        {
+            Registration = registration,
+            Descriptor = descriptor,
+            Invocation = new CapabilityInvocation
+            {
+                CapabilityId = descriptor.Id,
+                OperationId = operationId,
+                RequestedMode = requestedMode,
+                RequestedAtUtc = requestedAtUtc,
+                Arguments = invocationArguments
+            },
+            RequestedAtUtc = requestedAtUtc
+        };
+    }
+
+    private async Task<OperationEnvelope> CompleteInvocationAsync(StartedInvocation started, CancellationToken cancellationToken)
+    {
+        var registration = started.Registration;
+        var descriptor = started.Descriptor;
+        var invocation = started.Invocation;
+        var operationId = invocation.OperationId;
+        var requestedAtUtc = started.RequestedAtUtc;
+
         if (!registration.HasHandler)
         {
             var failed = OperationEnvelope.Failed(operationId, descriptor.Id, requestedAtUtc, new OperationError
@@ -88,19 +171,10 @@ public sealed class CapabilityRegistry
             return failed;
         }
 
-        var invocation = new CapabilityInvocation
-        {
-            CapabilityId = descriptor.Id,
-            OperationId = operationId,
-            RequestedMode = CapabilityExecutionMode.Wait,
-            RequestedAtUtc = requestedAtUtc,
-            Arguments = invocationArguments
-        };
-
         using var scope = OperationContext.PushOperation(operationId, descriptor.Id);
         try
         {
-            var envelope = registration.Handler(invocation, cancellationToken).GetAwaiter().GetResult()
+            var envelope = await registration.Handler(invocation, cancellationToken).ConfigureAwait(false)
                 ?? OperationEnvelope.Completed(operationId, descriptor.Id, requestedAtUtc, result: null);
 
             NormalizeEnvelope(envelope, operationId, descriptor.Id, requestedAtUtc);

@@ -542,29 +542,32 @@ The current concrete recommendation for that next layer is documented in [`docs/
 
 ## Extension Strategy
 
-The bridge now uses annotation-based discovery for third-party tools instead of a second manual registration model.
+RimBridgeServer 2 uses explicit companion DLL discovery instead of scanning normal loaded mod assemblies.
 
 Current model:
 
-- third-party mods reference `RimBridgeServer.Annotations`
-- RimBridgeServer delays GAB startup until `LoadedModManager.InitializeMods` has completed
-- once all mods are initialized, the host scans loaded mod assemblies for annotated public tool methods
-- identical compiled annotated methods are deduplicated globally, so a singleton shared library can own its bridge diagnostics even when multiple mods depend on it
-- public extension tool names are global; if different extension methods claim the same name, deterministic first-wins selection keeps startup quiet
-- selected tools are registered once into both the capability registry and the live GAB tool surface
-- each mod is isolated by `try/catch`, so one failing scan does not block other mods
+- third-party companions reference `RimBridgeServer.Sdk`
+- RimBridgeServer waits until normal RimWorld mod assemblies are loaded and runtime-ready, then loads companion DLLs from `BridgeTools`
+- global tools load first from the game-root `BridgeTools` folder
+- mod-specific tools load next from each active mod load folder's `BridgeTools` folder, using RimWorld's effective load-folder order
+- loose single-DLL companions are supported directly under `BridgeTools`
+- first-level bundle folders isolate helper DLL lookup for companions that ship private dependencies
+- selected tools are registered into both the capability registry and the live GAB tool surface
+- each companion/provider is isolated by `try/catch`, so one broken companion does not block unrelated tools
 
 Supported authoring shapes:
 
-- public static methods on any loaded mod assembly type
-- public instance methods on a loaded `Verse.Mod` handle type
-- public instance methods on a public parameterless tool class
+- public static methods on a companion assembly type
+- public instance methods on a public parameterless companion tool class
+- sync returns, `Task`, `Task<T>`, `ValueTask`, and `ValueTask<T>`
+- injected `IRimBridgeContext` and `CancellationToken` parameters
 
 Design constraints:
 
-- keep the shared package annotation-only so participating mods do not need a heavy runtime dependency
-- keep discovery one-shot and startup-bound rather than re-scanning during live execution
-- use mod-based provider ids for unique mod-local annotated assemblies and assembly-based provider ids for shared assemblies discovered through multiple mods
+- companion assemblies are loaded late so they can reference their owning mod assembly normally
+- constructors and static initializers must not query the bridge registry because companion registration is still in progress
+- `RimBridgeServer.Sdk` always resolves to the assembly shipped by RimBridgeServer
+- public tool names are global; collisions are rejected and surfaced through diagnostics
 - continue to prefer publicized RimWorld APIs for actual game access; reflection is for extension discovery and optional third-party adapters, not routine game logic
 
 ## Testing Strategy

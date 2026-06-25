@@ -21,8 +21,6 @@ internal static class RimBridgeStartup
         {
             _modConstructed = true;
         }
-
-        TryStart();
     }
 
     public static void OnRuntimeReady()
@@ -78,24 +76,18 @@ internal static class RimBridgeStartup
 
     private static void TryStart()
     {
-        var startingBeforeRuntimeReady = false;
-
         lock (Sync)
         {
-            if (!_modConstructed || _started)
+            if (!_modConstructed || !_runtimeReady || _started)
                 return;
 
             _started = true;
-            startingBeforeRuntimeReady = !_runtimeReady;
         }
 
         try
         {
             using (RimBridgeStartupTiming.Phase("bridge-start.total"))
             {
-                if (startingBeforeRuntimeReady)
-                    Log.Message("[RimBridge] Initializing bridge services before play-data load completes.");
-
                 using (RimBridgeStartupTiming.Phase("capabilities.initialize"))
                     RimBridgeCapabilities.Initialize();
                 using (RimBridgeStartupTiming.Phase("logs.initialize"))

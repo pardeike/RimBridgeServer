@@ -93,7 +93,7 @@ For cross-repo development in a sibling workspace, RimBridgeServer supports an o
 
 - default local source path: `../.nuget-local`
 - enable it with `EnableLocalNuGetOverride=true`
-- override package versions with `LibGabPackageVersion` and `RimBridgeServerAnnotationsPackageVersion`
+- override package versions with `LibGabPackageVersion` and `RimBridgeServerSdkPackageVersion`
 
 Example:
 
@@ -101,7 +101,7 @@ Example:
 dotnet restore Source/RimBridgeServer.csproj \
   -p:EnableLocalNuGetOverride=true \
   -p:LibGabPackageVersion=1.0.3-local.1 \
-  -p:RimBridgeServerAnnotationsPackageVersion=1.2.0-local.1
+  -p:RimBridgeServerSdkPackageVersion=2.0.0-local.1
 ```
 
 Populate the local source by packing the sibling library into `../.nuget-local`, for example:
@@ -152,22 +152,27 @@ Pass those ids to `rimworld/take_screenshot` as `clipTargetId` to crop a screens
 
 ## Third-Party Extension Tools
 
-Third-party mods can expose bridge tools by referencing the `RimBridgeServer.Annotations` NuGet package and annotating ordinary public methods. RimBridgeServer delays its own GAB startup until RimWorld has finished initializing all loaded mods, scans the loaded mod assemblies, deduplicates shared-library annotations, and exposes the selected tools through the same capability registry and top-level GAB tool surface as built-in tools.
+Third-party mods can expose bridge tools through companion DLLs that reference the `RimBridgeServer.Sdk` NuGet package. RimBridgeServer starts its bridge services after RimWorld has loaded normal mod assemblies, then loads companion DLLs from explicit `BridgeTools` folders and registers their `[Tool]` methods through the same capability registry and top-level GAB tool surface as built-in tools.
 
 Practical rules:
 
-- use `RimBridgeServer.Annotations` as the only shared dependency
-- annotate public static methods, public instance methods on your `Verse.Mod` class, or public instance methods on a type with a public parameterless constructor
-- shared singleton libraries may keep their own annotated diagnostics or test tools; when the same compiled method is discovered through multiple dependent mods, RimBridgeServer registers it once
-- public tool names are global across the bridge surface; if different extension methods claim the same name, RimBridgeServer keeps the deterministic first match without startup warning spam
+- use `RimBridgeServer.Sdk` as the only shared bridge dependency
+- put global tools in `RimWorldRoot/BridgeTools`, either as loose single DLLs or first-level bundle folders
+- put mod-specific tools beside the active load folder's `Assemblies` folder, for example `SomeMod/1.6/BridgeTools`
+- use a first-level bundle folder when a global companion needs private helper DLLs, for example `BridgeTools/PoseHarness/PoseHarness.dll`
+- annotate public static methods or public instance methods on a public parameterless tool class
+- async tool methods may return `Task<T>`, `ValueTask<T>`, `Task`, or `ValueTask`
+- accept `IRimBridgeContext` and/or `CancellationToken` parameters when a tool needs injected SDK access; those parameters are hidden from the public tool schema
+- public tool names are global across the bridge surface; collisions are rejected and reported instead of silently choosing one tool
 - use `[ToolParameter]` for argument docs, `Tool.ResultDescription` for a short successful-result summary, and `[ToolResponse]` for response field docs when useful
 - expect per-mod fault isolation: one broken mod should not block discovery for other mods
-- assume that blocking attention is still owned centrally by RimBridgeServer; there is not yet a public cross-mod API for third-party mods to publish their own async attention items directly
+- query and call tools dynamically with `ctx.Tools.List(...)`, `ctx.Tools.Get(...)`, `ctx.Tools.CallAsync<T>(...)`, and `ctx.Tools.QueueAsync(...)`
+- let real RimWorld time pass inside structured tools with `ctx.Game.NextFrameAsync()`, `ctx.Game.FramesAsync(...)`, `ctx.Game.StepTicksAsync(...)`, `ctx.Game.RunForTicksAsync(...)`, and `ctx.Game.RunUntilAsync(...)`
 
 Minimal example:
 
 ```csharp
-using RimBridgeServer.Annotations;
+using RimBridgeServer.Sdk;
 
 public sealed class MyModBridgeTools
 {
@@ -183,6 +188,24 @@ public sealed class MyModBridgeTools
             success = true,
             label = label ?? "pong"
         };
+    }
+}
+```
+
+Async orchestration example:
+
+```csharp
+using RimBridgeServer.Sdk;
+
+public sealed class MyModHarness
+{
+    [Tool("mymod/run_particle_test")]
+    public async Task<object> RunParticleTest(IRimBridgeContext ctx, string pawnId)
+    {
+        await ctx.Tools.CallAsync<object>("mymod/spawn_test_effect", new { pawnId });
+        await ctx.Game.RunForTicksAsync(120);
+        var state = await ctx.Tools.CallAsync<object>("mymod/read_effect_state", new { pawnId });
+        return new { success = state.Success, state = state.Result };
     }
 }
 ```

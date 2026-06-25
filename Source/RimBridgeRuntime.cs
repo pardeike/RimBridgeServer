@@ -114,7 +114,10 @@ internal static class Root_Update_Patch
     public static void Postfix()
     {
         RimBridgeMainThread.Pump();
+        RimBridgeAsyncScheduler.Pump();
         RimWorldTickStepper.AdvanceFromRootUpdate(Time.frameCount);
+        RimBridgeFrameClock.AdvanceFromRootUpdate(Time.frameCount);
+        RimBridgeAsyncScheduler.Pump();
         RimBridgeUiWorkbench.AdvanceFrame(Time.frameCount);
         RimBridgeVirtualPointer.ClearExpiredSyntheticMouseState();
         RimWorldHover.ClearHoverTargetForRealInputState();
@@ -254,6 +257,41 @@ internal static class RimBridgeMainThread
             action();
             return true;
         }, timeoutMs);
+    }
+
+    public static async Task<T> InvokeAsync<T>(Func<T> func, CancellationToken cancellationToken = default)
+    {
+        if (IsMainThread)
+            return func();
+
+        var workItem = new MainThreadWorkItem<T>(func);
+
+        lock (Sync)
+        {
+            Pending.Enqueue(workItem);
+        }
+
+        CancellationTokenRegistration registration = default;
+        if (cancellationToken.CanBeCanceled)
+            registration = cancellationToken.Register(() => workItem.CancelIfPending());
+
+        try
+        {
+            return await workItem.Completion.ConfigureAwait(false);
+        }
+        finally
+        {
+            registration.Dispose();
+        }
+    }
+
+    public static Task InvokeAsync(Action action, CancellationToken cancellationToken = default)
+    {
+        return InvokeAsync(() =>
+        {
+            action();
+            return true;
+        }, cancellationToken);
     }
 }
 

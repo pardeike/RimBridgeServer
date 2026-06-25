@@ -71,7 +71,7 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             Summary = attribute.Description ?? string.Empty,
             Source = _source,
             ExecutionKind = ResolveExecutionKind(attribute.Name),
-            SupportedModes = CapabilityExecutionMode.Wait,
+            SupportedModes = CapabilityExecutionMode.Wait | CapabilityExecutionMode.Queue,
             EmitsEvents = true,
             ResultType = implementationMethod.ReturnType.FullName ?? implementationMethod.ReturnType.Name,
             Aliases = [attribute.Name],

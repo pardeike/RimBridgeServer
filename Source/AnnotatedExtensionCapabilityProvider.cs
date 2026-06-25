@@ -11,9 +11,10 @@ using Newtonsoft.Json.Linq;
 using RimBridgeServer.Contracts;
 using RimBridgeServer.Core;
 using RimBridgeServer.Extensions.Abstractions;
-using AnnotationToolAttribute = RimBridgeServer.Annotations.ToolAttribute;
-using AnnotationToolParameterAttribute = RimBridgeServer.Annotations.ToolParameterAttribute;
-using AnnotationToolResponseAttribute = RimBridgeServer.Annotations.ToolResponseAttribute;
+using RimBridgeServer.Sdk;
+using SdkToolAttribute = RimBridgeServer.Sdk.ToolAttribute;
+using SdkToolParameterAttribute = RimBridgeServer.Sdk.ToolParameterAttribute;
+using SdkToolResponseAttribute = RimBridgeServer.Sdk.ToolResponseAttribute;
 
 namespace RimBridgeServer;
 
@@ -77,7 +78,7 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
 
             foreach (var method in toolClass.Methods.OrderBy(method => method.Name, StringComparer.Ordinal))
             {
-                var attribute = method.GetCustomAttribute<AnnotationToolAttribute>(inherit: false)
+                var attribute = method.GetCustomAttribute<SdkToolAttribute>(inherit: false)
                     ?? throw new InvalidOperationException($"Annotated method '{method.Name}' on '{toolClass.Type.FullName ?? toolClass.Type.Name}' was missing a ToolAttribute.");
 
                 var descriptor = new CapabilityDescriptor
@@ -88,12 +89,15 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
                     Title = string.IsNullOrWhiteSpace(attribute.Title) ? attribute.Name : attribute.Title,
                     Summary = attribute.Description ?? string.Empty,
                     Source = CapabilitySourceKind.Extension,
-                    ExecutionKind = CapabilityExecutionKind.MainThread,
-                    SupportedModes = CapabilityExecutionMode.Wait,
+                    ExecutionKind = CapabilityExecutionKind.FrameBound,
+                    SupportedModes = CapabilityExecutionMode.Wait | CapabilityExecutionMode.Queue,
                     EmitsEvents = true,
-                    ResultType = method.ReturnType.FullName ?? method.ReturnType.Name,
+                    ResultType = DescribeReturnType(method.ReturnType),
                     Aliases = [attribute.Name],
-                    Parameters = method.GetParameters().Select(CreateParameterDescriptor).ToList()
+                    Parameters = method.GetParameters()
+                        .Where(parameter => IsInjectedParameter(parameter) == false)
+                        .Select(CreateParameterDescriptor)
+                        .ToList()
                 };
 
                 registrations.Add(new RimBridgeCapabilityRegistration(
@@ -113,7 +117,7 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
                 .OrderBy(method => method.Name, StringComparer.Ordinal)
                 .Select(method =>
                 {
-                    var attribute = method.GetCustomAttribute<AnnotationToolAttribute>(inherit: false)
+                    var attribute = method.GetCustomAttribute<SdkToolAttribute>(inherit: false)
                         ?? throw new InvalidOperationException($"Annotated method '{method.Name}' on '{toolClass.Type.FullName ?? toolClass.Type.Name}' was missing a ToolAttribute.");
 
                     return new DiscoveredTool
@@ -124,11 +128,14 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
                             Name = attribute.Name,
                             Title = attribute.Title,
                             Description = attribute.Description,
-                            ResultDescription = GetOptionalStringProperty(attribute, "ResultDescription"),
+                            ResultDescription = attribute.ResultDescription,
                             Tags = NormalizeTags(attribute.Tags),
                             RequiresAuth = attribute.RequiresAuth,
-                            Parameters = method.GetParameters().Select(CreateToolParameterInfo).ToList(),
-                            ResponseFields = method.GetCustomAttributes<AnnotationToolResponseAttribute>(inherit: false)
+                            Parameters = method.GetParameters()
+                                .Where(parameter => IsInjectedParameter(parameter) == false)
+                                .Select(CreateToolParameterInfo)
+                                .ToList(),
+                            ResponseFields = method.GetCustomAttributes<SdkToolResponseAttribute>(inherit: false)
                                 .Select(response => new ToolResponseFieldInfo
                                 {
                                     Name = response.Name,
@@ -156,23 +163,82 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
             .ToList();
     }
 
-    private Task<OperationEnvelope> InvokeAsync(ToolClass toolClass, MethodInfo method, CapabilityDescriptor descriptor, CapabilityInvocation invocation, CancellationToken cancellationToken)
+    private Task<OperationEnvelope> InvokeAsync(
+        ToolClass toolClass,
+        MethodInfo method,
+        CapabilityDescriptor descriptor,
+        CapabilityInvocation invocation,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var envelope = _runner.Run(() => method.Invoke(method.IsStatic ? null : toolClass.Instance, BindArguments(method, invocation.Arguments)), new OperationExecutionOptions
-        {
-            OperationId = invocation.OperationId,
-            CapabilityId = descriptor.Id,
-            StartedAtUtc = invocation.RequestedAtUtc,
-            MarshalToMainThread = true,
-            TimeoutMs = ResolveExecutionTimeoutMs(invocation.Arguments),
-            FailureCode = "capability.failed",
-            TimeoutCode = "capability.timed_out",
-            CancellationCode = "capability.cancelled"
-        });
+        var operationContext = OperationContext.Capture();
+        var sdkContext = RimBridgeSdkHost.CreateContext(operationContext);
+        var timeoutMs = ResolveExecutionTimeoutMs(invocation.Arguments);
 
-        return Task.FromResult(envelope);
+        return _runner.RunAsync(
+            () => RimBridgeAsyncScheduler.RunAsync(
+                () => InvokeMethodAsync(toolClass, method, invocation.Arguments, sdkContext, cancellationToken),
+                sdkContext,
+                operationContext,
+                cancellationToken),
+            new OperationExecutionOptions
+            {
+                OperationId = invocation.OperationId,
+                CapabilityId = descriptor.Id,
+                StartedAtUtc = invocation.RequestedAtUtc,
+                MarshalToMainThread = false,
+                TimeoutMs = timeoutMs,
+                FailureCode = "capability.failed",
+                TimeoutCode = "capability.timed_out",
+                CancellationCode = "capability.cancelled"
+            });
+    }
+
+    private static async Task<object> InvokeMethodAsync(
+        ToolClass toolClass,
+        MethodInfo method,
+        IDictionary<string, object> arguments,
+        IRimBridgeContext sdkContext,
+        CancellationToken cancellationToken)
+    {
+        var result = method.Invoke(
+            method.IsStatic ? null : toolClass.Instance,
+            BindArguments(method, arguments, sdkContext, cancellationToken));
+
+        return await AwaitReturnValueAsync(result).ConfigureAwait(true);
+    }
+
+    private static async Task<object> AwaitReturnValueAsync(object result)
+    {
+        if (result == null)
+            return null;
+
+        if (result is Task task)
+        {
+            await task.ConfigureAwait(true);
+            return TryGetTaskResult(task);
+        }
+
+        var resultType = result.GetType();
+        if (resultType.FullName?.StartsWith("System.Threading.Tasks.ValueTask", StringComparison.Ordinal) == true)
+        {
+            var asTask = resultType.GetMethod("AsTask", BindingFlags.Instance | BindingFlags.Public, binder: null, Type.EmptyTypes, modifiers: null);
+            if (asTask == null)
+                return null;
+
+            var taskResult = (Task)asTask.Invoke(result, Array.Empty<object>());
+            await taskResult.ConfigureAwait(true);
+            return TryGetTaskResult(taskResult);
+        }
+
+        return result;
+    }
+
+    private static object TryGetTaskResult(Task task)
+    {
+        var property = task.GetType().GetProperty("Result", BindingFlags.Instance | BindingFlags.Public);
+        return property?.GetValue(task);
     }
 
     private static int ResolveExecutionTimeoutMs(IDictionary<string, object> arguments)
@@ -208,9 +274,15 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
         return candidate;
     }
 
+    private static bool IsInjectedParameter(ParameterInfo parameter)
+    {
+        return typeof(IRimBridgeContext).IsAssignableFrom(parameter.ParameterType)
+            || parameter.ParameterType == typeof(CancellationToken);
+    }
+
     private static CapabilityParameterDescriptor CreateParameterDescriptor(ParameterInfo parameter)
     {
-        var attribute = parameter.GetCustomAttribute<AnnotationToolParameterAttribute>(inherit: false);
+        var attribute = parameter.GetCustomAttribute<SdkToolParameterAttribute>(inherit: false);
         var hasDefaultValue = parameter.HasDefaultValue && parameter.DefaultValue != DBNull.Value;
         return new CapabilityParameterDescriptor
         {
@@ -224,7 +296,7 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
 
     private static ToolParameterInfo CreateToolParameterInfo(ParameterInfo parameter)
     {
-        var attribute = parameter.GetCustomAttribute<AnnotationToolParameterAttribute>(inherit: false);
+        var attribute = parameter.GetCustomAttribute<SdkToolParameterAttribute>(inherit: false);
         var hasDefaultValue = parameter.HasDefaultValue && parameter.DefaultValue != DBNull.Value;
         return new ToolParameterInfo
         {
@@ -236,13 +308,25 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
         };
     }
 
-    private static string GetOptionalStringProperty(object source, string propertyName)
+    private static string DescribeReturnType(Type returnType)
     {
-        var property = source.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
-        return property?.GetValue(source) as string;
+        if (returnType == typeof(Task))
+            return typeof(void).FullName;
+        if (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
+            return returnType.GetGenericArguments()[0].FullName ?? returnType.GetGenericArguments()[0].Name;
+        if (returnType.FullName == "System.Threading.Tasks.ValueTask")
+            return typeof(void).FullName;
+        if (returnType.IsGenericType && returnType.FullName?.StartsWith("System.Threading.Tasks.ValueTask`1", StringComparison.Ordinal) == true)
+            return returnType.GetGenericArguments()[0].FullName ?? returnType.GetGenericArguments()[0].Name;
+
+        return returnType.FullName ?? returnType.Name;
     }
 
-    private static object[] BindArguments(MethodInfo method, IDictionary<string, object> arguments)
+    private static object[] BindArguments(
+        MethodInfo method,
+        IDictionary<string, object> arguments,
+        IRimBridgeContext sdkContext,
+        CancellationToken cancellationToken)
     {
         var parameters = method.GetParameters();
         var result = new object[parameters.Length];
@@ -250,6 +334,18 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
         for (var i = 0; i < parameters.Length; i++)
         {
             var parameter = parameters[i];
+            if (typeof(IRimBridgeContext).IsAssignableFrom(parameter.ParameterType))
+            {
+                result[i] = sdkContext;
+                continue;
+            }
+
+            if (parameter.ParameterType == typeof(CancellationToken))
+            {
+                result[i] = cancellationToken;
+                continue;
+            }
+
             if (arguments != null && arguments.TryGetValue(parameter.Name ?? string.Empty, out var suppliedValue))
             {
                 result[i] = ConvertArgument(suppliedValue, parameter.ParameterType);

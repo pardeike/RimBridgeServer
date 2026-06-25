@@ -112,6 +112,7 @@ internal static class RimBridgeCapabilities
             .SelectMany(descriptor => descriptor.Aliases)
             .Where(alias => string.IsNullOrWhiteSpace(alias) == false)
             .ToList();
+        RimBridgeSdkHost.Initialize(registry);
         var extensionProviders = RimBridgeExtensionDiscovery.DiscoverProviders(reservedExtensionAliases);
         var extensionTools = new List<AnnotatedExtensionCapabilityProvider.DiscoveredTool>();
 
@@ -133,5 +134,6 @@ internal static class RimBridgeCapabilities
         ExtensionTools = extensionTools;
         Registry = registry;
         LegacyToolExecution.Initialize(registry);
+        RimBridgeSdkHost.MarkRegistrationComplete();
     }
 }

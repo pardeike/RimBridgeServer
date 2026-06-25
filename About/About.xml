@@ -6,7 +6,7 @@
     <li>1.6</li>
   </supportedVersions>
   <packageId>brrainz.rimbridgeserver</packageId>
-  <modVersion>1.4.5</modVersion>
+  <modVersion>2.0.0</modVersion>
   <url>https://github.com/pardeike/RimBridgeServer</url>
   <description>Turn a running RimWorld session into a live automation bridge.
 
@@ -19,7 +19,7 @@ IN PRACTICE YOU CAN
 - change mod settings and mod load order
 - run JSON or lowered Lua automation scripts
 - drive Dubs Performance Analyzer profiling when DPA is installed and active
-- let third-party mods expose their own bridge tools through RimBridgeServer.Annotations
+- let third-party mods expose async companion tools through RimBridgeServer.Sdk and BridgeTools folders
 
 RECOMMENDED SETUP
 

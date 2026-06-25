@@ -35,6 +35,57 @@ public class CapabilityRegistryTests
     }
 
     [Fact]
+    public async Task InvokeAsyncAwaitsRegisteredCapability()
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new AsyncProvider());
+
+        var envelope = await registry.InvokeAsync("rimbridge/async_ping");
+
+        Assert.True(envelope.Success);
+        Assert.Equal(OperationStatus.Completed, envelope.Status);
+        Assert.Equal("pong", envelope.Result);
+    }
+
+    [Fact]
+    public async Task QueueAsyncRecordsRunningOperationAndCompletesInJournal()
+    {
+        var journal = new OperationJournal();
+        var registry = new CapabilityRegistry(journal);
+        registry.RegisterProvider(new AsyncProvider());
+
+        var queued = await registry.QueueAsync("rimbridge/async_ping");
+
+        Assert.Equal(OperationStatus.Running, queued.Status);
+        Assert.False(string.IsNullOrWhiteSpace(queued.OperationId));
+
+        OperationEnvelope completed = null;
+        for (var i = 0; i < 20; i++)
+        {
+            completed = journal.GetOperation(queued.OperationId);
+            if (completed?.Status == OperationStatus.Completed)
+                break;
+
+            await Task.Delay(25);
+        }
+
+        Assert.NotNull(completed);
+        Assert.Equal(OperationStatus.Completed, completed.Status);
+        Assert.True(completed.Success);
+    }
+
+    [Fact]
+    public void QueueRejectsCapabilitiesThatDoNotSupportQueueMode()
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new FakeProvider());
+
+        var ex = Assert.Throws<InvalidOperationException>(() => registry.Queue("rimbridge/ping"));
+
+        Assert.Contains("does not support execution mode", ex.Message);
+    }
+
+    [Fact]
     public void RejectsDuplicateAliasesAcrossProviders()
     {
         var registry = new CapabilityRegistry();
@@ -193,6 +244,29 @@ public class CapabilityRegistryTests
                 {
                     action();
                     return Task.FromResult(OperationEnvelope.Completed("op_throwing", "throwing.provider/" + alias, System.DateTimeOffset.UtcNow, new { }));
+                });
+        }
+    }
+
+    private sealed class AsyncProvider : IRimBridgeCapabilityProvider
+    {
+        public string ProviderId => "async.provider";
+
+        public IEnumerable<RimBridgeCapabilityRegistration> GetCapabilities()
+        {
+            yield return new RimBridgeCapabilityRegistration(
+                new CapabilityDescriptor
+                {
+                    Id = "async.provider/ping",
+                    ProviderId = ProviderId,
+                    Category = "diagnostics",
+                    Aliases = ["rimbridge/async_ping"],
+                    SupportedModes = CapabilityExecutionMode.Wait | CapabilityExecutionMode.Queue
+                },
+                async (invocation, _) =>
+                {
+                    await Task.Delay(10);
+                    return OperationEnvelope.Completed(invocation.OperationId, invocation.CapabilityId, invocation.RequestedAtUtc, "pong");
                 });
         }
     }

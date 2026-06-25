@@ -3,12 +3,12 @@
         <ModName>RimBridgeServer</ModName>
         <ModFileName>RimBridgeServer</ModFileName>
         <Repository>https://github.com/pardeike/RimBridgeServer</Repository>
-        <ModVersion>1.4.5</ModVersion>
+        <ModVersion>2.0.0</ModVersion>
         <ProjectGuid>{6A41B185-4CC6-43FD-A4D3-5D2819F4DC96}</ProjectGuid>
         <LocalNuGetSource Condition="'$(LocalNuGetSource)' == ''">$(MSBuildThisFileDirectory)..\.nuget-local</LocalNuGetSource>
         <EnableLocalNuGetOverride Condition="'$(EnableLocalNuGetOverride)' == ''">false</EnableLocalNuGetOverride>
         <LibGabPackageVersion Condition="'$(LibGabPackageVersion)' == ''">1.0.3</LibGabPackageVersion>
-        <RimBridgeServerAnnotationsPackageVersion Condition="'$(RimBridgeServerAnnotationsPackageVersion)' == ''">1.2.0</RimBridgeServerAnnotationsPackageVersion>
+        <RimBridgeServerSdkPackageVersion Condition="'$(RimBridgeServerSdkPackageVersion)' == ''">$(ModVersion)</RimBridgeServerSdkPackageVersion>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(EnableLocalNuGetOverride)' == 'true'">
