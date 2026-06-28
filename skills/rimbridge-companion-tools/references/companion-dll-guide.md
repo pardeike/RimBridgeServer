@@ -7,8 +7,8 @@ Use this reference when adding or migrating RimBridgeServer 2.x companion tools 
 - RimBridgeServer starts late enough that normal mod assemblies are already loaded.
 - RimBridgeServer then loads companions from explicit `BridgeTools` folders.
 - Global companions load first from the game-root `BridgeTools` folder. Loose DLLs are allowed; first-level bundle folders isolate private helper DLL lookup.
-- For local paired mod deployments, prefer global first-level bundle folders such as `BridgeTools/SomeMod/SomeMod.BridgeTools.dll`. Derive that root from the selected global `Mods` folder as `$(RIMWORLD_MOD_DIR)\..\BridgeTools` so the mod DLL and matching companion DLL deploy as a pair without a separate BridgeTools environment variable.
-- Mod-specific companions can also load from each active mod load folder's `BridgeTools` folder, for example `SomeMod/1.6/BridgeTools`; use this when the mod intentionally packages the companion inside its own folder rather than the paired global deployment.
+- For normal paired local mod deployments, use global first-level bundle folders such as `BridgeTools/SomeMod/SomeMod.BridgeTools.dll`. Derive that root from the selected active `Mods` folder as `$(RIMWORLD_MOD_DIR)\..\BridgeTools` so the mod DLL and matching companion DLL deploy as one pair without a separate BridgeTools environment variable.
+- Mod-specific companions can also load from each active mod load folder's `BridgeTools` folder, for example `SomeMod/1.6/BridgeTools`. Treat this as a rare packaged-mod edge case for a mod that intentionally ships its companion inside its own folder, not as a normal local dev deploy target.
 - `RimBridgeServer.Sdk` always resolves to the SDK assembly shipped by RimBridgeServer. Companion projects reference the SDK for compilation, but should not deploy that DLL.
 - Companion dependencies are resolved from the companion bundle directory, the owning `BridgeTools` root, and already loaded mod assemblies.
 
@@ -58,7 +58,7 @@ SomeMod/
     └── BridgeTools/SomeMod.BridgeTools.csproj
 ```
 
-Typical deployed layout for global paired dev installs:
+Typical deployed layout for normal paired local dev installs:
 
 ```text
 RimWorld/
@@ -144,6 +144,10 @@ Adjust `AfterTargets` and `BeforeTargets` to match the mod's actual build/deploy
 1. build main mod DLL
 2. build companion with a reference to that DLL
 3. copy/deploy/zip the mod payload and copy the matching companion into the sibling global `BridgeTools` bundle folder
+
+If diagnosis touched a different BridgeTools folder, treat that copy as stale state rather than an alternate supported local deploy path. Rebuild with the correct `RIMWORLD_MOD_DIR` so the deployed mod DLL and companion DLL come from the same build run.
+
+The mod-local `SomeMod/1.6/BridgeTools` layout is only for an explicit packaged-mod design where the companion intentionally ships inside the mod folder. Do not move an ordinary paired local dev deploy to that layout unless the task specifically asks for that packaging model.
 
 ## Tool Authoring Pattern
 

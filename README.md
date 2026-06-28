@@ -181,9 +181,11 @@ Third-party mods can expose bridge tools through companion DLLs that reference t
 Practical rules:
 
 - use `RimBridgeServer.Sdk` as the only shared bridge dependency
-- put global tools in `RimWorldRoot/BridgeTools`, either as loose single DLLs or first-level bundle folders
-- put mod-specific tools beside the active load folder's `Assemblies` folder, for example `SomeMod/1.6/BridgeTools`
+- for normal paired local mod development, deploy the mod into the active RimWorld `Mods` folder and deploy its companion to that same install's sibling global BridgeTools root, for example `$(RIMWORLD_MOD_DIR)/SomeMod/1.6/Assemblies/SomeMod.dll` and `$(RIMWORLD_MOD_DIR)/../BridgeTools/SomeMod/SomeMod.BridgeTools.dll`
+- put standalone global tools in `RimWorldRoot/BridgeTools`, either as loose single DLLs or first-level bundle folders
 - use a first-level bundle folder when a global companion needs private helper DLLs, for example `BridgeTools/PoseHarness/PoseHarness.dll`
+- do not add a separate BridgeTools root or override for normal paired local deployments; derive the companion root from the selected `Mods` folder so the mod DLL and companion DLL are updated as one deployment unit
+- treat mod-local companions beside an active load folder's `Assemblies` folder, for example `SomeMod/1.6/BridgeTools`, as a rare packaged-mod edge case only; do not use that layout for ordinary local paired dev deploys unless the packaging model explicitly requires it
 - annotate public static methods or public instance methods on a public parameterless tool class
 - async tool methods may return `Task<T>`, `ValueTask<T>`, `Task`, or `ValueTask`
 - accept `IRimBridgeContext` and/or `CancellationToken` parameters when a tool needs injected SDK access; those parameters are hidden from the public tool schema
