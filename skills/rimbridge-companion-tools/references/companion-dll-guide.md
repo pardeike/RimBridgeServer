@@ -7,7 +7,8 @@ Use this reference when adding or migrating RimBridgeServer 2.x companion tools 
 - RimBridgeServer starts late enough that normal mod assemblies are already loaded.
 - RimBridgeServer then loads companions from explicit `BridgeTools` folders.
 - Global companions load first from the game-root `BridgeTools` folder. Loose DLLs are allowed; first-level bundle folders isolate private helper DLL lookup.
-- Mod-specific companions load from each active mod load folder's `BridgeTools` folder, for example `SomeMod/1.6/BridgeTools`.
+- For local paired mod deployments, prefer global first-level bundle folders such as `BridgeTools/SomeMod/SomeMod.BridgeTools.dll`. Derive that root from the selected global `Mods` folder as `$(RIMWORLD_MOD_DIR)\..\BridgeTools` so the mod DLL and matching companion DLL deploy as a pair without a separate BridgeTools environment variable.
+- Mod-specific companions can also load from each active mod load folder's `BridgeTools` folder, for example `SomeMod/1.6/BridgeTools`; use this when the mod intentionally packages the companion inside its own folder rather than the paired global deployment.
 - `RimBridgeServer.Sdk` always resolves to the SDK assembly shipped by RimBridgeServer. Companion projects reference the SDK for compilation, but should not deploy that DLL.
 - Companion dependencies are resolved from the companion bundle directory, the owning `BridgeTools` root, and already loaded mod assemblies.
 
@@ -43,17 +44,28 @@ Keep `Private="false"` or `ExcludeAssets="runtime"` so the companion output does
 
 ## Companion Project Pattern
 
-Typical layout:
+Typical local development layout:
 
 ```text
 SomeMod/
 ├── 1.6/
-│   ├── Assemblies/SomeMod.dll
-│   └── BridgeTools/SomeMod.BridgeTools.dll
+│   └── Assemblies/SomeMod.dll
+├── artifacts/
+│   └── BridgeTools/SomeMod/SomeMod.BridgeTools.dll
 └── Source/
     ├── SomeMod.csproj
     ├── SomeModBridgeTools.cs
     └── BridgeTools/SomeMod.BridgeTools.csproj
+```
+
+Typical deployed layout for global paired dev installs:
+
+```text
+RimWorld/
+├── Mods/
+│   └── SomeMod/1.6/Assemblies/SomeMod.dll
+└── BridgeTools/
+    └── SomeMod/SomeMod.BridgeTools.dll
 ```
 
 Example companion csproj:
@@ -65,7 +77,7 @@ Example companion csproj:
     <LangVersion>latest</LangVersion>
     <AssemblyName>SomeMod.BridgeTools</AssemblyName>
     <RootNamespace>SomeMod.BridgeTools</RootNamespace>
-    <OutputPath>..\..\1.6\BridgeTools\</OutputPath>
+    <OutputPath>..\..\artifacts\BridgeTools\SomeMod\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
@@ -113,11 +125,25 @@ Build the companion after the main mod DLL exists and before local deploy/copy t
 </Target>
 ```
 
+When `RIMWORLD_MOD_DIR` points at the global `Mods` folder, derive the global `BridgeTools` folder locally in the project file and copy the companion bundle there. Do not add a separate required environment variable for the non-mod-specific BridgeTools root:
+
+```xml
+<Target Name="CopyToRimworld" AfterTargets="PostBuildAction" Condition="'$(RIMWORLD_MOD_DIR)' != ''">
+  <PropertyGroup>
+    <GlobalBridgeToolsDir>$(RIMWORLD_MOD_DIR)\..\BridgeTools</GlobalBridgeToolsDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <CopyBridgeTools Include="..\artifacts\BridgeTools\SomeMod\SomeMod.BridgeTools.dll" />
+  </ItemGroup>
+  <Copy SourceFiles="@(CopyBridgeTools)" DestinationFolder="$(GlobalBridgeToolsDir)\SomeMod" SkipUnchangedFiles="true" />
+</Target>
+```
+
 Adjust `AfterTargets` and `BeforeTargets` to match the mod's actual build/deploy target names. The important ordering is:
 
 1. build main mod DLL
 2. build companion with a reference to that DLL
-3. copy/deploy/zip both `Assemblies` and `BridgeTools`
+3. copy/deploy/zip the mod payload and copy the matching companion into the sibling global `BridgeTools` bundle folder
 
 ## Tool Authoring Pattern
 
@@ -196,9 +222,10 @@ dotnet build Source/SomeMod.csproj -c Release /p:RIMWORLD_MOD_DIR=
 
 Deploy validation:
 
-- Confirm `1.6/BridgeTools/SomeMod.BridgeTools.dll` exists in the repo output.
-- Confirm the deployed mod folder contains the same `BridgeTools` DLL.
-- Confirm `RimBridgeServer.Sdk.dll` is not copied into the mod-specific `BridgeTools` folder.
+- Confirm `artifacts/BridgeTools/SomeMod/SomeMod.BridgeTools.dll` exists in the repo output, or the mod's documented equivalent artifact folder.
+- With `RIMWORLD_MOD_DIR` set, confirm the deployed global sibling bundle exists at `$(RIMWORLD_MOD_DIR)\..\BridgeTools\SomeMod\SomeMod.BridgeTools.dll`.
+- Confirm the mod DLL and companion DLL timestamps match the same build/deploy run.
+- Confirm `RimBridgeServer.Sdk.dll` is not copied into the deployed companion bundle folder.
 
 Live validation through GABS:
 
