@@ -234,7 +234,12 @@ public static class ObjectPathUpdater
             {
                 case '.':
                     if (buffer.Length == 0)
+                    {
+                        if (segments.Count > 0 && segments[segments.Count - 1].IsIndex)
+                            break;
+
                         throw new InvalidOperationException($"Invalid empty member segment in path '{trimmed}'.");
+                    }
 
                     segments.Add(PathSegment.ForMember(buffer));
                     buffer = string.Empty;
