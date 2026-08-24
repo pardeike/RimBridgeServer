@@ -100,8 +100,8 @@ Example:
 ```bash
 dotnet restore Source/RimBridgeServer.csproj \
   -p:EnableLocalNuGetOverride=true \
-  -p:LibGabPackageVersion=1.0.3-local.1 \
-  -p:RimBridgeServerSdkPackageVersion=2.0.0-local.1
+  -p:LibGabPackageVersion=1.0.5-local.1 \
+  -p:RimBridgeServerSdkPackageVersion=2.1.1-local.1
 ```
 
 Populate the local source by packing the sibling library into `../.nuget-local`, for example:
@@ -109,7 +109,7 @@ Populate the local source by packing the sibling library into `../.nuget-local`,
 ```bash
 dotnet pack ../Lib.GAB/Lib.GAB/Lib.GAB.csproj \
   -o ../.nuget-local \
-  -p:PackageVersion=1.0.0-local.1
+  -p:PackageVersion=1.0.5-local.1
 ```
 
 Pack the RimBridgeServer companion SDK into that same local source with:
