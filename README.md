@@ -375,6 +375,8 @@ Playback default: RimBridgeServer enables RimWorld's private `TickManager.UltraS
 - `rimworld/open_inspect_tab` - Open one current RimWorld inspect tab by inspect-tab id, translated label, label key, tutor tag, or .NET type name
 - `rimworld/get_ui_layout` - Capture a generic structured layout snapshot of the current dialogs, windows, main tabs, dynamic inspect tab strip, or selected gizmo grid, including actionable controls, crop-ready screen rects, and scroll-view metadata
 - `rimworld/click_ui_target` - Activate an actionable UI control target returned by `rimworld/get_ui_layout` on the next real draw frame
+- `rimworld/set_text_field` - Write text into a text_field `ui-element` target returned by `rimworld/get_ui_layout`, either instantly or typed character by character through the live widget path
+- `rimworld/press_key` - Dispatch a synthetic key press through RimWorld's root OnGUI pass, where the time controls, gizmo hotkeys, and the top window's Return and Escape handling see it
 - `rimworld/scroll_ui_target` - Scroll a scroll_view `ui-element` target returned by `rimworld/get_ui_layout` on the next real draw frame
 - `rimworld/set_hover_target` - Set a bounded virtual cursor/hover target for UI review and screenshots, using a `ui-element` or screen target id, explicit screen coordinates, or a current-map cell, pawn, or thing
 - `rimworld/clear_hover_target` - Clear the current virtual cursor/hover target so screenshots, mouseover-driven UI, and map clicks return to the real cursor state

@@ -104,4 +104,22 @@ internal sealed class InputCapabilityModule
     {
         return RimWorldHover.ClearHoverTargetResponse();
     }
+
+    public object SetTextField(
+        string targetId,
+        string text,
+        string mode = "typed",
+        float charsPerSecond = 9f,
+        int jitterPercent = 35,
+        bool clearFirst = true,
+        string controlName = null,
+        int timeoutMs = 0)
+    {
+        return RimBridgeUiWorkbench.SetTextFieldResponse(targetId, text, mode, charsPerSecond, jitterPercent, clearFirst, controlName, timeoutMs);
+    }
+
+    public object PressKey(string key, string character = null, string modifiers = null, int timeoutMs = 2000)
+    {
+        return RimWorldSyntheticInput.PressKeyResponse(key, character, modifiers, timeoutMs);
+    }
 }

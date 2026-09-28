@@ -714,6 +714,32 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(timeoutMs), timeoutMs)));
     }
 
+    [ReadmeTool("UI And Input", "Write text into a text_field ui-element target returned by rimworld/get_ui_layout, either instantly or typed character by character through the live widget path")]
+    [Tool("rimworld/set_text_field", Description = "Write text into a text_field ui-element target returned by rimworld/get_ui_layout, either instantly or typed character by character through the live widget path. Only elements reported by widgets.text_field or gui.text_field can be driven; a single-line labelled entry also reports its input box as widgets.text_field, and multi-line text areas are not supported")]
+    public object SetTextField(
+        [ToolParameter(Description = "text_field ui-element target id returned by rimworld/get_ui_layout")] string targetId,
+        [ToolParameter(Description = "The text to enter")] string text,
+        [ToolParameter(Description = "Entry mode: typed focuses the field and delivers one character per interval like a human typist; instant replaces the value the field is drawn with on the next frame, which does not stick on fields that rewrite their own text")] string mode = "typed",
+        [ToolParameter(Description = "Approximate typing speed in characters per second for typed mode")] float charsPerSecond = 9f,
+        [ToolParameter(Description = "Random per-character timing variation in percent for typed mode, so the cadence reads as human")] int jitterPercent = 35,
+        [ToolParameter(Description = "Select the field's existing content before the first character in typed mode so the new text replaces it; false appends at the end of the existing text")] bool clearFirst = true,
+        [ToolParameter(Description = "Optional GUI control name of the field (GUI.SetNextControlName). When provided, focus goes through GUI.FocusControl; otherwise the field is focused through its IMGUI control id")] string controlName = null,
+        [ToolParameter(Description = "Maximum time to wait for completion. Zero derives a timeout from the text length and typing speed.")] int timeoutMs = 0)
+    {
+        return InvokeAlias(Arguments((nameof(targetId), targetId), (nameof(text), text), (nameof(mode), mode), (nameof(charsPerSecond), charsPerSecond), (nameof(jitterPercent), jitterPercent), (nameof(clearFirst), clearFirst), (nameof(controlName), controlName), (nameof(timeoutMs), timeoutMs)));
+    }
+
+    [ReadmeTool("UI And Input", "Dispatch a synthetic key press through RimWorld's root OnGUI pass, where the time controls, gizmo hotkeys, and the top window's Return and Escape handling see it")]
+    [Tool("rimworld/press_key", Description = "Dispatch a synthetic key press (KeyDown, then KeyUp) through RimWorld's root OnGUI pass. Handlers outside window contents see it: the time controls, gizmo hotkeys, and the window stack's accept and cancel handling for Return and Escape. Code inside a window's own contents, focused text fields included, does not, and success means the event was dispatched, not that anything handled it")]
+    public object PressKey(
+        [ToolParameter(Description = "UnityEngine.KeyCode name such as Return, Escape, A, or Alpha1; common aliases like enter and esc are accepted")] string key,
+        [ToolParameter(Description = "Optional single character to deliver with the KeyDown event, for handlers that read Event.character")] string character = null,
+        [ToolParameter(Description = "Optional comma-, space-, or plus-separated event modifiers such as shift, ctrl, alt, or command")] string modifiers = null,
+        [ToolParameter(Description = "Maximum time to wait for the key press to be processed")] int timeoutMs = 2000)
+    {
+        return InvokeAlias(Arguments((nameof(key), key), (nameof(character), character), (nameof(modifiers), modifiers), (nameof(timeoutMs), timeoutMs)));
+    }
+
     [ReadmeTool("UI And Input", "Scroll a scroll_view ui-element target returned by rimworld/get_ui_layout on the next real draw frame")]
     [Tool("rimworld/scroll_ui_target", Description = "Scroll a scroll_view ui-element target returned by rimworld/get_ui_layout on the next real draw frame")]
     public object ScrollUiTarget(

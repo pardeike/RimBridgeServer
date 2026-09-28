@@ -314,6 +314,8 @@ internal sealed class BuiltInCapabilityModuleProvider : IRimBridgeCapabilityProv
             "rimworld/screenshot_cell_rect" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/get_ui_layout" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/click_ui_target" => CapabilityExecutionKind.BackgroundObserved,
+            "rimworld/set_text_field" => CapabilityExecutionKind.BackgroundObserved,
+            "rimworld/press_key" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/scroll_ui_target" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/set_hover_target" => CapabilityExecutionKind.BackgroundObserved,
             "rimworld/clear_hover_target" => CapabilityExecutionKind.BackgroundObserved,

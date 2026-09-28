@@ -45,6 +45,12 @@ internal static class RimBridgeMapClickInjector
         MouseUp = 3
     }
 
+    private enum KeyPressPhase
+    {
+        KeyDown = 0,
+        KeyUp = 1
+    }
+
     private sealed class MapClickRequest
     {
         public IntVec3 ClickCell { get; set; } = IntVec3.Invalid;
@@ -72,6 +78,21 @@ internal static class RimBridgeMapClickInjector
         public TaskCompletionSource<MapClickDispatchResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
+    private sealed class KeyPressRequest
+    {
+        public KeyCode KeyCode { get; set; } = KeyCode.None;
+
+        public char Character { get; set; }
+
+        public EventModifiers Modifiers { get; set; } = EventModifiers.None;
+
+        public KeyPressPhase Phase { get; set; } = KeyPressPhase.KeyDown;
+
+        public int PhaseInjectedFrame { get; set; } = -1;
+
+        public TaskCompletionSource<MapClickDispatchResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
     internal sealed class InjectionState
     {
         public bool Active { get; set; }
@@ -92,6 +113,7 @@ internal static class RimBridgeMapClickInjector
     private static readonly System.Reflection.FieldInfo FloatMenuOptionsField = AccessTools.Field(typeof(FloatMenu), "options");
 
     private static MapClickRequest _pendingRequest;
+    private static KeyPressRequest _pendingKeyRequest;
 
     public static MapClickDispatchResult DispatchClick(IntVec3 clickCell, string targetLabel, MapClickDispatchOptions options = null, int timeoutMs = 2000)
     {
@@ -101,6 +123,37 @@ internal static class RimBridgeMapClickInjector
     public static MapClickDispatchResult DispatchDrag(IntVec3 startCell, IntVec3 endCell, string targetLabel, MapClickDispatchOptions options = null, int timeoutMs = 2000)
     {
         return DispatchGesture(startCell, endCell, targetLabel, options, timeoutMs);
+    }
+
+    public static MapClickDispatchResult DispatchKeyPress(KeyCode keyCode, char character, EventModifiers modifiers, int timeoutMs = 2000)
+    {
+        var effectiveTimeoutMs = timeoutMs <= 0 ? 2000 : timeoutMs;
+
+        KeyPressRequest request;
+        try
+        {
+            request = RimBridgeMainThread.Invoke(() => QueueKeyRequest(keyCode, character, modifiers), timeoutMs: 5000);
+        }
+        catch (Exception ex)
+        {
+            return new MapClickDispatchResult
+            {
+                Success = false,
+                Message = ex.Message
+            };
+        }
+
+        if (!request.Completion.Task.Wait(effectiveTimeoutMs))
+        {
+            RimBridgeMainThread.Invoke(CancelPendingKeyRequest, timeoutMs: 5000);
+            return new MapClickDispatchResult
+            {
+                Success = false,
+                Message = $"Timed out waiting {effectiveTimeoutMs}ms for RimWorld to process the synthetic {keyCode} key press."
+            };
+        }
+
+        return request.Completion.Task.GetAwaiter().GetResult();
     }
 
     private static MapClickDispatchResult DispatchGesture(IntVec3 clickCell, IntVec3 endCell, string targetLabel, MapClickDispatchOptions options = null, int timeoutMs = 2000)
@@ -141,6 +194,24 @@ internal static class RimBridgeMapClickInjector
 
         lock (Sync)
         {
+            if (_pendingKeyRequest != null)
+            {
+                var keyRequest = _pendingKeyRequest;
+                var previousEvent = Event.current;
+                if (previousEvent?.type == EventType.Layout)
+                    return;
+
+                Event.current = CreateInjectedKeyEvent(keyRequest, previousEvent);
+                if (Current.ProgramState != ProgramState.Playing)
+                    keyRequest.PhaseInjectedFrame = Time.frameCount;
+                state = new RootInjectionState
+                {
+                    Active = true,
+                    PreviousEvent = previousEvent
+                };
+                return;
+            }
+
             if (_pendingRequest == null)
                 return;
 
@@ -163,6 +234,9 @@ internal static class RimBridgeMapClickInjector
 
         Event.current = state.PreviousEvent;
         RimBridgeVirtualPointer.ScheduleSyntheticMouseStateClear();
+
+        if (Current.ProgramState != ProgramState.Playing)
+            AdvanceKeyPhaseAfterInjection();
     }
 
     public static void BeginUiRootInjection(ref InjectionState state)
@@ -172,6 +246,27 @@ internal static class RimBridgeMapClickInjector
 
         lock (Sync)
         {
+            if (_pendingKeyRequest != null)
+            {
+                var keyRequest = _pendingKeyRequest;
+                var previousEvent = Event.current;
+                if (previousEvent?.type == EventType.Layout)
+                    return;
+
+                var injectedKeyEvent = CreateInjectedKeyEvent(keyRequest, previousEvent);
+                keyRequest.PhaseInjectedFrame = Time.frameCount;
+
+                state = new InjectionState
+                {
+                    Active = true,
+                    PreviousEvent = previousEvent,
+                    ObservedRawType = injectedKeyEvent.rawType
+                };
+
+                Event.current = injectedKeyEvent;
+                return;
+            }
+
             if (_pendingRequest == null)
                 return;
 
@@ -220,6 +315,12 @@ internal static class RimBridgeMapClickInjector
 
         Event.current = state.PreviousEvent;
 
+        if (pendingRequest == null)
+        {
+            AdvanceKeyPhaseAfterInjection();
+            return;
+        }
+
         lock (Sync)
         {
             if (!ReferenceEquals(_pendingRequest, pendingRequest) || pendingRequest == null)
@@ -259,12 +360,46 @@ internal static class RimBridgeMapClickInjector
         pendingRequest.Completion.TrySetResult(completedResult);
     }
 
+    private static void AdvanceKeyPhaseAfterInjection()
+    {
+        KeyPressRequest completed = null;
+
+        lock (Sync)
+        {
+            if (_pendingKeyRequest == null || _pendingKeyRequest.PhaseInjectedFrame != Time.frameCount)
+                return;
+
+            if (_pendingKeyRequest.Phase == KeyPressPhase.KeyDown)
+            {
+                _pendingKeyRequest.Phase = KeyPressPhase.KeyUp;
+                _pendingKeyRequest.PhaseInjectedFrame = -1;
+                return;
+            }
+
+            completed = _pendingKeyRequest;
+            _pendingKeyRequest = null;
+        }
+
+        if (completed == null)
+            return;
+
+        var message = $"Dispatched a synthetic {completed.KeyCode} key press through RimWorld's live UI event path.";
+        completed.Completion.TrySetResult(new MapClickDispatchResult
+        {
+            Success = true,
+            GestureKind = "key",
+            Message = message
+        });
+    }
+
     private static MapClickRequest QueueRequest(IntVec3 clickCell, IntVec3 endCell, string targetLabel, MapClickDispatchOptions options)
     {
         if (Current.ProgramState != ProgramState.Playing || Current.Game == null)
             throw new InvalidOperationException("RimWorld is not currently in a playable map state.");
         if (_pendingRequest != null)
             throw new InvalidOperationException("A synthetic map click is already pending.");
+        if (_pendingKeyRequest != null)
+            throw new InvalidOperationException("A synthetic key press is already pending.");
 
         if (Find.WindowStack?.FloatMenu != null)
             Find.WindowStack.TryRemove(Find.WindowStack.FloatMenu, doCloseSound: false);
@@ -284,6 +419,23 @@ internal static class RimBridgeMapClickInjector
         return request;
     }
 
+    private static KeyPressRequest QueueKeyRequest(KeyCode keyCode, char character, EventModifiers modifiers)
+    {
+        if (_pendingKeyRequest != null)
+            throw new InvalidOperationException("A synthetic key press is already pending.");
+        if (_pendingRequest != null)
+            throw new InvalidOperationException("A synthetic click is already pending.");
+
+        var request = new KeyPressRequest
+        {
+            KeyCode = keyCode,
+            Character = character,
+            Modifiers = modifiers
+        };
+        _pendingKeyRequest = request;
+        return request;
+    }
+
     private static void CancelPendingRequest()
     {
         lock (Sync)
@@ -294,6 +446,19 @@ internal static class RimBridgeMapClickInjector
             var request = _pendingRequest;
             _pendingRequest = null;
             ReleasePointerOverride(request);
+            request.Completion.TrySetCanceled();
+        }
+    }
+
+    private static void CancelPendingKeyRequest()
+    {
+        lock (Sync)
+        {
+            if (_pendingKeyRequest == null)
+                return;
+
+            var request = _pendingKeyRequest;
+            _pendingKeyRequest = null;
             request.Completion.TrySetCanceled();
         }
     }
@@ -313,6 +478,18 @@ internal static class RimBridgeMapClickInjector
             MapClickPhase.MouseUp => EventType.MouseUp,
             _ => EventType.Layout
         };
+        return injectedEvent;
+    }
+
+    private static Event CreateInjectedKeyEvent(KeyPressRequest request, Event currentEvent)
+    {
+        var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent);
+        injectedEvent.button = 0;
+        injectedEvent.clickCount = 0;
+        injectedEvent.modifiers = request.Modifiers;
+        injectedEvent.keyCode = request.KeyCode;
+        injectedEvent.character = request.Phase == KeyPressPhase.KeyDown ? request.Character : '\0';
+        injectedEvent.type = request.Phase == KeyPressPhase.KeyDown ? EventType.KeyDown : EventType.KeyUp;
         return injectedEvent;
     }
 
