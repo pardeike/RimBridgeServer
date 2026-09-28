@@ -358,7 +358,7 @@ internal static class RimBridgeMapClickInjector
             else if (request.Options.HoldDurationMs > 0)
             {
                 request.Phase = MapClickPhase.Hold;
-                request.HoldUntilTicks = PositiveEnvironmentTick() + request.Options.HoldDurationMs;
+                request.HoldUntilTicks = unchecked(Environment.TickCount + request.Options.HoldDurationMs);
             }
             else
             {
@@ -374,7 +374,7 @@ internal static class RimBridgeMapClickInjector
             if (request.Options.HoldDurationMs > 0)
             {
                 request.Phase = MapClickPhase.Hold;
-                request.HoldUntilTicks = PositiveEnvironmentTick() + request.Options.HoldDurationMs;
+                request.HoldUntilTicks = unchecked(Environment.TickCount + request.Options.HoldDurationMs);
             }
             else
             {
@@ -387,7 +387,7 @@ internal static class RimBridgeMapClickInjector
 
         if (request.Phase == MapClickPhase.Hold)
         {
-            if (observedRawType == EventType.Layout && PositiveEnvironmentTick() >= request.HoldUntilTicks)
+            if (observedRawType == EventType.Layout && unchecked(Environment.TickCount - request.HoldUntilTicks) >= 0)
                 request.Phase = MapClickPhase.MouseUp;
 
             return true;
@@ -415,12 +415,6 @@ internal static class RimBridgeMapClickInjector
             Message = BuildCompletionMessage(request.Options, request.IsDrag, menuRemainedOpen: true)
         };
         return true;
-    }
-
-    private static int PositiveEnvironmentTick()
-    {
-        var tick = Environment.TickCount;
-        return tick >= 0 ? tick : -tick;
     }
 
     private static void ReleasePointerOverride(MapClickRequest request)
