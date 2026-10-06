@@ -103,6 +103,12 @@ public sealed class MultiplayerTools
         var packet = Activator.CreateInstance(packetType, Get(session, "playerId"), factionId);
         var send = client.GetType().GetMethods(Flags).Single(m => m.Name == "Send" && m.IsGenericMethodDefinition
             && m.GetParameters().Length == 2 && m.GetParameters()[1].ParameterType == typeof(bool));
+        var map = Find.Maps.FirstOrDefault(m => m.ParentFaction == faction);
+        if (map != null)
+        {
+            Current.Game.CurrentMap = map;
+            Find.World.renderer.wantedMode = WorldRenderMode.None;
+        }
         send.MakeGenericMethod(packetType).Invoke(client, new[] { packet, (object)true });
         return new { success = true, phase = "faction-request-submitted", factionId };
     });
@@ -136,8 +142,8 @@ public sealed class MultiplayerTools
         return new { success = true, phase = "faction-setup-opened", factionName, tileId = (int)Find.WorldInterface.SelectedTile };
     });
 
-    [Tool("multiplayer/set_time_speed", Description = "Request Paused, Normal, Fast or Superfast through Multiplayer's native synchronized time command. Requires a joined, non-desynced live session with shared synchronous time and no lowest-wins voting. Does not directly write TickManager or step one client. Returns submission; poll status on both clients.")]
-    public static Task<object> SetTimeSpeed(IRimBridgeContext ctx, string speed = "Normal") => ctx.MainThread.InvokeAsync<object>(() =>
+    [Tool("multiplayer/set_time_speed", Description = "Request Paused, Normal, Fast or Superfast through Multiplayer's native synchronized time command. Requires a joined, non-desynced live session without lowest-wins voting. A negative mapId controls shared/world time; an explicit mapId controls that map in asynchronous time. Does not directly write TickManager or step one client. Returns submission; poll native clocks on both clients.")]
+    public static Task<object> SetTimeSpeed(IRimBridgeContext ctx, string speed = "Normal", int mapId = -1) => ctx.MainThread.InvokeAsync<object>(() =>
     {
         if (!Enum.TryParse<TimeSpeed>(speed, true, out var parsed) || parsed < TimeSpeed.Paused || parsed > TimeSpeed.Superfast)
             throw new ArgumentException("Use Paused, Normal, Fast or Superfast.", nameof(speed));
@@ -147,16 +153,20 @@ public sealed class MultiplayerTools
         if (client == null || Get(client, "State")?.ToString() != "ClientPlaying" || Get(session, "desynced") is not false || Read(api, null, "IsReplay") is not false)
             return Failure("Join a live, non-desynced Multiplayer session before changing time.");
         var gameComp = Get(Read(api, null, "game"), "gameComp");
-        if (Get(gameComp, "asyncTime") is not false || Get(gameComp, "IsLowestWins") is not false)
-            return Failure("This control requires shared synchronous time without lowest-wins voting.");
-        var tickable = Read(api, null, "AsyncWorldTime") ?? throw new InvalidOperationException("Multiplayer world time is unavailable.");
+        if (Get(gameComp, "IsLowestWins") is not false)
+            return Failure("This control requires time without lowest-wins voting.");
+        if (mapId >= 0 && Get(gameComp, "asyncTime") is not true)
+            return Failure("An explicit map clock requires asynchronous time.");
+        var tickable = mapId < 0 ? Read(api, null, "AsyncWorldTime")
+            : MapClocks(api)?.FirstOrDefault(clock => (Get(clock, "map") as Map)?.uniqueID == mapId);
+        if (tickable == null) return Failure("The requested native Multiplayer clock is unavailable.");
         var send = RequiredType("Multiplayer.Client.AsyncTime.MpTimeControls").GetMethod("SendTimeChange", Flags)
             ?? throw new MissingMethodException("Multiplayer.MpTimeControls.SendTimeChange");
         send.Invoke(null, new object[] { tickable, parsed });
-        return new { success = true, phase = "time-command-submitted", requestedSpeed = parsed.ToString() };
+        return new { success = true, phase = "time-command-submitted", requestedSpeed = parsed.ToString(), mapId };
     });
 
-    [Tool("multiplayer/save", Description = "Save the current paused live Multiplayer game using its native save implementation. Uses a new 1..30 character name and refuses existing files. Returns file verification; the save does not change or reload the game.")]
+    [Tool("multiplayer/save", Description = "Save the current paused live Multiplayer game using its native save implementation. World and all asynchronous map clocks must be paused. Uses a new 1..30 character name and refuses existing files. Returns file verification; the save does not change or reload the game.")]
     public static Task<object> Save(IRimBridgeContext ctx, string saveName) => ctx.MainThread.InvokeAsync<object>(() =>
     {
         var api = RequiredType("Multiplayer.Client.Multiplayer");
@@ -165,10 +175,11 @@ public sealed class MultiplayerTools
         if (client == null || Get(client, "State")?.ToString() != "ClientPlaying" || Get(session, "desynced") is not false || Read(api, null, "IsReplay") is not false)
             return Failure("Join a live, non-desynced Multiplayer session before saving.");
         var game = Read(api, null, "game");
-        if (Get(Get(game, "gameComp"), "asyncTime") is not false)
-            return Failure("This save control requires shared synchronous time.");
         if (Get(Get(game, "asyncWorldTimeComp"), "DesiredTimeSpeed")?.ToString() != "Paused")
             return Failure("Pause the native Multiplayer session before saving.");
+        if (Get(Get(game, "gameComp"), "asyncTime") is true
+            && (MapClocks(api) is not { } clocks || clocks.Any(clock => Get(clock, "DesiredTimeSpeed")?.ToString() != "Paused")))
+            return Failure("Pause every native Multiplayer map clock before saving.");
         var file = SaveFile(api, saveName);
         if (file.Exists || File.Exists(Path.Combine(file.DirectoryName, saveName + ".tmp.zip")))
             return Failure("Use a new Multiplayer save name; existing files are preserved.");
@@ -222,6 +233,13 @@ public sealed class MultiplayerTools
             gameName = Get(session, "gameName"), playerId = Get(session, "playerId"),
             myFactionId = Get(session, "myFactionId"), desynced = Get(session, "desynced"),
             multifaction = Get(gameComp, "multifaction"), asyncTime = Get(gameComp, "asyncTime"),
+            currentMapId = Current.Game?.CurrentMap?.uniqueID,
+            worldTicks = Get(Get(Read(api, null, "game"), "asyncWorldTimeComp"), "worldTicks"),
+            mapClocks = MapClocks(api)?.Select(clock => new
+            {
+                mapId = (Get(clock, "map") as Map)?.uniqueID,
+                ticks = Get(clock, "mapTicks"), desiredTimeSpeed = Get(clock, "DesiredTimeSpeed")?.ToString()
+            }).ToArray(),
             factions = Current.Game == null || Find.World == null ? null : Find.FactionManager.AllFactionsListForReading.Where(f => f.IsPlayer)
                 .Select(f => new { id = f.loadID, name = f.Name }).ToArray(),
             desyncTraces = Get(Get(Read(api, null, "game"), "gameComp"), "logDesyncTraces"),
@@ -242,6 +260,8 @@ public sealed class MultiplayerTools
             && Get(session, "desynced") is false && Read(api, null, "IsReplay") is false
             && Get(Get(Read(api, null, "game"), "gameComp"), "multifaction") is true;
     }
+
+    private static object[] MapClocks(Type api) => (Get(Read(api, null, "game"), "asyncTimeComps") as IEnumerable)?.Cast<object>().ToArray();
 
     private static Type FindType(string name) => AppDomain.CurrentDomain.GetAssemblies()
         .Where(a => !a.IsDynamic && !a.ReflectionOnly && (a.GetName().Name == "Multiplayer" || a.GetName().Name == "MultiplayerCommon"))
