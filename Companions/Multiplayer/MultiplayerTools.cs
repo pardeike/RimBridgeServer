@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -98,6 +99,51 @@ public sealed class MultiplayerTools
         return new { success = true, phase = "time-command-submitted", requestedSpeed = parsed.ToString() };
     });
 
+    [Tool("multiplayer/save", Description = "Save the current paused live Multiplayer game using its native save implementation. Uses a new 1..30 character name and refuses existing files. Returns file verification; the save does not change or reload the game.")]
+    public static Task<object> Save(IRimBridgeContext ctx, string saveName) => ctx.MainThread.InvokeAsync<object>(() =>
+    {
+        var api = RequiredType("Multiplayer.Client.Multiplayer");
+        var session = Read(api, null, "session");
+        var client = Get(session, "client");
+        if (client == null || Get(client, "State")?.ToString() != "ClientPlaying" || Get(session, "desynced") is not false || Read(api, null, "IsReplay") is not false)
+            return Failure("Join a live, non-desynced Multiplayer session before saving.");
+        var game = Read(api, null, "game");
+        if (Get(Get(game, "gameComp"), "asyncTime") is not false)
+            return Failure("This save control requires shared synchronous time.");
+        if (Get(Get(game, "asyncWorldTimeComp"), "DesiredTimeSpeed")?.ToString() != "Paused")
+            return Failure("Pause the native Multiplayer session before saving.");
+        var file = SaveFile(api, saveName);
+        if (file.Exists || File.Exists(Path.Combine(file.DirectoryName, saveName + ".tmp.zip")))
+            return Failure("Use a new Multiplayer save name; existing files are preserved.");
+        var save = RequiredType("Multiplayer.Client.Autosaving").GetMethod("SaveGameToFile_Overwrite", Flags, null, new[] { typeof(string), typeof(bool) }, null)
+            ?? throw new MissingMethodException("Multiplayer.Autosaving.SaveGameToFile_Overwrite");
+        save.Invoke(null, new object[] { saveName, false });
+        file.Refresh();
+        return new { success = file.Exists && file.Length > 0, phase = "save-verified", saveName, path = file.FullName, bytes = file.Exists ? file.Length : 0L };
+    });
+
+    [Tool("multiplayer/load_save", Description = "Load an existing native Multiplayer ZIP through its replay loader at the saved endpoint. Requires the main menu with no session. Returns initiation, not completed load; poll status for replay/game state and ticks. Does not host or overwrite the save.")]
+    public static Task<object> LoadSave(IRimBridgeContext ctx, string saveName) => ctx.MainThread.InvokeAsync<object>(() =>
+    {
+        var api = RequiredType("Multiplayer.Client.Multiplayer");
+        if (Read(api, null, "session") != null || Current.ProgramState != ProgramState.Entry || Current.Game != null)
+            return Failure("Return to the main menu without a Multiplayer session before loading.");
+        var file = SaveFile(api, saveName);
+        if (!file.Exists) return Failure("The native Multiplayer save does not exist.");
+        var load = RequiredType("Multiplayer.Client.Replay").GetMethod("LoadReplay", Flags, null,
+            new[] { typeof(FileInfo), typeof(bool), typeof(Action), typeof(Action), typeof(string), typeof(bool) }, null)
+            ?? throw new MissingMethodException("Multiplayer.Replay.LoadReplay");
+        load.Invoke(null, new object[] { file, true, null, null, "MpLoading", false });
+        return new { success = true, phase = "save-loading-started", saveName, path = file.FullName };
+    });
+
+    private static FileInfo SaveFile(Type api, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 30 || name.Any(c => !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_' && c != '-'))
+            throw new ArgumentException("Use a save name of 1..30 ASCII letters, numbers, underscores or hyphens.", nameof(name));
+        return new FileInfo(Path.Combine((string)Read(api, null, "ReplaysDir"), name + ".zip"));
+    }
+
     private static object StatusCore()
     {
         var api = FindType("Multiplayer.Client.Multiplayer");
@@ -114,6 +160,7 @@ public sealed class MultiplayerTools
         {
             success = true, available = true, assemblyMvid = api.Module.ModuleVersionId.ToString(),
             sessionActive = session != null, username = Read(api, null, "username"),
+            isReplay = session == null ? (bool?)null : (bool)Read(api, null, "IsReplay"),
             gameName = Get(session, "gameName"), playerId = Get(session, "playerId"),
             myFactionId = Get(session, "myFactionId"), desynced = Get(session, "desynced"),
             desyncTraces = Get(Get(Read(api, null, "game"), "gameComp"), "logDesyncTraces"),

@@ -18,6 +18,8 @@ DLLs are excluded. These controls are test tools, not player mod payload.
 | `multiplayer/join_local` | Join loopback from the main menu using a distinct in-memory username. |
 | `multiplayer/leave` | Run native session cleanup and return to the main menu without saving. Retain saves and the process; leave an idle single-player game alone. |
 | `multiplayer/set_time_speed` | Submit a native synchronized time command. Supports Paused, Normal, Fast and Superfast with shared synchronous time and no lowest-wins voting. Poll both clients for the result. |
+| `multiplayer/save` | Save the paused live session through native Autosaving, verify the new ZIP exists and refuse existing names. |
+| `multiplayer/load_save` | Load an existing ZIP through native Replay at its saved endpoint from the main menu. Returns initiation; poll status for replay/game readiness. |
 
 Use separate savedata folders and GABS endpoints for the two processes. Load a
 fixture on the host, call `host_local`, and poll `status` until `hostReady` is
@@ -26,6 +28,10 @@ true before calling `join_local` on the client. Poll
 success does not prove connection, simulation agreement or compatibility.
 Do not use bridge tick stepping or directly mutate gameplay state on one
 client to simulate synchronized Multiplayer commands.
+Saving requires a joined, non-desynced paused session. Save/load names accept
+1..30 ASCII letters, numbers, underscores and hyphens; paths stay in the native
+Multiplayer save directory. Loading does not host a server. The resulting
+replay can be inspected before choosing a separate hosting action.
 
 Native cleanup reapplies game preferences. RimBridgeServer preserves its existing
 runtime background execution setting after those refreshes so an unfocused game
