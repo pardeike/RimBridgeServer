@@ -108,6 +108,18 @@ internal static class RimBridgePatches
     }
 }
 
+[HarmonyPatch(typeof(PrefsData), nameof(PrefsData.Apply))]
+internal static class PrefsData_Apply_BackgroundBridge_Patch
+{
+    [HarmonyPriority(Priority.Last)]
+    public static void Postfix()
+    {
+        // Native session cleanup reapplies preferences. Keep the bridge's existing
+        // background execution contract without changing the saved preference.
+        Application.runInBackground = true;
+    }
+}
+
 [HarmonyPatch(typeof(Root), nameof(Root.Update))]
 internal static class Root_Update_Patch
 {

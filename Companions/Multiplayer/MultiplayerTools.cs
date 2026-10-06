@@ -1,0 +1,147 @@
+using System;
+using System.Collections;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
+using RimBridgeServer.Sdk;
+using Verse;
+
+namespace RimBridgeServer.MultiplayerTools;
+
+public sealed class MultiplayerTools
+{
+    private const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
+
+    [Tool("multiplayer/status", Description = "Read the optional Multiplayer session, native player states, desync flag and game tick. No connection or gameplay mutation. A started connection is not a joined session.")]
+    public static Task<object> Status(IRimBridgeContext ctx) => ctx.MainThread.InvokeAsync(StatusCore);
+
+    [Tool("multiplayer/host_local", Description = "Host the currently loaded single-player map using Multiplayer's native host entry point. Binds only 127.0.0.1; Steam, LAN advertisement and arbiter are disabled. Returns initiation, not completed hosting. Poll multiplayer/status.")]
+    public static Task<object> HostLocal(IRimBridgeContext ctx, string username = "FogHost", int port = 30502, bool syncConfigs = true, bool asyncTime = false, bool multifaction = false, bool desyncTraces = false)
+        => ctx.MainThread.InvokeAsync<object>(() =>
+        {
+            ValidateConnection(username, port);
+            var api = RequiredType("Multiplayer.Client.Multiplayer");
+            if (Read(api, null, "session") != null) return Failure("Leave the current Multiplayer session before hosting.");
+            if (Current.ProgramState != ProgramState.Playing || Find.Maps.Count == 0 || Read(typeof(LongEventHandler), null, "currentEvent") != null)
+                return Failure("Load a playable single-player map before hosting.");
+            var settingsType = RequiredType("Multiplayer.Common.ServerSettings");
+            var host = RequiredType("Multiplayer.Client.HostWindow").GetMethod("HostProgrammatically", Flags, null, new[] { settingsType }, null)
+                ?? throw new MissingMethodException("Multiplayer.HostWindow.HostProgrammatically");
+            var settings = Activator.CreateInstance(settingsType);
+            Set(settings, "gameName", "RimBridge local test");
+            Set(settings, "direct", true);
+            Set(settings, "directAddress", "127.0.0.1:" + port);
+            Set(settings, "lan", false);
+            Set(settings, "steam", false);
+            Set(settings, "arbiter", false);
+            Set(settings, "syncConfigs", syncConfigs);
+            Set(settings, "asyncTime", asyncTime);
+            Set(settings, "multifaction", multifaction);
+            Set(settings, "desyncTraces", desyncTraces);
+            Set(settings, "pauseOnJoin", true);
+            Set(settings, "pauseOnDesync", true);
+            RequiredField(api, "username").SetValue(null, username);
+            var accepted = (bool)host.Invoke(null, new[] { settings });
+            return new { success = accepted, phase = accepted ? "hosting-started" : "hosting-rejected", address = "127.0.0.1", port, syncConfigs, asyncTime, multifaction, desyncTraces };
+        });
+
+    [Tool("multiplayer/join_local", Description = "Join a local Multiplayer host through its native LiteNet connector and connecting flow. Requires the main menu. Changes only the in-memory Multiplayer username. Returns initiation; poll multiplayer/status for native player states and desyncs.")]
+    public static Task<object> JoinLocal(IRimBridgeContext ctx, string username = "FogClient", int port = 30502)
+        => ctx.MainThread.InvokeAsync<object>(() =>
+        {
+            ValidateConnection(username, port);
+            var api = RequiredType("Multiplayer.Client.Multiplayer");
+            if (Read(api, null, "session") != null) return Failure("Leave the current Multiplayer session before joining.");
+            if (Current.ProgramState != ProgramState.Entry || Current.Game != null)
+                return Failure("Return to the main menu before joining.");
+            var connectorType = RequiredType("Multiplayer.Client.Util.IConnector");
+            var create = RequiredType("Multiplayer.Client.Util.ConnectorRegistry").GetMethod("LiteNet", Flags, null, new[] { typeof(string), typeof(int) }, null)
+                ?? throw new MissingMethodException("Multiplayer.ConnectorRegistry.LiteNet");
+            var connect = RequiredType("Multiplayer.Client.ClientUtil").GetMethod("TryConnectWithWindow", Flags, null, new[] { connectorType, typeof(bool) }, null)
+                ?? throw new MissingMethodException("Multiplayer.ClientUtil.TryConnectWithWindow");
+            var connector = create.Invoke(null, new object[] { "127.0.0.1", port });
+            RequiredField(api, "username").SetValue(null, username);
+            connect.Invoke(null, new[] { connector, (object)false });
+            return new { success = true, phase = "joining-started", address = "127.0.0.1", port };
+        });
+
+    [Tool("multiplayer/leave", Description = "Stop the current Multiplayer session through its native cleanup and return to the main menu without saving. Does not shut down RimWorld or delete saves. Poll status before loading or joining again. An idle single-player game is left alone.")]
+    public static Task<object> Leave(IRimBridgeContext ctx) => ctx.MainThread.InvokeAsync<object>(() =>
+    {
+        var api = RequiredType("Multiplayer.Client.Multiplayer");
+        var disconnected = Find.WindowStack.Windows.Any(w => w.GetType().FullName == "Multiplayer.Client.DisconnectedWindow");
+        if (Read(api, null, "session") == null && Read(api, null, "LocalServer") == null && !disconnected) return StatusCore();
+        var stop = api.GetMethod("StopMultiplayerAndClearAllWindows", Flags, null, Type.EmptyTypes, null)
+            ?? throw new MissingMethodException("Multiplayer.StopMultiplayerAndClearAllWindows");
+        stop.Invoke(null, null);
+        GenScene.GoToMainMenu();
+        return new { success = true, phase = "leaving-started" };
+    });
+
+    [Tool("multiplayer/set_time_speed", Description = "Request Paused, Normal, Fast or Superfast through Multiplayer's native synchronized time command. Requires a joined, non-desynced live session with shared synchronous time and no lowest-wins voting. Does not directly write TickManager or step one client. Returns submission; poll status on both clients.")]
+    public static Task<object> SetTimeSpeed(IRimBridgeContext ctx, string speed = "Normal") => ctx.MainThread.InvokeAsync<object>(() =>
+    {
+        if (!Enum.TryParse<TimeSpeed>(speed, true, out var parsed) || parsed < TimeSpeed.Paused || parsed > TimeSpeed.Superfast)
+            throw new ArgumentException("Use Paused, Normal, Fast or Superfast.", nameof(speed));
+        var api = RequiredType("Multiplayer.Client.Multiplayer");
+        var session = Read(api, null, "session");
+        var client = Get(session, "client");
+        if (client == null || Get(client, "State")?.ToString() != "ClientPlaying" || Get(session, "desynced") is not false || Read(api, null, "IsReplay") is not false)
+            return Failure("Join a live, non-desynced Multiplayer session before changing time.");
+        var gameComp = Get(Read(api, null, "game"), "gameComp");
+        if (Get(gameComp, "asyncTime") is not false || Get(gameComp, "IsLowestWins") is not false)
+            return Failure("This control requires shared synchronous time without lowest-wins voting.");
+        var tickable = Read(api, null, "AsyncWorldTime") ?? throw new InvalidOperationException("Multiplayer world time is unavailable.");
+        var send = RequiredType("Multiplayer.Client.AsyncTime.MpTimeControls").GetMethod("SendTimeChange", Flags)
+            ?? throw new MissingMethodException("Multiplayer.MpTimeControls.SendTimeChange");
+        send.Invoke(null, new object[] { tickable, parsed });
+        return new { success = true, phase = "time-command-submitted", requestedSpeed = parsed.ToString() };
+    });
+
+    private static object StatusCore()
+    {
+        var api = FindType("Multiplayer.Client.Multiplayer");
+        if (api == null) return new { success = true, available = false, sessionActive = false };
+        var session = Read(api, null, "session");
+        var localServer = Read(api, null, "LocalServer");
+        var client = Get(session, "client");
+        var players = (Get(session, "players") as IEnumerable)?.Cast<object>().Select(p => new
+        {
+            id = Get(p, "id"), username = Get(p, "username"), status = Get(p, "status")?.ToString(),
+            type = Get(p, "type")?.ToString(), factionId = Get(p, "factionId")
+        }).ToArray();
+        return new
+        {
+            success = true, available = true, assemblyMvid = api.Module.ModuleVersionId.ToString(),
+            sessionActive = session != null, username = Read(api, null, "username"),
+            gameName = Get(session, "gameName"), playerId = Get(session, "playerId"),
+            myFactionId = Get(session, "myFactionId"), desynced = Get(session, "desynced"),
+            desyncTraces = Get(Get(Read(api, null, "game"), "gameComp"), "logDesyncTraces"),
+            clientType = client?.GetType().FullName, players,
+            hosting = localServer != null,
+            hostReady = Get(localServer, "running") is true && Get(session, "dataSnapshot") != null,
+            desiredTimeSpeed = Get(Get(Read(api, null, "game"), "asyncWorldTimeComp"), "DesiredTimeSpeed")?.ToString(),
+            programState = Current.ProgramState.ToString(), mapCount = Current.Game == null ? 0 : Find.Maps.Count,
+            ticksGame = Current.Game == null ? (int?)null : Find.TickManager?.TicksGame,
+            windows = Find.WindowStack?.Windows.Select(w => w.GetType().FullName).ToArray()
+        };
+    }
+
+    private static Type FindType(string name) => AppDomain.CurrentDomain.GetAssemblies()
+        .Where(a => !a.IsDynamic && !a.ReflectionOnly && (a.GetName().Name == "Multiplayer" || a.GetName().Name == "MultiplayerCommon"))
+        .Select(a => a.GetType(name, false)).FirstOrDefault(t => t != null);
+
+    private static Type RequiredType(string name) => FindType(name) ?? throw new InvalidOperationException("Multiplayer is unavailable or lacks " + name);
+    private static FieldInfo RequiredField(Type type, string name) => type.GetField(name, Flags) ?? throw new MissingFieldException(type.FullName, name);
+    private static void Set(object target, string name, object value) => RequiredField(target.GetType(), name).SetValue(target, value);
+    private static object Get(object target, string name) => target == null ? null : Read(target.GetType(), target, name);
+    private static object Read(Type type, object target, string name)
+        => type.GetField(name, Flags)?.GetValue(target) ?? type.GetProperty(name, Flags)?.GetValue(target, null);
+    private static object Failure(string message) => new { success = false, message };
+    private static void ValidateConnection(string username, int port)
+    {
+        if (string.IsNullOrWhiteSpace(username) || username.Length > 15 || username.Any(c => !char.IsLetterOrDigit(c) && c != '_'))
+            throw new ArgumentException("Use a username of 1..15 letters, numbers or underscores.", nameof(username));
+        if (port < 1024 || port > 65535) throw new ArgumentOutOfRangeException(nameof(port), "Use port 1024..65535.");
+    }
+}

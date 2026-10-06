@@ -646,15 +646,15 @@ internal static class RimWorldInput
         error = string.Empty;
 
         var matches = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(assembly => assembly != null && !assembly.IsDynamic)
+            .Where(assembly => assembly != null && !assembly.IsDynamic && !assembly.ReflectionOnly)
             .SelectMany(SafeGetTypes)
             .Where(type =>
                 type != null
+                && (string.Equals(type.Name, windowType, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(type.FullName, windowType, StringComparison.OrdinalIgnoreCase))
                 && typeof(Window).IsAssignableFrom(type)
                 && !type.IsAbstract
-                && type.GetConstructor(Type.EmptyTypes) != null
-                && (string.Equals(type.Name, windowType, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(type.FullName, windowType, StringComparison.OrdinalIgnoreCase)))
+                && type.GetConstructor(Type.EmptyTypes) != null)
             .Distinct()
             .ToList();
 

@@ -90,6 +90,31 @@ if [[ -z "$TARGET_DIR" && -z "$MODS_DIR" ]]; then
 	exit 2
 fi
 
+LOG_PATH="$ROOT/artifacts/logs/deploy-local-mod.log"
+mkdir -p "$(dirname "$LOG_PATH")"
+exec 3>&1
+exec >"$LOG_PATH" 2>&1
+STEP="build and deploy"
+trap 'workflow_status=$?; if [[ $workflow_status -eq 0 ]]; then echo ok >&3; else echo "$STEP failed" >&3; tail -n 12 "$LOG_PATH" >&3; echo "Full log: $LOG_PATH" >&3; fi' EXIT
+WORKFLOW_CHILD=""
+cancel_workflow() {
+	if [[ -n "$WORKFLOW_CHILD" ]]; then
+		kill -TERM "$WORKFLOW_CHILD" 2>/dev/null || true
+		wait "$WORKFLOW_CHILD" || true
+	fi
+	echo "Workflow cancelled"
+	exit "$1"
+}
+trap 'cancel_workflow 130' INT
+trap 'cancel_workflow 143' TERM
+run_workflow() {
+	"$@" <&0 & WORKFLOW_CHILD=$!
+	local command_status=0
+	wait "$WORKFLOW_CHILD" || command_status=$?
+	WORKFLOW_CHILD=""
+	return "$command_status"
+}
+
 BUILD_ARGS=(
 	"$ROOT/RimBridgeServer.sln"
 	-c "$CONFIGURATION"
@@ -113,16 +138,40 @@ BUILD_COMMAND=(dotnet build "${BUILD_ARGS[@]}")
 if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
 	BUILD_COMMAND+=("${EXTRA_ARGS[@]}")
 fi
-"${BUILD_COMMAND[@]}"
+run_workflow "${BUILD_COMMAND[@]}"
 
 if [[ "$RUN_TESTS" == true ]]; then
-	dotnet test "$ROOT/RimBridgeServer.sln" -c "$CONFIGURATION" --no-build
+	STEP=tests
+	run_workflow dotnet test "$ROOT/RimBridgeServer.sln" -c "$CONFIGURATION" --no-build
 fi
 
-if [[ -n "$TARGET_DIR" ]]; then
-	echo "deployed=$TARGET_DIR"
-	echo "zip=${ZIP_PATH:-$TARGET_DIR.zip}"
-else
-	echo "deployed=$MODS_DIR/RimBridgeServer"
-	echo "zip=${ZIP_PATH:-$MODS_DIR/RimBridgeServer.zip}"
-fi
+STEP="deployed artifact verification"
+DEPLOYMENT_DIR="${TARGET_DIR:-$MODS_DIR/RimBridgeServer}"
+COMPANION_MODS_DIR="$MODS_DIR"
+if [[ -n "$TARGET_DIR" ]]; then COMPANION_MODS_DIR=""; fi
+run_workflow python3 - "$ROOT" "$DEPLOYMENT_DIR" "${ZIP_PATH:-$DEPLOYMENT_DIR.zip}" "$COMPANION_MODS_DIR" <<'PY'
+from pathlib import Path
+import sys
+import zipfile
+
+root, deployed, archive = map(Path, sys.argv[1:4])
+with zipfile.ZipFile(archive) as package:
+    if package.testzip() is not None:
+        raise RuntimeError('Deployed mod ZIP failed its CRC check')
+    for source in (root/'1.6/Assemblies').glob('*.dll'):
+        relative = '1.6/Assemblies/'+source.name
+        expected = source.read_bytes()
+        if (deployed/relative).read_bytes() != expected or package.read(relative) != expected:
+            raise RuntimeError('Deployed DLL or ZIP differs from the build: '+source.name)
+    if any('BridgeTools' in name for name in package.namelist()):
+        raise RuntimeError('Test companions must not enter the player mod ZIP')
+if not sys.argv[2] or not (deployed/'1.6/Assemblies/RimBridgeServer.dll').is_file():
+    raise RuntimeError('Deployed main mod DLL is missing')
+if sys.argv[4]:
+    bundle = Path(sys.argv[4]).parent/'BridgeTools/Multiplayer'
+    source = root/'artifacts/BridgeTools/Multiplayer/Multiplayer.BridgeTools.dll'
+    if (bundle/source.name).read_bytes() != source.read_bytes():
+        raise RuntimeError('Deployed Multiplayer companion differs from the build')
+    if any(p.suffix == '.dll' and p.name != source.name for p in bundle.iterdir()):
+        raise RuntimeError('Multiplayer companion bundle contains unexpected DLLs')
+PY

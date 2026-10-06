@@ -56,6 +56,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\Companions\Multiplayer\Multiplayer.BridgeTools.csproj" ReferenceOutputAssembly="false" />
 		<ProjectReference Include="RimBridgeServer.Core\RimBridgeServer.Core.csproj" />
 		<ProjectReference Include="RimBridgeServer.Contracts\RimBridgeServer.Contracts.csproj" />
 		<ProjectReference Include="RimBridgeServer.Extensions.Abstractions\RimBridgeServer.Extensions.Abstractions.csproj" />
@@ -132,6 +133,11 @@
 
 	<Target Name="ZipMod" AfterTargets="CopyToRimworld" Condition="'$(RimWorldModDeployDir)' != '' And '$(RimWorldModZipPath)' != ''">
 		<ZipDirectory SourceDirectory="$(RimWorldModDeployDir)" DestinationFile="$(RimWorldModZipPath)" Overwrite="true" />
+	</Target>
+
+	<Target Name="CopyMultiplayerBridgeTools" AfterTargets="CopyToRimworld" Condition="'$(RIMWORLD_MOD_DIR)' != ''">
+		<Copy SourceFiles="..\artifacts\BridgeTools\Multiplayer\Multiplayer.BridgeTools.dll"
+		      DestinationFolder="$(RIMWORLD_MOD_DIR)\..\BridgeTools\Multiplayer" SkipUnchangedFiles="true" />
 	</Target>
 
 </Project>

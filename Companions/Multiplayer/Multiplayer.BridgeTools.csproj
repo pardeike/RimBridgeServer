@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Multiplayer.BridgeTools</AssemblyName>
+    <RootNamespace>RimBridgeServer.MultiplayerTools</RootNamespace>
+    <OutputPath>../../artifacts/BridgeTools/Multiplayer/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>$(ModVersion)</Version>
+    <DebugType>None</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Source/RimBridgeServer.Sdk/RimBridgeServer.Sdk.csproj" Private="false" />
+    <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4850" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
