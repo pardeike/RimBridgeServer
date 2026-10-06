@@ -13,10 +13,12 @@ DLLs are excluded. These controls are test tools, not player mod payload.
 
 | Tool | Behavior |
 | --- | --- |
-| `multiplayer/status` | Read availability, assembly identity, native session/player states, desync flag, windows and game tick. |
+| `multiplayer/status` | Read availability, assembly identity, native session/player states, faction IDs, time mode, desync flag, windows and game tick. |
 | `multiplayer/host_local` | Host a loaded single-player map or native saved replay on loopback. Optional port, in-memory username, config synchronization, asynchronous time, multiple factions and diagnostic stack capture. Steam, LAN advertisement and arbiter are off. |
 | `multiplayer/join_local` | Join loopback from the main menu using a distinct in-memory username. |
 | `multiplayer/leave` | Run native session cleanup and return to the main menu without saving. Retain saves and the process; leave an idle single-player game alone. |
+| `multiplayer/change_faction` | Submit the native join-faction packet for an existing player faction in a live multifaction session. Poll status for completion. |
+| `multiplayer/open_faction_setup` | Open the native second-colony ideology/pawn pages using a unique name and Crashlanded scenario. Select an explicit surface tile or a native random site. Completing the pages submits native synchronized faction creation. |
 | `multiplayer/set_time_speed` | Submit a native synchronized time command. Supports Paused, Normal, Fast and Superfast with shared synchronous time and no lowest-wins voting. Poll both clients for the result. |
 | `multiplayer/save` | Save the paused live session through native Autosaving, verify the new ZIP exists and refuse existing names. |
 | `multiplayer/load_save` | Load an existing ZIP through native Replay at its saved endpoint from the main menu. Returns initiation; poll status for replay/game readiness. |
@@ -28,6 +30,11 @@ true before calling `join_local` on the client. Poll
 success does not prove connection, simulation agreement or compatibility.
 Do not use bridge tick stepping or directly mutate gameplay state on one
 client to simulate synchronized Multiplayer commands.
+Faction setup uses Multiplayer's own validation, pages, pawn transfer and
+creation commands. The bridge does not construct faction data or generate a
+colony itself. Site selection and opening pages use isolated UI randomness;
+the native wizard still owns the final submission. Opening the pages is not
+proof that a second faction or map has been created.
 Saving requires a joined, non-desynced paused session. Save/load names accept
 1..30 ASCII letters, numbers, underscores and hyphens; paths stay in the native
 Multiplayer save directory. Loading does not host a server. The resulting

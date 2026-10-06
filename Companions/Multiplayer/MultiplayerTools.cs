@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using RimWorld;
+using RimWorld.Planet;
 using RimBridgeServer.Sdk;
 using Verse;
 
@@ -88,6 +90,52 @@ public sealed class MultiplayerTools
         return new { success = true, phase = "leaving-started" };
     });
 
+    [Tool("multiplayer/change_faction", Description = "Request an existing player faction through Multiplayer's native faction packet. Requires a joined, non-desynced live multifaction session. This submits the same request as Join faction; poll status for the result. Does not reassign pawns or create a faction.")]
+    public static Task<object> ChangeFaction(IRimBridgeContext ctx, int factionId) => ctx.MainThread.InvokeAsync<object>(() =>
+    {
+        var api = RequiredType("Multiplayer.Client.Multiplayer");
+        if (!LiveMultifaction(api)) return Failure("Join a live, non-desynced multifaction session first.");
+        var faction = Find.FactionManager.AllFactionsListForReading.FirstOrDefault(f => f.IsPlayer && f.loadID == factionId);
+        if (faction == null) return Failure("Select an existing player faction from multiplayer/status.");
+        var session = Read(api, null, "session");
+        var client = Get(session, "client");
+        var packetType = RequiredType("Multiplayer.Common.Networking.Packet.ClientSetFactionPacket");
+        var packet = Activator.CreateInstance(packetType, Get(session, "playerId"), factionId);
+        var send = client.GetType().GetMethods(Flags).Single(m => m.Name == "Send" && m.IsGenericMethodDefinition
+            && m.GetParameters().Length == 2 && m.GetParameters()[1].ParameterType == typeof(bool));
+        send.MakeGenericMethod(packetType).Invoke(client, new[] { packet, (object)true });
+        return new { success = true, phase = "faction-request-submitted", factionId };
+    });
+
+    [Tool("multiplayer/open_faction_setup", Description = "Open Multiplayer's native second-colony setup pages with a unique faction name and Crashlanded scenario. Requires a live multifaction session. A negative tile selects a native random starting tile using isolated UI randomness. Finish the native ideology/pawn pages to submit synchronized creation; opening pages alone creates no faction.")]
+    public static Task<object> OpenFactionSetup(IRimBridgeContext ctx, string factionName, int tileId = -1) => ctx.MainThread.InvokeAsync<object>(() =>
+    {
+        var api = RequiredType("Multiplayer.Client.Multiplayer");
+        if (!LiveMultifaction(api)) return Failure("Join a live, non-desynced multifaction session first.");
+        if (string.IsNullOrWhiteSpace(factionName) || factionName.Length > 40)
+            throw new ArgumentException("Use a faction name of 1..40 characters.", nameof(factionName));
+        if (Find.FactionManager.AllFactionsListForReading.Any(f => f.Name == factionName))
+            return Failure("Use a unique faction name.");
+        if (LongEventHandler.AnyEventNowOrWaiting || Find.WindowStack.Windows.Any(w => w is Page))
+            return Failure("Finish the current long event or setup page first.");
+        var sidebar = RequiredType("Multiplayer.Client.FactionSidebar");
+        var validate = sidebar.GetMethod("FactionCreationCanBeStarted", Flags, null, Type.EmptyTypes, null)
+            ?? throw new MissingMethodException("Multiplayer.FactionSidebar.FactionCreationCanBeStarted");
+        var open = sidebar.GetMethod("OpenConfigurationPages", Flags, null, Type.EmptyTypes, null)
+            ?? throw new MissingMethodException("Multiplayer.FactionSidebar.OpenConfigurationPages");
+        Rand.PushState();
+        try
+        {
+            Find.WorldInterface.SelectedTile = tileId < 0 ? TileFinder.RandomStartingTile() : (PlanetTile)tileId;
+            RequiredField(sidebar, "factionNameTextField").SetValue(null, factionName);
+            RequiredField(sidebar, "chosenScenario").SetValue(null, ScenarioDefOf.Crashlanded);
+            if (validate.Invoke(null, null) is not true) return Failure("The native faction setup rejected the selected site.");
+            open.Invoke(null, null);
+        }
+        finally { Rand.PopState(); }
+        return new { success = true, phase = "faction-setup-opened", factionName, tileId = (int)Find.WorldInterface.SelectedTile };
+    });
+
     [Tool("multiplayer/set_time_speed", Description = "Request Paused, Normal, Fast or Superfast through Multiplayer's native synchronized time command. Requires a joined, non-desynced live session with shared synchronous time and no lowest-wins voting. Does not directly write TickManager or step one client. Returns submission; poll status on both clients.")]
     public static Task<object> SetTimeSpeed(IRimBridgeContext ctx, string speed = "Normal") => ctx.MainThread.InvokeAsync<object>(() =>
     {
@@ -159,6 +207,7 @@ public sealed class MultiplayerTools
         if (api == null) return new { success = true, available = false, sessionActive = false };
         var session = Read(api, null, "session");
         var localServer = Read(api, null, "LocalServer");
+        var gameComp = Get(Read(api, null, "game"), "gameComp");
         var client = Get(session, "client");
         var players = (Get(session, "players") as IEnumerable)?.Cast<object>().Select(p => new
         {
@@ -172,6 +221,9 @@ public sealed class MultiplayerTools
             isReplay = session == null ? (bool?)null : (bool)Read(api, null, "IsReplay"),
             gameName = Get(session, "gameName"), playerId = Get(session, "playerId"),
             myFactionId = Get(session, "myFactionId"), desynced = Get(session, "desynced"),
+            multifaction = Get(gameComp, "multifaction"), asyncTime = Get(gameComp, "asyncTime"),
+            factions = Current.Game == null || Find.World == null ? null : Find.FactionManager.AllFactionsListForReading.Where(f => f.IsPlayer)
+                .Select(f => new { id = f.loadID, name = f.Name }).ToArray(),
             desyncTraces = Get(Get(Read(api, null, "game"), "gameComp"), "logDesyncTraces"),
             clientType = client?.GetType().FullName, players,
             hosting = localServer != null,
@@ -181,6 +233,14 @@ public sealed class MultiplayerTools
             ticksGame = Current.Game == null ? (int?)null : Find.TickManager?.TicksGame,
             windows = Find.WindowStack?.Windows.Select(w => w.GetType().FullName).ToArray()
         };
+    }
+
+    private static bool LiveMultifaction(Type api)
+    {
+        var session = Read(api, null, "session");
+        return Current.ProgramState == ProgramState.Playing && Get(Get(session, "client"), "State")?.ToString() == "ClientPlaying"
+            && Get(session, "desynced") is false && Read(api, null, "IsReplay") is false
+            && Get(Get(Read(api, null, "game"), "gameComp"), "multifaction") is true;
     }
 
     private static Type FindType(string name) => AppDomain.CurrentDomain.GetAssemblies()
