@@ -16,18 +16,26 @@ public sealed class MultiplayerTools
     [Tool("multiplayer/status", Description = "Read the optional Multiplayer session, native player states, desync flag and game tick. No connection or gameplay mutation. A started connection is not a joined session.")]
     public static Task<object> Status(IRimBridgeContext ctx) => ctx.MainThread.InvokeAsync(StatusCore);
 
-    [Tool("multiplayer/host_local", Description = "Host the currently loaded single-player map using Multiplayer's native host entry point. Binds only 127.0.0.1; Steam, LAN advertisement and arbiter are disabled. Returns initiation, not completed hosting. Poll multiplayer/status.")]
+    [Tool("multiplayer/host_local", Description = "Host a loaded single-player map or native saved replay through Multiplayer's own hosting flow. Binds only 127.0.0.1; Steam, LAN advertisement and arbiter are disabled. Returns initiation, not completed hosting. Poll multiplayer/status.")]
     public static Task<object> HostLocal(IRimBridgeContext ctx, string username = "FogHost", int port = 30502, bool syncConfigs = true, bool asyncTime = false, bool multifaction = false, bool desyncTraces = false)
         => ctx.MainThread.InvokeAsync<object>(() =>
         {
             ValidateConnection(username, port);
             var api = RequiredType("Multiplayer.Client.Multiplayer");
-            if (Read(api, null, "session") != null) return Failure("Leave the current Multiplayer session before hosting.");
+            var fromReplay = Read(api, null, "IsReplay") is true;
+            if (Read(api, null, "session") != null && !fromReplay) return Failure("Leave the current Multiplayer session before hosting.");
+            if (fromReplay && (Read(api, null, "LocalServer") != null || Get(Read(api, null, "session"), "desynced") is not false))
+                return Failure("Load a non-desynced native saved replay without a server before hosting.");
             if (Current.ProgramState != ProgramState.Playing || Find.Maps.Count == 0 || Read(typeof(LongEventHandler), null, "currentEvent") != null)
-                return Failure("Load a playable single-player map before hosting.");
+                return Failure("Load a playable single-player map or native saved replay before hosting.");
             var settingsType = RequiredType("Multiplayer.Common.ServerSettings");
-            var host = RequiredType("Multiplayer.Client.HostWindow").GetMethod("HostProgrammatically", Flags, null, new[] { settingsType }, null)
+            var hostWindow = RequiredType("Multiplayer.Client.HostWindow");
+            var host = hostWindow.GetMethod("HostProgrammatically", Flags, null, new[] { settingsType }, null)
                 ?? throw new MissingMethodException("Multiplayer.HostWindow.HostProgrammatically");
+            var start = fromReplay ? hostWindow.GetMethod("TryStartLocalServer", Flags, null, new[] { settingsType }, null)
+                ?? throw new MissingMethodException("Multiplayer.HostWindow.TryStartLocalServer") : null;
+            var replayHost = fromReplay ? RequiredType("Multiplayer.Client.HostUtil").GetMethod("HostServer", Flags, null, new[] { settingsType, typeof(bool) }, null)
+                ?? throw new MissingMethodException("Multiplayer.HostUtil.HostServer") : null;
             var settings = Activator.CreateInstance(settingsType);
             Set(settings, "gameName", "RimBridge local test");
             Set(settings, "direct", true);
@@ -42,8 +50,9 @@ public sealed class MultiplayerTools
             Set(settings, "pauseOnJoin", true);
             Set(settings, "pauseOnDesync", true);
             RequiredField(api, "username").SetValue(null, username);
-            var accepted = (bool)host.Invoke(null, new[] { settings });
-            return new { success = accepted, phase = accepted ? "hosting-started" : "hosting-rejected", address = "127.0.0.1", port, syncConfigs, asyncTime, multifaction, desyncTraces };
+            var accepted = (bool)(fromReplay ? start : host).Invoke(null, new[] { settings });
+            if (accepted && fromReplay) replayHost.Invoke(null, new[] { settings, (object)true });
+            return new { success = accepted, phase = accepted ? "hosting-started" : "hosting-rejected", address = "127.0.0.1", port, syncConfigs, asyncTime, multifaction, desyncTraces, fromReplay };
         });
 
     [Tool("multiplayer/join_local", Description = "Join a local Multiplayer host through its native LiteNet connector and connecting flow. Requires the main menu. Changes only the in-memory Multiplayer username. Returns initiation; poll multiplayer/status for native player states and desyncs.")]

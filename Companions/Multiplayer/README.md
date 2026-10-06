@@ -14,7 +14,7 @@ DLLs are excluded. These controls are test tools, not player mod payload.
 | Tool | Behavior |
 | --- | --- |
 | `multiplayer/status` | Read availability, assembly identity, native session/player states, desync flag, windows and game tick. |
-| `multiplayer/host_local` | Host the loaded single-player map on loopback. Optional port, in-memory username, config synchronization, asynchronous time, multiple factions and diagnostic stack capture. Steam, LAN advertisement and arbiter are off. |
+| `multiplayer/host_local` | Host a loaded single-player map or native saved replay on loopback. Optional port, in-memory username, config synchronization, asynchronous time, multiple factions and diagnostic stack capture. Steam, LAN advertisement and arbiter are off. |
 | `multiplayer/join_local` | Join loopback from the main menu using a distinct in-memory username. |
 | `multiplayer/leave` | Run native session cleanup and return to the main menu without saving. Retain saves and the process; leave an idle single-player game alone. |
 | `multiplayer/set_time_speed` | Submit a native synchronized time command. Supports Paused, Normal, Fast and Superfast with shared synchronous time and no lowest-wins voting. Poll both clients for the result. |
@@ -31,7 +31,8 @@ client to simulate synchronized Multiplayer commands.
 Saving requires a joined, non-desynced paused session. Save/load names accept
 1..30 ASCII letters, numbers, underscores and hyphens; paths stay in the native
 Multiplayer save directory. Loading does not host a server. The resulting
-replay can be inspected before choosing a separate hosting action.
+replay can be inspected before calling `host_local` to resume hosting through
+the native replay-host path. An existing live session must still be left first.
 
 Native cleanup reapplies game preferences. RimBridgeServer preserves its existing
 runtime background execution setting after those refreshes so an unfocused game
