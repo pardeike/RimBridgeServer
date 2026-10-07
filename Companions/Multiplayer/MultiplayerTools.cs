@@ -142,11 +142,11 @@ public sealed class MultiplayerTools
         return new { success = true, phase = "faction-setup-opened", factionName, tileId = (int)Find.WorldInterface.SelectedTile };
     });
 
-    [Tool("multiplayer/set_time_speed", Description = "Request Paused, Normal, Fast or Superfast through Multiplayer's native synchronized time command. Requires a joined, non-desynced live session without lowest-wins voting. A negative mapId controls shared/world time; an explicit mapId controls that map in asynchronous time. Does not directly write TickManager or step one client. Returns submission; poll native clocks on both clients.")]
+    [Tool("multiplayer/set_time_speed", Description = "Request Paused, Normal, Fast, Superfast or Ultrafast through Multiplayer's native synchronized time command. Requires a joined, non-desynced live session without lowest-wins voting. A negative mapId controls shared/world time; an explicit mapId controls that map in asynchronous time. Does not directly write TickManager or step one client. Returns submission; poll native clocks on both clients.")]
     public static Task<object> SetTimeSpeed(IRimBridgeContext ctx, string speed = "Normal", int mapId = -1) => ctx.MainThread.InvokeAsync<object>(() =>
     {
-        if (!Enum.TryParse<TimeSpeed>(speed, true, out var parsed) || parsed < TimeSpeed.Paused || parsed > TimeSpeed.Superfast)
-            throw new ArgumentException("Use Paused, Normal, Fast or Superfast.", nameof(speed));
+        if (!Enum.TryParse<TimeSpeed>(speed, true, out var parsed) || parsed < TimeSpeed.Paused || parsed > TimeSpeed.Ultrafast)
+            throw new ArgumentException("Use Paused, Normal, Fast, Superfast or Ultrafast.", nameof(speed));
         var api = RequiredType("Multiplayer.Client.Multiplayer");
         var session = Read(api, null, "session");
         var client = Get(session, "client");
@@ -238,7 +238,9 @@ public sealed class MultiplayerTools
             mapClocks = MapClocks(api)?.Select(clock => new
             {
                 mapId = (Get(clock, "map") as Map)?.uniqueID,
-                ticks = Get(clock, "mapTicks"), desiredTimeSpeed = Get(clock, "DesiredTimeSpeed")?.ToString()
+                ticks = Get(clock, "mapTicks"), desiredTimeSpeed = Get(clock, "DesiredTimeSpeed")?.ToString(),
+                nativeRateMultiplier = clock.GetType().GetMethod("TickRateMultiplier", new[] { typeof(TimeSpeed) })
+                    ?.Invoke(clock, new[] { Get(clock, "DesiredTimeSpeed") })
             }).ToArray(),
             factions = Current.Game == null || Find.World == null ? null : Find.FactionManager.AllFactionsListForReading.Where(f => f.IsPlayer)
                 .Select(f => new { id = f.loadID, name = f.Name }).ToArray(),

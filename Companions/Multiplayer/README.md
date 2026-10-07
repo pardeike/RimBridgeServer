@@ -13,13 +13,13 @@ DLLs are excluded. These controls are test tools, not player mod payload.
 
 | Tool | Behavior |
 | --- | --- |
-| `multiplayer/status` | Read availability, assembly identity, native session/player states, faction IDs, current map, world/map clocks, time mode, desync flag, windows and game tick. |
+| `multiplayer/status` | Read availability, assembly identity, native session/player states, faction IDs, current map, world/map clocks, selected map speed and native rate multiplier, desync flag, windows and game tick. |
 | `multiplayer/host_local` | Host a loaded single-player map or native saved replay on loopback. Optional port, in-memory username, config synchronization, asynchronous time, multiple factions and diagnostic stack capture. Steam, LAN advertisement and arbiter are off. |
 | `multiplayer/join_local` | Join loopback from the main menu using a distinct in-memory username. |
 | `multiplayer/leave` | Run native session cleanup and return to the main menu without saving. Retain saves and the process; leave an idle single-player game alone. |
 | `multiplayer/change_faction` | Submit the native join-faction packet for an existing player faction in a live multifaction session and select its first map, as the native Join button does. Poll status for completion. |
 | `multiplayer/open_faction_setup` | Open the native second-colony ideology/pawn pages using a unique name and Crashlanded scenario. Select an explicit surface tile or a native random site. Completing the pages submits native synchronized faction creation. |
-| `multiplayer/set_time_speed` | Submit a native synchronized time command for shared/world time (negative `mapId`) or an asynchronous map (explicit `mapId`). Supports Paused, Normal, Fast and Superfast without lowest-wins voting. Poll both clients' native clocks for the result. |
+| `multiplayer/set_time_speed` | Submit a native synchronized time command for shared/world time (negative `mapId`) or an asynchronous map (explicit `mapId`). Supports Paused, Normal, Fast, Superfast and Ultrafast without lowest-wins voting. Poll both clients' native clocks for the result. |
 | `multiplayer/save` | Save the paused live session through native Autosaving, verify the new ZIP exists and refuse existing names. World and all asynchronous map clocks must be paused. |
 | `multiplayer/load_save` | Load an existing ZIP through native Replay at its saved endpoint from the main menu. Returns initiation; poll status for replay/game readiness. |
 
