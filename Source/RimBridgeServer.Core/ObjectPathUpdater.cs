@@ -235,7 +235,8 @@ public static class ObjectPathUpdater
                 case '.':
                     if (buffer.Length == 0)
                     {
-                        if (segments.Count > 0 && segments[segments.Count - 1].IsIndex)
+                        // Only the separator straight after an index, as in Items[0].Name, may follow no member name.
+                        if (i > 0 && trimmed[i - 1] == ']')
                             break;
 
                         throw new InvalidOperationException($"Invalid empty member segment in path '{trimmed}'.");
@@ -267,6 +268,9 @@ public static class ObjectPathUpdater
                     break;
             }
         }
+
+        if (trimmed[trimmed.Length - 1] == '.')
+            throw new InvalidOperationException($"Invalid empty member segment in path '{trimmed}'.");
 
         if (buffer.Length > 0)
             segments.Add(PathSegment.ForMember(buffer));

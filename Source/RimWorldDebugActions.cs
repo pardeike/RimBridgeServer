@@ -84,9 +84,9 @@ internal static class RimWorldDebugActions
         if (limit <= 0)
             limit = 50;
 
-        // The full tree has about 90k nodes (generated spawn menus per def) and preparing all of it takes over a
-        // minute of main-thread time. Search breadth-first under a deadline: shallow actions are found at once,
-        // prepared subtrees stay cached, and a repeated search reaches deeper.
+        // Generated submenus stay closed (see IsUnexpandedGenerated), which keeps the walk small. Breadth-first
+        // order and the deadline remain as a guard for mod lists whose static tree is still large: shallow
+        // actions are found first and the main thread is never held longer than the budget.
         var deadline = System.Diagnostics.Stopwatch.StartNew();
         var searchedNodeCount = 0;
         var complete = true;
@@ -133,7 +133,7 @@ internal static class RimWorldDebugActions
             truncated = totalMatchCount > limitedMatches.Count,
             searchComplete = complete,
             searchedNodeCount,
-            searchHint = complete ? null : $"Searched the {searchedNodeCount} shallowest debug actions within {SearchTimeBudgetMs / 1000} s; deeper generated menus (per-def spawn lists) were not reached yet. Repeat the search to continue deeper, or prefer a more specific tool such as rimworld/spawn_thing.",
+            searchHint = complete ? null : $"Searched the {searchedNodeCount} shallowest debug actions within {SearchTimeBudgetMs / 1000} s before the time budget ran out. Use a more specific query, list_debug_action_children on the relevant root, or a dedicated tool such as rimworld/spawn_thing.",
             page,
             matches
         };
@@ -496,7 +496,7 @@ internal static class RimWorldDebugActions
         while (queue.Count > 0)
         {
             var node = queue.Dequeue();
-            PrepareNode(node);
+            PrepareStaticNode(node);
 
             var path = node.Path?.Trim();
             if (!string.IsNullOrWhiteSpace(path) && (includeHidden || node.VisibleNow) && seenPaths.Add(path))

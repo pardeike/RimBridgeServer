@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using RimBridgeServer.Core;
 using Xunit;
@@ -68,8 +69,46 @@ public class ObjectPathUpdaterTests
         Assert.Equal(9, ObjectPathUpdater.GetValue(settings, "Nested.Threshold"));
     }
 
+    [Fact]
+    public void ResolvesMemberPathsAfterIndexSegments()
+    {
+        var settings = new SampleSettings
+        {
+            Entries = [new SampleNested { Threshold = 1 }]
+        };
+
+        ObjectPathUpdater.Apply(settings, new Dictionary<string, object>
+        {
+            ["Entries[0].Threshold"] = 6,
+            ["Entries[1].Threshold"] = 8
+        });
+
+        Assert.Equal(6, ObjectPathUpdater.GetValue(settings, "Entries[0].Threshold"));
+        Assert.Equal(8, settings.Entries[1].Threshold);
+    }
+
+    [Theory]
+    [InlineData("Entries[0]..Threshold")]
+    [InlineData("Entries[0].")]
+    [InlineData("Nested..Threshold")]
+    [InlineData(".Enabled")]
+    [InlineData("Enabled.")]
+    public void RejectsEmptyMemberSegments(string path)
+    {
+        var settings = new SampleSettings
+        {
+            Nested = new SampleNested(),
+            Entries = [new SampleNested()]
+        };
+
+        var error = Assert.Throws<InvalidOperationException>(() => ObjectPathUpdater.GetValue(settings, path));
+        Assert.Contains("empty member segment", error.Message);
+    }
+
     private sealed class SampleSettings
     {
+        public List<SampleNested> Entries = [];
+
         public bool Enabled;
 
         public List<string> Labels = [];
