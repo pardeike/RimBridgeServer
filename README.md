@@ -103,7 +103,7 @@ Example:
 dotnet restore Source/RimBridgeServer.csproj \
   -p:EnableLocalNuGetOverride=true \
   -p:LibGabPackageVersion=1.0.6-local.1 \
-  -p:RimBridgeServerSdkPackageVersion=2.2.0-local.1
+  -p:RimBridgeServerSdkPackageVersion=2.3.0-local.1
 ```
 
 Populate the local source by packing the sibling library into `../.nuget-local`, for example:
