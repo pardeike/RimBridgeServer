@@ -65,7 +65,7 @@ internal sealed class ScriptingCapabilityModule
             return validationFailure;
 
         var report = _runner.Execute(definition, includeStepResults);
-        var budget = ResponseBudget.CurrentMaxChars;
+        var budget = CreateReportBudget(report, includeStepResults);
         return new
         {
             success = report.Success,
@@ -80,8 +80,8 @@ internal sealed class ScriptingCapabilityModule
             returned = report.Returned,
             result = report.Result,
             error = report.Error,
-            output = ProjectOutput(report.Output, ref budget),
-            script = ProjectReport(report, includeStepResults, ref budget)
+            output = ProjectOutput(report.Output, budget),
+            script = ProjectReport(report, includeStepResults, budget)
         };
     }
 
@@ -130,7 +130,7 @@ internal sealed class ScriptingCapabilityModule
             return validationFailure;
 
         var report = _runner.Execute(definition, includeStepResults);
-        var budget = ResponseBudget.CurrentMaxChars;
+        var budget = CreateReportBudget(report, includeStepResults);
         return new
         {
             success = report.Success,
@@ -146,8 +146,8 @@ internal sealed class ScriptingCapabilityModule
             result = report.Result,
             error = report.Error,
             parameterCount = parameters?.Count ?? 0,
-            output = ProjectOutput(report.Output, ref budget),
-            script = ProjectReport(report, includeStepResults, ref budget)
+            output = ProjectOutput(report.Output, budget),
+            script = ProjectReport(report, includeStepResults, budget)
         };
     }
 
@@ -346,15 +346,80 @@ internal sealed class ScriptingCapabilityModule
     }
 
     // Agent-facing script report. Step rows stay compact; with includeStepResults=false only failed steps are
-    // listed. Step results and print values share the response budget: results that do not fit are replaced by
-    // their size so the step list itself is always complete.
-    private static object ProjectReport(CapabilityScriptReport report, bool includeStepResults, ref int budget)
+    // listed. Print values and step results share the response budget; when they do not all fit, the largest are
+    // replaced by their size first, so small results such as file paths survive and the step list stays complete.
+    private sealed class ScriptReportBudget
+    {
+        private readonly HashSet<object> _omitted = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<object, int> _sizes = new(ReferenceEqualityComparer.Instance);
+
+        public ScriptReportBudget(IEnumerable<object> values, int budget)
+        {
+            if (budget == int.MaxValue)
+                return;
+
+            var measured = values.Where(value => value != null).Distinct(ReferenceEqualityComparer.Instance)
+                .Select(value => (Value: value, Size: Measure(value)))
+                .ToList();
+            foreach (var item in measured)
+                _sizes[item.Value] = item.Size;
+
+            var total = measured.Sum(item => (long)item.Size);
+            foreach (var item in measured.OrderByDescending(item => item.Size))
+            {
+                if (total <= budget)
+                    break;
+                _omitted.Add(item.Value);
+                total -= item.Size;
+            }
+        }
+
+        public object Take(object value, out int? omittedChars)
+        {
+            omittedChars = null;
+            if (value == null || !_omitted.Contains(value))
+                return value;
+
+            omittedChars = _sizes[value];
+            return null;
+        }
+
+        private static int Measure(object value)
+        {
+            try
+            {
+                return JsonConvert.SerializeObject(value, BudgetMeasureSettings).Length;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+    }
+
+    private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
+    {
+        public static readonly ReferenceEqualityComparer Instance = new();
+
+        public new bool Equals(object x, object y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(object obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+    }
+
+    private static ScriptReportBudget CreateReportBudget(CapabilityScriptReport report, bool includeStepResults)
+    {
+        var steps = includeStepResults ? report.Steps : report.Steps.Where(step => !step.Success);
+        var values = report.Output.Select(entry => entry.Value).Concat(steps.Select(step => step.Result));
+        return new ScriptReportBudget(values, ResponseBudget.CurrentMaxChars);
+    }
+
+    private static object ProjectReport(CapabilityScriptReport report, bool includeStepResults, ScriptReportBudget budget)
     {
         var steps = includeStepResults ? report.Steps : report.Steps.Where(step => !step.Success).ToList();
         var projected = new List<object>(steps.Count);
         var omittedResults = 0;
         foreach (var step in steps)
-            projected.Add(ProjectStep(step, ref budget, ref omittedResults));
+            projected.Add(ProjectStep(step, budget, ref omittedResults));
 
         return new
         {
@@ -373,12 +438,12 @@ internal sealed class ScriptingCapabilityModule
         };
     }
 
-    private static List<object> ProjectOutput(List<CapabilityScriptOutputEntry> entries, ref int budget)
+    private static List<object> ProjectOutput(List<CapabilityScriptOutputEntry> entries, ScriptReportBudget budget)
     {
         var projected = new List<object>(entries.Count);
         foreach (var entry in entries)
         {
-            var value = TakeWithinBudget(entry.Value, ref budget, out var omittedChars);
+            var value = budget.Take(entry.Value, out var omittedChars);
             projected.Add(new
             {
                 statementId = entry.StatementId,
@@ -392,9 +457,9 @@ internal sealed class ScriptingCapabilityModule
         return projected;
     }
 
-    private static object ProjectStep(CapabilityScriptStepReport step, ref int budget, ref int omittedResults)
+    private static object ProjectStep(CapabilityScriptStepReport step, ScriptReportBudget budget, ref int omittedResults)
     {
-        var result = TakeWithinBudget(step.Result, ref budget, out var omittedChars);
+        var result = budget.Take(step.Result, out var omittedChars);
         if (omittedChars.HasValue)
             omittedResults++;
 
@@ -410,32 +475,6 @@ internal sealed class ScriptingCapabilityModule
             error = step.Error,
             warnings = step.Warnings?.Count > 0 ? step.Warnings : null
         };
-    }
-
-    private static object TakeWithinBudget(object value, ref int budget, out int? omittedChars)
-    {
-        omittedChars = null;
-        if (value == null || budget == int.MaxValue)
-            return value;
-
-        int size;
-        try
-        {
-            size = JsonConvert.SerializeObject(value, BudgetMeasureSettings).Length;
-        }
-        catch
-        {
-            return value;
-        }
-
-        if (size <= budget)
-        {
-            budget -= size;
-            return value;
-        }
-
-        omittedChars = size;
-        return null;
     }
 
     private static readonly JsonSerializerSettings BudgetMeasureSettings = new()

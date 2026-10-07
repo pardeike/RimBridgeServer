@@ -145,9 +145,9 @@ Suggested order: measurement hook in the journal, then priority 1 (with the Lib.
 
 Outer, agent-only layer (`Source/AgentResponseShaper.cs`; scripts and companion tools unaffected):
 
-- Envelope reduced to `operationId`, string `status`, `durationMs`, plus `warnings`/`error` only when present.
+- Envelope reduced to `OperationId`, string `Status`, `Success`, `DurationMs`, plus `Warnings`/`Error` only when present. (Revision 4 note: the original field names and casing are kept because the live-smoke harness and external tools read `operation.OperationId`.)
 - `null` and empty-string fields removed. `false`, `0` and empty lists are kept, because absence would read as "unknown" or "none".
-- Compact `state` on every reply: `tick`, `paused`, `speed`, `program`, `map`, highest satisfied readiness level as `ready`, and `longEventPending` only when true. Replies without a payload state get `tick`/`paused`/`speed`/`program` from plain field reads.
+- Compact `state` on every reply, keeping the original field names: `programState`, `inEntryScene`, `hasCurrentGame`, `currentMapId`, `longEventPending`, `paused`, `timeSpeed`, `playable`, `visualReady`, `automationReady`, plus the new game `tick`. (Revision 4 note: an earlier draft renamed and merged fields; that broke the live-smoke preconditions and the skill guidance on `state.automationReady`, so names are unchanged.) Replies without a payload state get `programState`/`hasCurrentGame`/`paused`/`timeSpeed`/`tick` from plain field reads.
 
 Budget and paging (`Source/ResponseBudget.cs`):
 

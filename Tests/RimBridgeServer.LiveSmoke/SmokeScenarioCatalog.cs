@@ -1631,7 +1631,7 @@ internal static class SmokeScenarioCatalog
         var afterCancel = JsonNodeHelpers.GetPath(pressCancel.StructuredContent, "after");
         var floatMenuOpenAfterCancel = JsonNodeHelpers.ReadBoolean(afterCancel, "floatMenuOpen") == true;
         var closedWindowTypes = JsonNodeHelpers.ReadArray(pressCancel.StructuredContent, "closedWindowTypes");
-        if (floatMenuOpenAfterCancel || closedWindowTypes.Any(type => string.Equals(JsonNodeHelpers.ReadString(type), "Verse.FloatMenu", StringComparison.Ordinal)) == false)
+        if (floatMenuOpenAfterCancel || closedWindowTypes.Any(type => IsFloatMenuWindowType(JsonNodeHelpers.ReadString(type))) == false)
             throw new InvalidOperationException("Semantic cancel input did not close the context-menu float menu.");
 
         if (context.HumanVerificationEnabled)
@@ -1739,7 +1739,7 @@ internal static class SmokeScenarioCatalog
             throw new InvalidOperationException("Clicking the dismiss target did not report a dismiss_window action kind.");
 
         var dismissClosedWindowTypes = JsonNodeHelpers.ReadArray(clickDismiss.StructuredContent, "closedWindowTypes");
-        if (!dismissClosedWindowTypes.Any(type => string.Equals(JsonNodeHelpers.ReadString(type), "Verse.FloatMenu", StringComparison.Ordinal)))
+        if (!dismissClosedWindowTypes.Any(type => IsFloatMenuWindowType(JsonNodeHelpers.ReadString(type))))
             throw new InvalidOperationException("Clicking the dismiss target did not close a Verse.FloatMenu window.");
 
         var optionMenu = await OpenVanillaContextMenuNearPawnAsync(
@@ -4348,6 +4348,12 @@ internal static class SmokeScenarioCatalog
         }
 
         return value;
+    }
+
+    // RimWorld 1.6 opens map context menus as Verse.FloatMenuMap, a FloatMenu subclass.
+    private static bool IsFloatMenuWindowType(string? typeName)
+    {
+        return typeName is not null && typeName.StartsWith("Verse.FloatMenu", StringComparison.Ordinal);
     }
 
     private static bool HasCompletedOperationStatus(JsonNode? node, params string[] path)

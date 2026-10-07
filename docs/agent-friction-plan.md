@@ -47,3 +47,16 @@ Additional compaction found during verification: nested `state` blocks (for exam
 - Item 12 only reaches calls that go through the capability registry with raw arguments (Lua and JSON scripts, SDK companion calls, extension tools). Built-in tools called through GABS are bound by Lib.GAB reflection, which drops unknown keys after writing a trace line; surfacing them to agents needs a Lib.GAB change.
 - The installed `rimbridge-server` skill was not regenerated (`scripts/install-skills.sh`): it is shared with Codex, which uses the main-branch build.
 
+
+## Live smoke suite (release readiness)
+
+Run with `scripts/live-smoke.sh` equivalents against GABS game `rimworld-local` (offline RimWorld 1.6.4871), one scenario per run, `debug-game-load` first because it needs the main menu.
+
+| Run | Result | Notes |
+|---|---|---|
+| First branch run | 1/25 | Compact `state`/envelope renamed fields the harness reads (`state.inEntryScene`, `operation.OperationId`); names restored |
+| Second branch run | 19/25 | Compact designator entries lacked `className`; compact save entries lacked `compatible`/`missingModCount` (save listing reverted to full compatibility); `debug-game-load` ran after a game was already loaded |
+| Main build, same scenarios | 3 of 4 failed | `context-menu-cancel-roundtrip`, `screen-target-click-roundtrip`, `debug-action-pawn-target` fail identically on main |
+| Harness fix | | The two FloatMenu scenarios compared closed window types to exactly `Verse.FloatMenu`; RimWorld 1.6 opens `Verse.FloatMenuMap` (subclass). Check now accepts subclasses |
+| Branch run | 24/25 | `script-colonist-prison` lost its small screenshot-step result to the shared script-report budget; the budget now drops the largest results first |
+| Final branch run | 24/25 | Only `debug-action-pawn-target` fails ("Log Job Details" emitted no captured log); it fails the same way on main and passed once in an intermediate run, so it is pre-existing and environment-dependent |

@@ -182,6 +182,7 @@ internal static class RimWorldArchitect
             kind = descriptor.Kind,
             applicationKind = descriptor.ApplicationKind,
             label = descriptor.Designator.Label,
+            className = descriptor.Designator.GetType().FullName ?? descriptor.Designator.GetType().Name,
             buildableDefName = build?.PlacingDef?.defName,
             size = thingDef != null && (thingDef.size.x != 1 || thingDef.size.z != 1) ? $"{thingDef.size.x}x{thingDef.size.z}" : null,
             rotatable = thingDef?.rotatable == true ? true : (bool?)null,

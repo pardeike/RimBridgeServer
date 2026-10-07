@@ -13,8 +13,13 @@ namespace RimBridgeServer;
 /// </summary>
 internal static class AgentResponseShaper
 {
-    private static readonly string[] ReadinessLevels = ["visualReady", "playable", "currentMapReady", "mapDataReady", "gameDataReady"];
-    private static readonly string[] ReadinessNames = ["visual", "playable", "currentMap", "mapData", "gameData"];
+    // State fields that agents, skills and harnesses read (for example state.automationReady); the rest of the
+    // snapshot (fade alpha, map count, intermediate readiness flags) is dropped. Names are kept unchanged.
+    private static readonly string[] KeptStateFields =
+    [
+        "programState", "inEntryScene", "hasCurrentGame", "currentMapId", "longEventPending",
+        "paused", "timeSpeed", "playable", "visualReady", "automationReady"
+    ];
 
     public static object Shape(Dictionary<string, object> values, OperationEnvelope envelope)
     {
@@ -30,46 +35,42 @@ internal static class AgentResponseShaper
         }
 
         if (shaped["state"] is JObject state && state["programState"] != null)
-            shaped["state"] = CompactState(state);
+            shaped["state"] = CompactState(state, includeTick: true);
         else if (shaped["state"] == null)
             shaped["state"] = CurrentState();
 
-        CompactNestedStates(shaped);
+        CompactNestedStates(shaped, isRoot: true);
         Prune(shaped);
         return shaped;
     }
 
+    // Original envelope field names are kept for existing consumers; timestamps, Result, Metadata, HasResult and
+    // empty Warnings/Error are dropped.
     private static object DescribeOperation(OperationEnvelope envelope)
     {
         return new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            ["operationId"] = envelope.OperationId,
-            ["status"] = envelope.Status.ToString(),
-            ["durationMs"] = envelope.DurationMs,
-            ["warnings"] = envelope.Warnings?.Count > 0 ? envelope.Warnings : null,
-            ["error"] = envelope.Error
+            ["OperationId"] = envelope.OperationId,
+            ["Status"] = envelope.Status.ToString(),
+            ["Success"] = envelope.Success,
+            ["DurationMs"] = envelope.DurationMs,
+            ["ResultWasTruncated"] = envelope.ResultWasTruncated ? true : null,
+            ["Warnings"] = envelope.Warnings?.Count > 0 ? envelope.Warnings : null,
+            ["Error"] = envelope.Error
         };
     }
 
-    private static JObject CompactState(JObject state)
+    private static JObject CompactState(JObject state, bool includeTick)
     {
-        var compact = CurrentState();
-        compact["program"] = state["programState"];
-        if (state["currentMapId"] is JValue { Value: not null } map)
-            compact["map"] = map;
-        if (state.Value<bool?>("longEventPending") == true)
-            compact["longEventPending"] = true;
-        for (var index = 0; index < ReadinessLevels.Length; index++)
+        var compact = new JObject();
+        foreach (var field in KeptStateFields)
         {
-            if (state.Value<bool?>(ReadinessLevels[index]) == true)
-            {
-                compact["ready"] = ReadinessNames[index];
-                break;
-            }
+            if (state[field] is { } value && value.Type != JTokenType.Null)
+                compact[field] = value;
         }
 
-        compact["paused"] = state["paused"] ?? compact["paused"];
-        compact["speed"] = state["timeSpeed"] ?? compact["speed"];
+        if (includeTick && TryReadTick(out var tick))
+            compact["tick"] = tick;
         return compact;
     }
 
@@ -79,13 +80,14 @@ internal static class AgentResponseShaper
         var compact = new JObject();
         try
         {
-            compact["program"] = Current.ProgramState.ToString();
+            compact["programState"] = Current.ProgramState.ToString();
+            compact["hasCurrentGame"] = Current.Game != null;
             var tickManager = Current.Game?.tickManager;
             if (tickManager != null)
             {
-                compact["tick"] = tickManager.TicksGame;
                 compact["paused"] = tickManager.Paused;
-                compact["speed"] = tickManager.CurTimeSpeed.ToString();
+                compact["timeSpeed"] = tickManager.CurTimeSpeed.ToString();
+                compact["tick"] = tickManager.TicksGame;
             }
         }
         catch
@@ -95,16 +97,33 @@ internal static class AgentResponseShaper
         return compact;
     }
 
+    private static bool TryReadTick(out int tick)
+    {
+        tick = 0;
+        try
+        {
+            var tickManager = Current.Game?.tickManager;
+            if (tickManager == null)
+                return false;
+            tick = tickManager.TicksGame;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     // Lifecycle and script results embed full state snapshots in nested objects (load, wait, step results).
-    private static void CompactNestedStates(JToken token)
+    private static void CompactNestedStates(JToken token, bool isRoot = false)
     {
         if (token is JObject obj)
         {
             foreach (var property in obj.Properties().ToList())
             {
-                if (property.Name == "state" && property.Value is JObject nested && nested["programState"] != null && !ReferenceEquals(obj.Parent, null))
-                    property.Value = CompactNestedState(nested);
-                else
+                if (!isRoot && property.Name == "state" && property.Value is JObject nested && nested["programState"] != null)
+                    property.Value = CompactState(nested, includeTick: false);
+                else if (!(isRoot && property.Name == "state"))
                     CompactNestedStates(property.Value);
             }
         }
@@ -113,29 +132,6 @@ internal static class AgentResponseShaper
             foreach (var item in array)
                 CompactNestedStates(item);
         }
-    }
-
-    private static JObject CompactNestedState(JObject state)
-    {
-        var compact = new JObject { ["program"] = state["programState"] };
-        if (state["currentMapId"] is JValue { Value: not null } map)
-            compact["map"] = map;
-        if (state.Value<bool?>("longEventPending") == true)
-            compact["longEventPending"] = true;
-        for (var index = 0; index < ReadinessLevels.Length; index++)
-        {
-            if (state.Value<bool?>(ReadinessLevels[index]) == true)
-            {
-                compact["ready"] = ReadinessNames[index];
-                break;
-            }
-        }
-
-        if (state["paused"] != null)
-            compact["paused"] = state["paused"];
-        if (state["timeSpeed"] != null)
-            compact["speed"] = state["timeSpeed"];
-        return compact;
     }
 
     private static void Prune(JToken token)

@@ -760,7 +760,7 @@ internal sealed class LifecycleCapabilityModule
                 name = Path.GetFileNameWithoutExtension(save.File.Name),
                 lastWriteTimeUtc = save.File.LastWriteTimeUtc,
                 sizeBytes = save.File.Length,
-                compatibility = DescribeSaveCompatibilityCompact(save.Compatibility)
+                compatibility = DescribeSaveCompatibility(save.Compatibility)
             }, out var page);
         var compatibleCount = inspectedSaves.Count(save => save.Compatibility.Compatibility.IsCompatible);
         var missingModsCount = inspectedSaves.Count(save => save.Compatibility.Compatibility.Status == SaveModCompatibilityStatus.MissingMods);
@@ -1026,20 +1026,6 @@ internal sealed class LifecycleCapabilityModule
         return string.Equals(mod.Name, mod.PackageId, StringComparison.OrdinalIgnoreCase)
             ? mod.PackageId
             : $"{mod.Name} ({mod.PackageId})";
-    }
-
-    // Listing form: status only for compatible saves; missing mod names (bounded) when something is missing.
-    private static object DescribeSaveCompatibilityCompact(SaveCompatibilityInspection inspection)
-    {
-        var compatibility = inspection.Compatibility;
-        var missing = compatibility.MissingMods;
-        return new
-        {
-            status = DescribeSaveCompatibilityStatus(compatibility.Status),
-            missingModCount = missing.Count > 0 ? missing.Count : (int?)null,
-            missingMods = missing.Count > 0 ? missing.Select(mod => mod.Name ?? mod.PackageId).Take(10).ToList() : null,
-            metadataError = string.IsNullOrWhiteSpace(compatibility.MetadataError) ? null : compatibility.MetadataError
-        };
     }
 
     private static Dictionary<string, object> DescribeSaveCompatibility(SaveCompatibilityInspection inspection)
