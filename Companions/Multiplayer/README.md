@@ -22,6 +22,7 @@ DLLs are excluded. These controls are test tools, not player mod payload.
 | `multiplayer/set_time_speed` | Submit a native synchronized time command for shared/world time (negative `mapId`) or an asynchronous map (explicit `mapId`). Supports Paused, Normal, Fast, Superfast and Ultrafast without lowest-wins voting. Poll both clients' native clocks for the result. |
 | `multiplayer/save` | Save the paused live session through native Autosaving, verify the new ZIP exists and refuse existing names. World and all asynchronous map clocks must be paused. |
 | `multiplayer/load_save` | Load an existing ZIP through native Replay at its saved endpoint from the main menu. Returns initiation; poll status for replay/game readiness. |
+| `multiplayer/loading_diagnostics` | Opt-in bounded reflection-only InputLegacyModule request/stack capture. Start at the main menu, reproduce loading, read status and stop. Works without Multiplayer and preserves native failure/resolution. |
 
 Use separate savedata folders and GABS endpoints for the two processes. Load a
 fixture on the host, call `host_local`, and poll `status` until `hostReady` is
