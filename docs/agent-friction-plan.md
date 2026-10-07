@@ -44,7 +44,7 @@ Additional compaction found during verification: nested `state` blocks (for exam
 ## Deviations and limits
 
 - Item 7 first used a per-frame warm-up of the whole tree. Measured on the test profile it prepared 90,674 nodes in 73 s of main-thread time with single steps up to 2.6 s, which made the game stutter for over a minute after every load. Replaced by the time-bounded breadth-first search.
-- Item 12 only reaches calls that go through the capability registry with raw arguments (Lua and JSON scripts, SDK companion calls, extension tools). Built-in tools called through GABS are bound by Lib.GAB reflection, which drops unknown keys after writing a trace line; surfacing them to agents needs a Lib.GAB change.
+- Item 12 only reaches calls that go through the capability registry with raw arguments (Lua and JSON scripts, SDK companion calls, extension tools). Built-in tools called through GABS are bound by Lib.GAB reflection, which drops unknown keys after writing a trace line. Branch `lib-gab-tool-call-context` closes this with Lib.GAB 1.0.6 `ToolCallContext` (Lib.GAB branch `tool-call-context`, not yet published): verified live with a locally packed 1.0.6-local.1 (deployed DLL hash equals the package) — `list_mods` with `enabledOnly` and `get_ui_layout` with `includeRects` return an `arguments.unknown` warning naming the valid parameters, clean calls carry no warning.
 - The installed `rimbridge-server` skill was not regenerated (`scripts/install-skills.sh`): it is shared with Codex, which uses the main-branch build.
 
 

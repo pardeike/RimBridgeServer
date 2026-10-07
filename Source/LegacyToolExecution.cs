@@ -24,9 +24,21 @@ internal static class LegacyToolExecution
 
     public static object InvokeAlias(string memberName, IDictionary<string, object> arguments)
     {
+        // Lib.GAB binds GABS arguments to the annotated method parameters and drops unknown keys; read them here,
+        // on the calling thread, so the agent learns that a guessed parameter was ignored.
+        var callContext = ToolCallContext.Current;
         var alias = ResolveCapabilityAlias(memberName);
         var envelope = (_registry ?? throw new InvalidOperationException("Capability registry has not been initialized."))
             .Invoke(alias, arguments);
+        if (callContext?.HasUnrecognizedArguments == true)
+        {
+            envelope.Warnings ??= [];
+            envelope.Warnings.Add(new OperationWarning
+            {
+                Code = "arguments.unknown",
+                Message = $"Ignored unknown argument(s) {string.Join(", ", callContext.UnrecognizedArguments)}. Valid parameters: {(callContext.ParameterNames.Count == 0 ? "none" : string.Join(", ", callContext.ParameterNames))}."
+            });
+        }
         var payload = envelope.Success
             ? envelope.Result
             : new
