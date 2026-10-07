@@ -543,7 +543,7 @@ internal sealed class ContextMenuCapabilityModule
         }
     }
 
-    private static bool TryParseModifiers(string modifiers, out EventModifiers parsedModifiers, out string normalizedModifiers, out string failure)
+    internal static bool TryParseModifiers(string modifiers, out EventModifiers parsedModifiers, out string normalizedModifiers, out string failure)
     {
         parsedModifiers = EventModifiers.None;
         normalizedModifiers = "none";

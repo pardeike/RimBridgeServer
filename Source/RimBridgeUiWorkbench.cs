@@ -205,6 +205,84 @@ internal static class RimBridgeUiWorkbench
         public string Message { get; set; } = string.Empty;
     }
 
+    internal enum TextEntryPhase
+    {
+        FocusDown = 0,
+        FocusUp = 1,
+        SelectAll = 2,
+        TypeChar = 3,
+        Instant = 4,
+        Done = 5
+    }
+
+    private sealed class TextEntryRequest
+    {
+        public string TargetId { get; set; } = string.Empty;
+
+        public string SurfaceTargetId { get; set; } = string.Empty;
+
+        public int ElementIndex { get; set; }
+
+        public string Kind { get; set; } = string.Empty;
+
+        public string Source { get; set; } = string.Empty;
+
+        public UiRectSnapshot Rect { get; set; } = new();
+
+        public int Depth { get; set; }
+
+        public string Text { get; set; } = string.Empty;
+
+        public string ControlName { get; set; }
+
+        public bool Typed { get; set; }
+
+        public bool ClearFirst { get; set; }
+
+        public int MinCharIntervalMs { get; set; }
+
+        public int JitterPercent { get; set; }
+
+        public TextEntryPhase Phase { get; set; } = TextEntryPhase.FocusDown;
+
+        public int PhaseInjectedFrame { get; set; } = -1;
+
+        public int TypedCount { get; set; }
+
+        public int NextCharAtTicks { get; set; }
+
+        public int CapturedKeyboardControl { get; set; }
+
+        public string ObservedValue { get; set; }
+
+        public string OriginalValue { get; set; } = string.Empty;
+
+        public bool OriginalValueKnown { get; set; }
+
+        public int RetryStrikes { get; set; }
+
+        public int LastMatchedFrame { get; set; } = -1;
+
+        public System.Random Jitter { get; } = new();
+
+        public TaskCompletionSource<bool> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public string Message { get; set; } = string.Empty;
+    }
+
+    internal sealed class TextFieldPatchState
+    {
+        public bool EventOverridden { get; set; }
+
+        public Event PreviousEvent { get; set; }
+
+        public bool OwnsInjection { get; set; }
+
+        public TextEntryPhase PhaseAtInjection { get; set; }
+
+        public string ExpectedValue { get; set; }
+    }
+
     private sealed class HoverRequest
     {
         public string TargetId { get; set; } = string.Empty;
@@ -328,6 +406,8 @@ internal static class RimBridgeUiWorkbench
     private static CaptureRequest _pendingCapture;
     private static ClickRequest _pendingClick;
     private static ScrollRequest _pendingScroll;
+    private static TextEntryRequest _pendingText;
+    private static bool _focusNextTextField;
     private static HoverRequest _hoveredElement;
     private static ActiveInteractionContext _activeInteraction;
     private static int _nextCaptureId = 1;
@@ -427,6 +507,401 @@ internal static class RimBridgeUiWorkbench
         }
 
         return CreateClickResponse(targetId, before, after, request.Message, openedMenu);
+    }
+
+    public static object SetTextFieldResponse(
+        string targetId,
+        string text,
+        string mode = "typed",
+        float charsPerSecond = 9f,
+        int jitterPercent = 35,
+        bool clearFirst = true,
+        string controlName = null,
+        int timeoutMs = 0)
+    {
+        var requestedText = text ?? string.Empty;
+        var normalizedMode = (mode ?? "typed").Trim().ToLowerInvariant();
+        if (!string.Equals(normalizedMode, "typed", StringComparison.Ordinal) && !string.Equals(normalizedMode, "instant", StringComparison.Ordinal))
+            return CreateTextEntryFailure(targetId, requestedText, normalizedMode, $"Unsupported mode '{mode}'. Supported modes are typed and instant.");
+
+        var typed = string.Equals(normalizedMode, "typed", StringComparison.Ordinal);
+        if (typed && requestedText.IndexOfAny(TextEntryDisallowedCharacters) >= 0)
+            return CreateTextEntryFailure(targetId, requestedText, normalizedMode, "typed mode only supports single-line text without tab or newline characters.");
+        if (typed && requestedText.Length == 0)
+            return CreateTextEntryFailure(targetId, requestedText, normalizedMode, "typed mode needs at least one character. Use mode instant to clear a field.");
+
+        var effectiveCps = charsPerSecond <= 0f ? 9f : Mathf.Clamp(charsPerSecond, 0.5f, 60f);
+        var minCharIntervalMs = Mathf.RoundToInt(1000f / effectiveCps);
+        var effectiveJitterPercent = Mathf.Clamp(jitterPercent, 0, 90);
+        var effectiveTimeoutMs = timeoutMs > 0
+            ? timeoutMs
+            : typed ? 4000 + Mathf.CeilToInt(requestedText.Length * minCharIntervalMs * 2f) : 4000;
+
+        TextEntryRequest request;
+        try
+        {
+            request = RimBridgeMainThread.Invoke(() => QueueTextEntry(targetId, requestedText, typed, minCharIntervalMs, effectiveJitterPercent, clearFirst, controlName), timeoutMs: 5000);
+        }
+        catch (Exception ex)
+        {
+            return CreateTextEntryFailure(targetId, requestedText, normalizedMode, ex.Message);
+        }
+
+        if (!request.Completion.Task.Wait(effectiveTimeoutMs))
+        {
+            RimBridgeMainThread.Invoke(() => CancelTextEntry(targetId), timeoutMs: 5000);
+            return CreateTextEntryFailure(targetId, requestedText, normalizedMode, $"Timed out waiting {effectiveTimeoutMs}ms for the text entry to complete. Last observed field value: '{request.ObservedValue ?? "<never drawn>"}'.");
+        }
+
+        var succeeded = request.Completion.Task.GetAwaiter().GetResult();
+        return new
+        {
+            success = succeeded,
+            command = "set_text_field",
+            targetId,
+            mode = normalizedMode,
+            requestedText,
+            finalValue = request.ObservedValue,
+            typedCharacters = request.TypedCount,
+            message = request.Message
+        };
+    }
+
+    private static readonly char[] TextEntryDisallowedCharacters = ['\n', '\r', '\t'];
+
+    private static object CreateTextEntryFailure(string targetId, string requestedText, string mode, string message)
+    {
+        return new
+        {
+            success = false,
+            command = "set_text_field",
+            targetId,
+            mode,
+            requestedText,
+            finalValue = (string)null,
+            typedCharacters = 0,
+            message
+        };
+    }
+
+    private static TextEntryRequest QueueTextEntry(string targetId, string text, bool typed, int minCharIntervalMs, int jitterPercent, bool clearFirst, string controlName)
+    {
+        lock (Sync)
+        {
+            if (_pendingText != null)
+                throw new InvalidOperationException("A text entry is already pending.");
+            if (_pendingClick != null)
+                throw new InvalidOperationException("Cannot enter text while a UI target click is pending.");
+            if (_pendingScroll != null)
+                throw new InvalidOperationException("Cannot enter text while a UI target scroll is pending.");
+            if (_pendingCapture != null)
+                throw new InvalidOperationException("Cannot enter text while a UI layout capture is pending.");
+
+            if (!UiLayoutTargetIds.TryParse(targetId, out var target) || target.Kind != UiLayoutTargetKind.Element)
+                throw new InvalidOperationException($"Target id '{targetId}' is not a UI element target id returned by rimworld/get_ui_layout.");
+
+            if (!TryResolveTarget(target, out var surface, out var element))
+                throw new InvalidOperationException($"UI layout target '{targetId}' is no longer available. Capture a fresh layout snapshot.");
+            if (element == null || !string.Equals(element.Kind, "text_field", StringComparison.Ordinal))
+                throw new InvalidOperationException($"UI layout target '{targetId}' is not a text_field target; rimworld/set_text_field only drives text fields.");
+            if (!string.Equals(element.Source, "widgets.text_field", StringComparison.Ordinal)
+                && !string.Equals(element.Source, "gui.text_field", StringComparison.Ordinal))
+                throw new InvalidOperationException($"UI layout target '{targetId}' is reported by {element.Source}, which rimworld/set_text_field cannot drive. A single-line labelled entry also reports its input box as a widgets.text_field element; target that one. Multi-line text areas are not supported.");
+
+            var request = new TextEntryRequest
+            {
+                TargetId = targetId,
+                SurfaceTargetId = surface.SurfaceTargetId,
+                ElementIndex = element.ElementIndex,
+                Kind = element.Kind,
+                Source = element.Source,
+                Rect = element.Rect,
+                Depth = element.Depth,
+                Text = text,
+                ControlName = string.IsNullOrWhiteSpace(controlName) ? null : controlName.Trim(),
+                Typed = typed,
+                ClearFirst = clearFirst,
+                MinCharIntervalMs = minCharIntervalMs,
+                JitterPercent = jitterPercent,
+                Phase = typed ? TextEntryPhase.FocusDown : TextEntryPhase.Instant,
+                LastMatchedFrame = Time.frameCount
+            };
+            _pendingText = request;
+            return request;
+        }
+    }
+
+    private static void CancelTextEntry(string targetId)
+    {
+        lock (Sync)
+        {
+            if (_pendingText == null || !string.Equals(_pendingText.TargetId, targetId, StringComparison.Ordinal))
+                return;
+
+            var request = _pendingText;
+            _pendingText = null;
+            request.Completion.TrySetCanceled();
+        }
+    }
+
+    private static bool ShouldDriveTextEntryForCurrentElement(LiveSurfaceState surface, string source, Rect rect)
+    {
+        if (_pendingText == null || _pendingText.Phase == TextEntryPhase.Done)
+            return false;
+        if (!string.Equals(_pendingText.SurfaceTargetId, surface.SurfaceTargetId, StringComparison.Ordinal))
+            return false;
+        if (!string.Equals(_pendingText.Source, source, StringComparison.Ordinal))
+            return false;
+
+        if (_pendingText.ElementIndex == surface.ElementIndex)
+            return true;
+
+        return _pendingText.Depth == surface.ContainerTargetIds.Count
+            && RectApproximatelyEquals(_pendingText.Rect, rect, 1f);
+    }
+
+    public static TextFieldPatchState BeginTextField(string source, Rect rect, string label, ref string text)
+    {
+        lock (Sync)
+        {
+            var surface = GetCurrentSurface();
+            if (surface == null || !surface.TrackingEnabled)
+                return null;
+            if (surface.CompoundDepth > 0)
+                return null;
+
+            RegisterElement(surface, "text_field", source, rect, label, text, actionable: false, checkedState: null, disabled: null);
+
+            if (!ShouldDriveTextEntryForCurrentElement(surface, source, rect))
+                return null;
+
+            var request = _pendingText;
+            request.LastMatchedFrame = Time.frameCount;
+            if (!request.OriginalValueKnown)
+            {
+                request.OriginalValue = text ?? string.Empty;
+                request.OriginalValueKnown = true;
+            }
+
+            if (request.PhaseInjectedFrame == Time.frameCount)
+                return null;
+
+            // Never hijack a real Layout pass for event injection: IMGUI
+            // assigns control ids differently under Layout, so a focus grab
+            // or keystroke delivered there can bind to an id the Repaint
+            // passes will not recognise.
+            if (request.Phase != TextEntryPhase.Instant && Event.current?.type == EventType.Layout)
+                return null;
+
+            switch (request.Phase)
+            {
+                case TextEntryPhase.Instant:
+                {
+                    text = request.Text;
+                    request.PhaseInjectedFrame = Time.frameCount;
+                    return new TextFieldPatchState
+                    {
+                        OwnsInjection = true,
+                        PhaseAtInjection = TextEntryPhase.Instant,
+                        ExpectedValue = request.Text
+                    };
+                }
+
+                case TextEntryPhase.FocusDown:
+                case TextEntryPhase.FocusUp:
+                {
+                    if (request.ControlName != null)
+                    {
+                        // Named controls get RimWorld's own programmatic focus
+                        // path: id-safe, and the owning mod's focused-control
+                        // checks keep working because the name is its own.
+                        GUI.FocusControl(request.ControlName);
+                        request.PhaseInjectedFrame = Time.frameCount;
+                        return new TextFieldPatchState
+                        {
+                            OwnsInjection = true,
+                            PhaseAtInjection = request.Phase
+                        };
+                    }
+
+                    // Unnamed fields are focused by control id rather than a
+                    // synthetic click: the DoTextField prefix hands this draw's
+                    // id to GUIUtility.keyboardControl, and Unity's own
+                    // DetectFocusChange then runs the field's OnFocus.
+                    _focusNextTextField = true;
+                    request.PhaseInjectedFrame = Time.frameCount;
+                    return new TextFieldPatchState
+                    {
+                        OwnsInjection = true,
+                        PhaseAtInjection = request.Phase
+                    };
+                }
+
+                case TextEntryPhase.SelectAll:
+                {
+                    if (FocusHeld(request)
+                        && GUIUtility.GetStateObject(typeof(TextEditor), GUIUtility.keyboardControl) is TextEditor editor)
+                    {
+                        if (request.ClearFirst)
+                            editor.SelectAll();
+                        else
+                            editor.MoveTextEnd();
+                    }
+
+                    request.Phase = TextEntryPhase.TypeChar;
+                    request.NextCharAtTicks = Environment.TickCount;
+                    goto case TextEntryPhase.TypeChar;
+                }
+
+                case TextEntryPhase.TypeChar:
+                {
+                    if (request.TypedCount >= request.Text.Length)
+                        return null;
+                    if (unchecked(Environment.TickCount - request.NextCharAtTicks) < 0)
+                        return null;
+                    if (!FocusHeld(request))
+                        return null;
+
+                    var currentEvent = Event.current;
+                    var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent);
+                    injectedEvent.type = EventType.KeyDown;
+                    injectedEvent.keyCode = KeyCode.None;
+                    injectedEvent.character = request.Text[request.TypedCount];
+                    injectedEvent.modifiers = EventModifiers.None;
+                    request.PhaseInjectedFrame = Time.frameCount;
+                    var expectedPrefix = request.Text.Substring(0, request.TypedCount + 1);
+                    var state = new TextFieldPatchState
+                    {
+                        OwnsInjection = true,
+                        PhaseAtInjection = TextEntryPhase.TypeChar,
+                        EventOverridden = true,
+                        PreviousEvent = currentEvent,
+                        ExpectedValue = request.ClearFirst ? expectedPrefix : request.OriginalValue + expectedPrefix
+                    };
+                    Event.current = injectedEvent;
+                    return state;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    public static void EndTextField(TextFieldPatchState state, ref string result)
+    {
+        if (state == null)
+            return;
+
+        if (state.EventOverridden)
+            Event.current = state.PreviousEvent;
+
+        if (!state.OwnsInjection)
+            return;
+
+        _focusNextTextField = false;
+
+        TextEntryRequest failed = null;
+        lock (Sync)
+        {
+            var request = _pendingText;
+            if (request == null)
+                return;
+
+            var previousObserved = request.ObservedValue;
+            request.ObservedValue = result;
+
+            switch (state.PhaseAtInjection)
+            {
+                case TextEntryPhase.FocusDown:
+                case TextEntryPhase.FocusUp:
+                    if (GUIUtility.keyboardControl != 0
+                        && (request.ControlName == null
+                            || string.Equals(GUI.GetNameOfFocusedControl(), request.ControlName, StringComparison.Ordinal)))
+                        request.CapturedKeyboardControl = GUIUtility.keyboardControl;
+                    break;
+
+                case TextEntryPhase.Instant:
+                    if (string.Equals(result, state.ExpectedValue, StringComparison.Ordinal))
+                    {
+                        request.Phase = TextEntryPhase.Done;
+                        request.Message = GUIUtility.keyboardControl == 0
+                            ? "Replaced the text field value through the live widget path."
+                            : "Replaced the text field value through the live widget path. A control currently holds keyboard focus; focused fields can override instant values on the next frame.";
+                    }
+                    else
+                    {
+                        request.RetryStrikes++;
+                        if (request.RetryStrikes >= 3)
+                        {
+                            request.Message = $"The text field did not accept the instant value; it reports '{result}'. The field may be validated or focus-held.";
+                            failed = request;
+                            _pendingText = null;
+                        }
+                    }
+                    break;
+
+                case TextEntryPhase.TypeChar:
+                    if (string.Equals(result, state.ExpectedValue, StringComparison.Ordinal))
+                    {
+                        request.TypedCount++;
+                        request.RetryStrikes = 0;
+                        request.NextCharAtTicks = unchecked(Environment.TickCount + NextCharDelayMs(request));
+                        if (request.TypedCount >= request.Text.Length)
+                        {
+                            request.Phase = TextEntryPhase.Done;
+                            request.Message = $"Typed {request.TypedCount} characters into the text field through the live widget path.";
+                        }
+                    }
+                    else if (!string.Equals(result, previousObserved, StringComparison.Ordinal))
+                    {
+                        request.Message = $"The text field transformed the input unexpectedly at character {request.TypedCount}; it reports '{result}' where '{state.ExpectedValue}' was expected. The field may normalize or validate its content.";
+                        failed = request;
+                        _pendingText = null;
+                    }
+                    else
+                    {
+                        request.RetryStrikes++;
+                        if (request.RetryStrikes >= 3)
+                        {
+                            request.Message = $"The text field rejected character '{request.Text[request.TypedCount]}' at position {request.TypedCount}; it reports '{result}'. The field may be validated against a pattern or length limit.";
+                            failed = request;
+                            _pendingText = null;
+                        }
+                    }
+                    break;
+            }
+        }
+
+        failed?.Completion.TrySetResult(false);
+    }
+
+    private static bool FocusHeld(TextEntryRequest request)
+    {
+        if (GUIUtility.keyboardControl == 0)
+            return false;
+        if (request.ControlName != null)
+            return string.Equals(GUI.GetNameOfFocusedControl(), request.ControlName, StringComparison.Ordinal);
+
+        return GUIUtility.keyboardControl == request.CapturedKeyboardControl;
+    }
+
+    public static void FocusPendingTextField(int controlId)
+    {
+        if (!_focusNextTextField)
+            return;
+
+        _focusNextTextField = false;
+        GUIUtility.keyboardControl = controlId;
+    }
+
+    private static int NextCharDelayMs(TextEntryRequest request)
+    {
+        var baseMs = request.MinCharIntervalMs;
+        if (request.JitterPercent <= 0)
+            return baseMs;
+
+        var spread = baseMs * request.JitterPercent / 100;
+        return Math.Max(15, baseMs - spread + request.Jitter.Next(spread * 2 + 1));
     }
 
     public static object ScrollUiTargetResponse(
@@ -587,6 +1062,8 @@ internal static class RimBridgeUiWorkbench
         CaptureRequest completedCapture = null;
         ClickRequest completedClick = null;
         ScrollRequest completedScroll = null;
+        TextEntryRequest completedText = null;
+        TextEntryRequest failedText = null;
 
         lock (Sync)
         {
@@ -628,11 +1105,65 @@ internal static class RimBridgeUiWorkbench
                 completedScroll = _pendingScroll;
                 _pendingScroll = null;
             }
+
+            _focusNextTextField = false;
+            if (_pendingText != null)
+            {
+                var textRequest = _pendingText;
+                if (textRequest.Phase == TextEntryPhase.Done
+                    && textRequest.PhaseInjectedFrame >= 0
+                    && frameCount > textRequest.PhaseInjectedFrame)
+                {
+                    completedText = textRequest;
+                    _pendingText = null;
+                }
+                else if (textRequest.PhaseInjectedFrame >= 0 && frameCount > textRequest.PhaseInjectedFrame)
+                {
+                    if (textRequest.Phase == TextEntryPhase.FocusDown)
+                    {
+                        textRequest.Phase = TextEntryPhase.FocusUp;
+                        textRequest.PhaseInjectedFrame = -1;
+                    }
+                    else if (textRequest.Phase == TextEntryPhase.FocusUp)
+                    {
+                        if (textRequest.CapturedKeyboardControl != 0)
+                        {
+                            textRequest.Phase = TextEntryPhase.SelectAll;
+                        }
+                        else
+                        {
+                            textRequest.RetryStrikes++;
+                            textRequest.Phase = TextEntryPhase.FocusDown;
+                            if (textRequest.RetryStrikes >= 6)
+                            {
+                                textRequest.Message = "The text field did not take keyboard focus.";
+                                failedText = textRequest;
+                                _pendingText = null;
+                            }
+                        }
+
+                        textRequest.PhaseInjectedFrame = -1;
+                    }
+                    else
+                    {
+                        textRequest.PhaseInjectedFrame = -1;
+                    }
+                }
+
+                if (_pendingText != null && textRequest.LastMatchedFrame >= 0 && frameCount - textRequest.LastMatchedFrame > 240)
+                {
+                    textRequest.Message = "The target text field stopped drawing before the text entry completed.";
+                    failedText = textRequest;
+                    _pendingText = null;
+                }
+            }
         }
 
         completedCapture?.Completion.TrySetResult(completedCapture.Snapshot);
         completedClick?.Completion.TrySetResult(false);
         completedScroll?.Completion.TrySetResult(true);
+        completedText?.Completion.TrySetResult(true);
+        failedText?.Completion.TrySetResult(false);
     }
 
     public static void BeginSurface(Window window)
@@ -732,7 +1263,8 @@ internal static class RimBridgeUiWorkbench
             var click = _pendingClick;
             var scroll = _pendingScroll;
             var hover = _hoveredElement;
-            if (capture == null && click == null && scroll == null && hover == null)
+            var text = _pendingText;
+            if (capture == null && click == null && scroll == null && hover == null && text == null)
             {
                 SurfaceStack.Push(null);
                 return;
@@ -744,7 +1276,8 @@ internal static class RimBridgeUiWorkbench
             var shouldTrackForClick = click != null && string.Equals(click.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
             var shouldTrackForScroll = scroll != null && string.Equals(scroll.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
             var shouldTrackForHover = hover != null && string.Equals(hover.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
-            if (!shouldCapture && !shouldTrackForClick && !shouldTrackForScroll && !shouldTrackForHover)
+            var shouldTrackForText = text != null && string.Equals(text.SurfaceTargetId, descriptor.SurfaceTargetId, StringComparison.Ordinal);
+            if (!shouldCapture && !shouldTrackForClick && !shouldTrackForScroll && !shouldTrackForHover && !shouldTrackForText)
             {
                 SurfaceStack.Push(null);
                 return;
@@ -1220,6 +1753,8 @@ internal static class RimBridgeUiWorkbench
                 throw new InvalidOperationException("Cannot start a UI layout capture while a UI target click is pending.");
             if (_pendingScroll != null)
                 throw new InvalidOperationException("Cannot start a UI layout capture while a UI target scroll is pending.");
+            if (_pendingText != null)
+                throw new InvalidOperationException("Cannot start a UI layout capture while a text entry is pending.");
 
             var captureId = _nextCaptureId++;
             var request = new CaptureRequest
@@ -1257,6 +1792,8 @@ internal static class RimBridgeUiWorkbench
                 throw new InvalidOperationException("A UI target click is already pending.");
             if (_pendingScroll != null)
                 throw new InvalidOperationException("Cannot click a UI target while a UI target scroll is pending.");
+            if (_pendingText != null)
+                throw new InvalidOperationException("Cannot click a UI target while a text entry is pending.");
 
             if (!UiLayoutTargetIds.TryParse(targetId, out var target) || target.Kind != UiLayoutTargetKind.Element)
                 throw new InvalidOperationException($"Target id '{targetId}' is not a UI element target id returned by rimworld/get_ui_layout.");
@@ -1293,6 +1830,8 @@ internal static class RimBridgeUiWorkbench
                 throw new InvalidOperationException("A UI target scroll is already pending.");
             if (_pendingClick != null)
                 throw new InvalidOperationException("Cannot scroll a UI target while a UI target click is pending.");
+            if (_pendingText != null)
+                throw new InvalidOperationException("Cannot scroll a UI target while a text entry is pending.");
 
             if (!UiLayoutTargetIds.TryParse(targetId, out var target) || target.Kind != UiLayoutTargetKind.Element)
                 throw new InvalidOperationException($"Target id '{targetId}' is not a UI element target id returned by rimworld/get_ui_layout.");
@@ -2176,18 +2715,28 @@ internal static class Widgets_Label_TaggedString_UiWorkbench_Patch
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.TextField), new[] { typeof(Rect), typeof(string) })]
 internal static class Widgets_TextField_UiWorkbench_Patch
 {
-    public static void Prefix(Rect rect, string text)
+    public static void Prefix(Rect rect, ref string text, ref RimBridgeUiWorkbench.TextFieldPatchState __state)
     {
-        RimBridgeUiWorkbench.RegisterPassiveElement("text_field", "widgets.text_field", rect, valueText: text);
+        __state = RimBridgeUiWorkbench.BeginTextField("widgets.text_field", rect, null, ref text);
+    }
+
+    public static void Postfix(ref string __result, RimBridgeUiWorkbench.TextFieldPatchState __state)
+    {
+        RimBridgeUiWorkbench.EndTextField(__state, ref __result);
     }
 }
 
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.TextField), new[] { typeof(Rect), typeof(string), typeof(int), typeof(Regex) })]
 internal static class Widgets_TextField_Validated_UiWorkbench_Patch
 {
-    public static void Prefix(Rect rect, string text)
+    public static void Prefix(Rect rect, ref string text, ref RimBridgeUiWorkbench.TextFieldPatchState __state)
     {
-        RimBridgeUiWorkbench.RegisterPassiveElement("text_field", "widgets.text_field", rect, valueText: text);
+        __state = RimBridgeUiWorkbench.BeginTextField("widgets.text_field", rect, null, ref text);
+    }
+
+    public static void Postfix(ref string __result, RimBridgeUiWorkbench.TextFieldPatchState __state)
+    {
+        RimBridgeUiWorkbench.EndTextField(__state, ref __result);
     }
 }
 
@@ -2239,18 +2788,37 @@ internal static class Gui_Label_ContentStyle_UiWorkbench_Patch
 [HarmonyPatch(typeof(GUI), nameof(GUI.TextField), new[] { typeof(Rect), typeof(string) })]
 internal static class Gui_TextField_UiWorkbench_Patch
 {
-    public static void Prefix(Rect position, string text)
+    public static void Prefix(Rect position, ref string text, ref RimBridgeUiWorkbench.TextFieldPatchState __state)
     {
-        RimBridgeUiWorkbench.RegisterPassiveElement("text_field", "gui.text_field", position, valueText: text);
+        __state = RimBridgeUiWorkbench.BeginTextField("gui.text_field", position, null, ref text);
+    }
+
+    public static void Postfix(ref string __result, RimBridgeUiWorkbench.TextFieldPatchState __state)
+    {
+        RimBridgeUiWorkbench.EndTextField(__state, ref __result);
     }
 }
 
 [HarmonyPatch(typeof(GUI), nameof(GUI.TextField), new[] { typeof(Rect), typeof(string), typeof(int) })]
 internal static class Gui_TextField_Limited_UiWorkbench_Patch
 {
-    public static void Prefix(Rect position, string text)
+    public static void Prefix(Rect position, ref string text, ref RimBridgeUiWorkbench.TextFieldPatchState __state)
     {
-        RimBridgeUiWorkbench.RegisterPassiveElement("text_field", "gui.text_field", position, valueText: text);
+        __state = RimBridgeUiWorkbench.BeginTextField("gui.text_field", position, null, ref text);
+    }
+
+    public static void Postfix(ref string __result, RimBridgeUiWorkbench.TextFieldPatchState __state)
+    {
+        RimBridgeUiWorkbench.EndTextField(__state, ref __result);
+    }
+}
+
+[HarmonyPatch(typeof(GUI), "DoTextField", new[] { typeof(Rect), typeof(int), typeof(GUIContent), typeof(bool), typeof(int), typeof(GUIStyle), typeof(string), typeof(char) })]
+internal static class Gui_DoTextField_UiWorkbench_Patch
+{
+    public static void Prefix(int id)
+    {
+        RimBridgeUiWorkbench.FocusPendingTextField(id);
     }
 }
 
