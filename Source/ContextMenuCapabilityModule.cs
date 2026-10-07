@@ -238,14 +238,9 @@ internal sealed class ContextMenuCapabilityModule
 
     public object GetContextMenuOptions()
     {
-        var snapshot = RimBridgeContextMenus.Current;
-        if (snapshot == null || snapshot.Menu == null)
-            return new { success = false, message = "No debug context menu has been opened yet." };
-        if (Find.WindowStack.FloatMenu != snapshot.Menu)
-        {
-            RimBridgeContextMenus.Clear();
-            return new { success = false, message = "No debug context menu has been opened yet." };
-        }
+        var snapshot = RimBridgeContextMenus.ResolveOpenMenu();
+        if (snapshot == null)
+            return new { success = false, message = "No context menu or pop-up option menu is open." };
 
         return new
         {
@@ -253,7 +248,7 @@ internal sealed class ContextMenuCapabilityModule
             menuId = snapshot.Id,
             provider = snapshot.Provider,
             target = snapshot.TargetLabel,
-            clickCell = new { x = snapshot.ClickCell.x, z = snapshot.ClickCell.z },
+            clickCell = snapshot.ClickCell.IsValid ? new { x = snapshot.ClickCell.x, z = snapshot.ClickCell.z } : null,
             optionCount = snapshot.Options.Count,
             options = DescribeOptions(snapshot.Options)
         };
@@ -319,7 +314,7 @@ internal sealed class ContextMenuCapabilityModule
 
             var selectedPawns = Find.Selector.SelectedPawns.ToList();
             if (requireSelectedPawns && selectedPawns.Count == 0)
-                return new PreparedMapClick { Success = false, Failure = new { success = false, message = "No pawns are currently selected." } };
+                return new PreparedMapClick { Success = false, Failure = new { success = false, message = "No pawns are currently selected. This tool issues orders for the selected pawns; for a plain right-click on the map use rimworld/click_cell with button \"right\"." } };
 
             var map = RimWorldState.CurrentMapOrThrow();
             if (!TryResolveMapClickTarget(map, targetPawnName, targetPawnId, x, z, out var target, out var failure))

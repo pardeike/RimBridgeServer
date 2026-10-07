@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `125` tools total
+- `126` tools total
 - `18` `rimbridge/*` tools
-- `107` `rimworld/*` tools
+- `108` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -440,6 +440,8 @@ List Architect designators for one category, flattening dropdown widgets into ac
 Parameters:
 - `categoryId` (`string`, `required`): Stable category id from rimworld/list_architect_categories or the raw category defName
 - `includeHidden` (`bool`, `optional`, default `false`): Include designators that are currently hidden
+- `includeDetails` (`bool`, `optional`, default `false`): Return full designator metadata and the designator selection state; the default compact entries carry id, label, buildable, footprint size, rotation and material support
+- `offset` (`int`, `optional`, default `0`): Zero-based designator offset for paging; large categories return page.nextOffset when the response size budget is reached
 
 ### `rimworld/select_architect_designator`
 
@@ -450,7 +452,7 @@ Parameters:
 
 ### `rimworld/apply_architect_designator`
 
-Apply an Architect designator to one cell or a rectangle, with optional dry-run validation
+Apply an Architect designator to one cell or a rectangle, with optional dry-run validation, material and rotation; zone designators create a new zone unless rimworld/set_zone_target chose an existing one
 
 Parameters:
 - `designatorId` (`string`, `required`): Stable designator id returned by rimworld/list_architect_designators
@@ -460,6 +462,8 @@ Parameters:
 - `height` (`int`, `optional`, default `1`): Rectangle height in cells starting at x/z
 - `dryRun` (`bool`, `optional`, default `false`): Validate placement without mutating the map
 - `keepSelected` (`bool`, `optional`, default `true`): Keep the designator selected after the call completes
+- `stuffDefName` (`string`, `optional`, default `null`): Optional material defName for build designators of things made from stuff, such as BlocksGranite, Steel or WoodLog; the error lists allowed materials
+- `rotation` (`string`, `optional`, default `null`): Optional placement rotation for build designators: north, east, south or west
 
 ### `rimworld/list_zones`
 
@@ -520,6 +524,13 @@ Delete an existing zone by id
 
 Parameters:
 - `zoneId` (`string`, `required`): Zone id from rimworld/list_zones
+
+### `rimworld/list_plans`
+
+List current-map plans (the planning marks players draw to outline intended building areas) with id, label, color, cell count, bounding rectangle and shape
+
+Parameters:
+- `includeCells` (`bool`, `optional`, default `false`): Include every plan cell; bounds and shape are usually enough
 
 ### `rimworld/get_cell_info`
 
@@ -1076,13 +1087,13 @@ Parameters:
 
 ### `rimworld/get_context_menu_options`
 
-Get the currently opened debug context menu options
+Get the options of the open context menu: one opened by a bridge map click, or any pop-up option menu RimWorld itself opened, such as gizmo, crop or material pickers
 
 Parameters: none.
 
 ### `rimworld/execute_context_menu_option`
 
-Execute a context menu option by index or label
+Execute an option of the open context menu or pop-up option menu by index or label
 
 Parameters:
 - `optionIndex` (`int`, `optional`, default `-1`): 1-based option index. Use -1 to resolve by label instead.

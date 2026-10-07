@@ -17,9 +17,9 @@ internal sealed class ArchitectCapabilityModule
         return RimWorldArchitect.ListArchitectCategoriesResponse(includeHidden, includeEmpty);
     }
 
-    public object ListArchitectDesignators(string categoryId, bool includeHidden = false)
+    public object ListArchitectDesignators(string categoryId, bool includeHidden = false, bool includeDetails = false, int offset = 0)
     {
-        return RimWorldArchitect.ListArchitectDesignatorsResponse(categoryId, includeHidden);
+        return RimWorldArchitect.ListArchitectDesignatorsResponse(categoryId, includeHidden, includeDetails, offset);
     }
 
     public object SelectArchitectDesignator(string designatorId)
@@ -27,9 +27,9 @@ internal sealed class ArchitectCapabilityModule
         return RimWorldArchitect.SelectArchitectDesignatorResponse(designatorId);
     }
 
-    public object ApplyArchitectDesignator(string designatorId, int x, int z, int width = 1, int height = 1, bool dryRun = false, bool keepSelected = true)
+    public object ApplyArchitectDesignator(string designatorId, int x, int z, int width = 1, int height = 1, bool dryRun = false, bool keepSelected = true, string stuffDefName = null, string rotation = null)
     {
-        return RimWorldArchitect.ApplyArchitectDesignatorResponse(designatorId, x, z, width, height, dryRun, keepSelected);
+        return RimWorldArchitect.ApplyArchitectDesignatorResponse(designatorId, x, z, width, height, dryRun, keepSelected, stuffDefName, rotation);
     }
 
     public object ListZones(bool includeHidden = false, bool includeEmpty = false)
@@ -70,6 +70,11 @@ internal sealed class ArchitectCapabilityModule
     public object DeleteZone(string zoneId)
     {
         return RimWorldArchitect.DeleteZoneResponse(zoneId);
+    }
+
+    public object ListPlans(bool includeCells = false)
+    {
+        return RimWorldArchitect.ListPlansResponse(includeCells);
     }
 
     public object GetCellInfo(int x, int z)

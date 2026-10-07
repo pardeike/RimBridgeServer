@@ -477,9 +477,11 @@ public class RimBridgeTools
     [Tool("rimworld/list_architect_designators", Description = "List Architect designators for one category, flattening dropdown widgets into actionable child designators")]
     public object ListArchitectDesignators(
         [ToolParameter(Description = "Stable category id from rimworld/list_architect_categories or the raw category defName")] string categoryId,
-        [ToolParameter(Description = "Include designators that are currently hidden")] bool includeHidden = false)
+        [ToolParameter(Description = "Include designators that are currently hidden")] bool includeHidden = false,
+        [ToolParameter(Description = "Return full designator metadata and the designator selection state; the default compact entries carry id, label, buildable, footprint size, rotation and material support")] bool includeDetails = false,
+        [ToolParameter(Description = "Zero-based designator offset for paging; large categories return page.nextOffset when the response size budget is reached")] int offset = 0)
     {
-        return InvokeAlias(Arguments((nameof(categoryId), categoryId), (nameof(includeHidden), includeHidden)));
+        return InvokeAlias(Arguments((nameof(categoryId), categoryId), (nameof(includeHidden), includeHidden), (nameof(includeDetails), includeDetails), (nameof(offset), offset)));
     }
 
     [ReadmeTool("Architect And Map State", "Select an Architect designator by stable id without relying on foreground UI interaction")]
@@ -489,8 +491,8 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(designatorId), designatorId)));
     }
 
-    [ReadmeTool("Architect And Map State", "Apply an Architect designator to one cell or a rectangle, with optional dry-run validation")]
-    [Tool("rimworld/apply_architect_designator", Description = "Apply an Architect designator to one cell or a rectangle, with optional dry-run validation")]
+    [ReadmeTool("Architect And Map State", "Apply an Architect designator to one cell or a rectangle, with optional dry-run validation, material and rotation; zone designators create a new zone unless rimworld/set_zone_target chose an existing one")]
+    [Tool("rimworld/apply_architect_designator", Description = "Apply an Architect designator to one cell or a rectangle, with optional dry-run validation, material and rotation; zone designators create a new zone unless rimworld/set_zone_target chose an existing one")]
     public object ApplyArchitectDesignator(
         [ToolParameter(Description = "Stable designator id returned by rimworld/list_architect_designators")] string designatorId,
         [ToolParameter(Description = "Target cell x coordinate")] int x,
@@ -498,9 +500,11 @@ public class RimBridgeTools
         [ToolParameter(Description = "Rectangle width in cells starting at x/z")] int width = 1,
         [ToolParameter(Description = "Rectangle height in cells starting at x/z")] int height = 1,
         [ToolParameter(Description = "Validate placement without mutating the map")] bool dryRun = false,
-        [ToolParameter(Description = "Keep the designator selected after the call completes")] bool keepSelected = true)
+        [ToolParameter(Description = "Keep the designator selected after the call completes")] bool keepSelected = true,
+        [ToolParameter(Description = "Optional material defName for build designators of things made from stuff, such as BlocksGranite, Steel or WoodLog; the error lists allowed materials")] string stuffDefName = null,
+        [ToolParameter(Description = "Optional placement rotation for build designators: north, east, south or west")] string rotation = null)
     {
-        return InvokeAlias(Arguments((nameof(designatorId), designatorId), (nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(dryRun), dryRun), (nameof(keepSelected), keepSelected)));
+        return InvokeAlias(Arguments((nameof(designatorId), designatorId), (nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(dryRun), dryRun), (nameof(keepSelected), keepSelected), (nameof(stuffDefName), stuffDefName), (nameof(rotation), rotation)));
     }
 
     [ReadmeTool("Architect And Map State", "List current-map zones such as stockpiles and growing zones")]
@@ -565,6 +569,14 @@ public class RimBridgeTools
     public object DeleteZone([ToolParameter(Description = "Zone id from rimworld/list_zones")] string zoneId)
     {
         return InvokeAlias(Arguments((nameof(zoneId), zoneId)));
+    }
+
+    [ReadmeTool("Architect And Map State", "List current-map plans (the planning marks players draw to outline intended building areas) with bounds and shape")]
+    [Tool("rimworld/list_plans", Description = "List current-map plans (the planning marks players draw to outline intended building areas) with id, label, color, cell count, bounding rectangle and shape")]
+    public object ListPlans(
+        [ToolParameter(Description = "Include every plan cell; bounds and shape are usually enough")] bool includeCells = false)
+    {
+        return InvokeAlias(Arguments((nameof(includeCells), includeCells)));
     }
 
     [ReadmeTool("Architect And Map State", "Inspect one map cell, including things, blueprints, frames, designations, zones, and areas")]
@@ -1196,15 +1208,15 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(fromX), fromX), (nameof(fromZ), fromZ), (nameof(toX), toX), (nameof(toZ), toZ), (nameof(button), button), (nameof(holdDurationMs), holdDurationMs), (nameof(modifiers), modifiers)));
     }
 
-    [ReadmeTool("Context Menus And Map Interaction", "Get the currently opened debug context menu options")]
-    [Tool("rimworld/get_context_menu_options", Description = "Get the currently opened debug context menu options")]
+    [ReadmeTool("Context Menus And Map Interaction", "Get the options of the open context menu: one opened by a bridge map click, or any pop-up option menu RimWorld itself opened, such as gizmo, crop or material pickers")]
+    [Tool("rimworld/get_context_menu_options", Description = "Get the options of the open context menu: one opened by a bridge map click, or any pop-up option menu RimWorld itself opened, such as gizmo, crop or material pickers")]
     public object GetContextMenuOptions()
     {
         return InvokeAlias();
     }
 
-    [ReadmeTool("Context Menus And Map Interaction", "Execute a context menu option by index or label")]
-    [Tool("rimworld/execute_context_menu_option", Description = "Execute a context menu option by index or label")]
+    [ReadmeTool("Context Menus And Map Interaction", "Execute an option of the open context menu or pop-up option menu by index or label")]
+    [Tool("rimworld/execute_context_menu_option", Description = "Execute an option of the open context menu or pop-up option menu by index or label")]
     public object ExecuteContextMenuOption(
         [ToolParameter(Description = "1-based option index. Use -1 to resolve by label instead.")] int optionIndex = -1,
         [ToolParameter(Description = "Exact or partial menu label to execute when optionIndex is -1")] string label = null)

@@ -191,17 +191,26 @@ internal static class RimWorldSelectionSemantics
 
         var selectedObjectsAfter = GetSelectedObjects();
         var selectionFingerprintAfter = CreateSelectionFingerprint(selectedObjectsAfter);
+        var openedMenu = RimBridgeContextMenus.AdoptOpenMenu("gizmo");
+        var uiAfter = RimWorldInput.GetUiState();
+        var selectionChanged = string.Equals(selectionFingerprintBefore, selectionFingerprintAfter, StringComparison.Ordinal) == false;
 
         return new
         {
             success = true,
             requestedGizmoId = gizmoId,
             gizmo = DescribeGroupedGizmo(target),
-            selectionBefore,
-            selectionAfter = DescribeSelectionSnapshot(selectedObjectsAfter, selectionFingerprintAfter, includeInspectDetails: false),
-            selectionChanged = string.Equals(selectionFingerprintBefore, selectionFingerprintAfter, StringComparison.Ordinal) == false,
-            uiBefore,
-            uiAfter = RimWorldInput.GetUiState()
+            selectionChanged,
+            selectionAfter = selectionChanged ? DescribeSelectionSnapshot(selectedObjectsAfter, selectionFingerprintAfter, includeInspectDetails: false) : null,
+            openedMenu = RimBridgeContextMenus.DescribeMenu(openedMenu),
+            ui = new
+            {
+                windowCount = uiAfter.WindowCount,
+                windowsOpened = uiAfter.WindowCount - uiBefore.WindowCount,
+                topWindowType = uiAfter.TopWindowType,
+                floatMenuOpen = uiAfter.FloatMenuOpen,
+                activeDebugTool = uiAfter.ActiveDebugTool
+            }
         };
     }
 
@@ -594,8 +603,8 @@ internal static class RimWorldSelectionSemantics
         if (selectedObject is not ISelectable selectable)
             return [];
 
-        return selectable
-            .GetInspectTabs()
+        // Things without inspect tabs (for example coolers) return null rather than an empty sequence.
+        return (selectable.GetInspectTabs() ?? Enumerable.Empty<InspectTabBase>())
             .Cast<object>()
             .Where(tab => tab != null)
             .Select(tab => tab.GetType().FullName)

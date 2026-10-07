@@ -34,6 +34,7 @@ internal static class AgentResponseShaper
         else if (shaped["state"] == null)
             shaped["state"] = CurrentState();
 
+        CompactNestedStates(shaped);
         Prune(shaped);
         return shaped;
     }
@@ -91,6 +92,49 @@ internal static class AgentResponseShaper
         {
         }
 
+        return compact;
+    }
+
+    // Lifecycle and script results embed full state snapshots in nested objects (load, wait, step results).
+    private static void CompactNestedStates(JToken token)
+    {
+        if (token is JObject obj)
+        {
+            foreach (var property in obj.Properties().ToList())
+            {
+                if (property.Name == "state" && property.Value is JObject nested && nested["programState"] != null && !ReferenceEquals(obj.Parent, null))
+                    property.Value = CompactNestedState(nested);
+                else
+                    CompactNestedStates(property.Value);
+            }
+        }
+        else if (token is JArray array)
+        {
+            foreach (var item in array)
+                CompactNestedStates(item);
+        }
+    }
+
+    private static JObject CompactNestedState(JObject state)
+    {
+        var compact = new JObject { ["program"] = state["programState"] };
+        if (state["currentMapId"] is JValue { Value: not null } map)
+            compact["map"] = map;
+        if (state.Value<bool?>("longEventPending") == true)
+            compact["longEventPending"] = true;
+        for (var index = 0; index < ReadinessLevels.Length; index++)
+        {
+            if (state.Value<bool?>(ReadinessLevels[index]) == true)
+            {
+                compact["ready"] = ReadinessNames[index];
+                break;
+            }
+        }
+
+        if (state["paused"] != null)
+            compact["paused"] = state["paused"];
+        if (state["timeSpeed"] != null)
+            compact["speed"] = state["timeSpeed"];
         return compact;
     }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using LudeonTK;
 using RimWorld;
 using RimBridgeServer.Core;
 using Verse;
@@ -87,6 +88,8 @@ internal sealed class UiStateSnapshot
     public string FocusedWindowType { get; set; }
 
     public string FocusedWindowTitle { get; set; }
+
+    public string ActiveDebugTool { get; set; }
 
     public string TopWindowType { get; set; }
 
@@ -201,6 +204,7 @@ internal static class RimWorldInput
             WindowCount = windows.Count,
             FocusedWindowType = focusedWindow?.GetType().FullName,
             FocusedWindowTitle = GetWindowTitle(focusedWindow),
+            ActiveDebugTool = DebugTools.curTool == null ? null : DebugTools.curTool.label ?? "debug tool",
             TopWindowType = topWindow?.Type,
             TopWindowTitle = topWindow?.Title,
             MainTabOpen = mainTab != null,
@@ -219,6 +223,16 @@ internal static class RimWorldInput
 
     public static UiCommandResult PressCancel()
     {
+        // An active debug tool (for example a rect tool waiting for its second corner) swallows map clicks, and
+        // Escape in the game ends it before anything else.
+        if (DebugTools.curTool != null)
+        {
+            var before = GetUiState();
+            var label = before.ActiveDebugTool;
+            DebugTools.curTool = null;
+            return BuildCommandResult("cancel", before, GetUiState(), $"Ended the active debug tool '{label}'.");
+        }
+
         return DispatchWindowCommand("cancel", stack => stack.Notify_PressedCancel());
     }
 
@@ -497,6 +511,7 @@ internal static class RimWorldInput
             || before.NonImmediateDialogWindowOpen != after.NonImmediateDialogWindowOpen
             || before.CurrentWindowGetsInput != after.CurrentWindowGetsInput
             || before.FocusedWindowType != after.FocusedWindowType
+            || before.ActiveDebugTool != after.ActiveDebugTool
             || before.MainTabOpen != after.MainTabOpen
             || before.OpenMainTabId != after.OpenMainTabId
             || openedWindowTypes.Count > 0
@@ -706,6 +721,7 @@ internal static class RimWorldInput
             windowCount = state.WindowCount,
             focusedWindowType = state.FocusedWindowType,
             focusedWindowTitle = state.FocusedWindowTitle,
+            activeDebugTool = state.ActiveDebugTool,
             topWindowType = state.TopWindowType,
             topWindowTitle = state.TopWindowTitle,
             mainTabOpen = state.MainTabOpen,

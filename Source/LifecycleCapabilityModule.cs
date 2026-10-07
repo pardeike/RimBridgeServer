@@ -760,7 +760,7 @@ internal sealed class LifecycleCapabilityModule
                 name = Path.GetFileNameWithoutExtension(save.File.Name),
                 lastWriteTimeUtc = save.File.LastWriteTimeUtc,
                 sizeBytes = save.File.Length,
-                compatibility = DescribeSaveCompatibility(save.Compatibility)
+                compatibility = DescribeSaveCompatibilityCompact(save.Compatibility)
             }, out var page);
         var compatibleCount = inspectedSaves.Count(save => save.Compatibility.Compatibility.IsCompatible);
         var missingModsCount = inspectedSaves.Count(save => save.Compatibility.Compatibility.Status == SaveModCompatibilityStatus.MissingMods);
@@ -789,14 +789,17 @@ internal sealed class LifecycleCapabilityModule
         if (!cell.InBounds(map))
             return new { success = false, message = $"Cell ({x}, {z}) is out of bounds for the current map." };
 
-        ThingDef thingDef;
-        try
+        // GetNamedSilentFail avoids RimWorld's error log entry (which opens the debug log window and raises a GABS
+        // attention item) and lets the bridge answer with close matches instead of a NullReferenceException later.
+        var thingDef = string.IsNullOrWhiteSpace(defName) ? null : DefDatabase<ThingDef>.GetNamedSilentFail(defName.Trim());
+        if (thingDef == null)
         {
-            thingDef = ThingDef.Named(defName);
-        }
-        catch (Exception ex)
-        {
-            return new { success = false, message = $"Could not resolve ThingDef '{defName}'.", exception = ex.Message };
+            return new
+            {
+                success = false,
+                message = $"No ThingDef named '{defName}'.",
+                suggestions = SuggestThingDefNames(defName)
+            };
         }
 
         var thing = ThingMaker.MakeThing(thingDef);
@@ -813,6 +816,23 @@ internal sealed class LifecycleCapabilityModule
             stackCount = spawned.stackCount,
             cell = new { x = cell.x, z = cell.z }
         };
+    }
+
+    private static List<string> SuggestThingDefNames(string query)
+    {
+        var needle = (query ?? string.Empty).Trim();
+        if (needle.Length == 0)
+            return [];
+
+        return DefDatabase<ThingDef>.AllDefsListForReading
+            .Where(def => def.defName.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0
+                || needle.IndexOf(def.defName, StringComparison.OrdinalIgnoreCase) >= 0
+                || (def.label != null && def.label.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0))
+            .OrderBy(def => Math.Abs(def.defName.Length - needle.Length))
+            .ThenBy(def => def.defName, StringComparer.Ordinal)
+            .Select(def => def.defName)
+            .Take(8)
+            .ToList();
     }
 
     public object SaveGame(string saveName)
@@ -1006,6 +1026,20 @@ internal sealed class LifecycleCapabilityModule
         return string.Equals(mod.Name, mod.PackageId, StringComparison.OrdinalIgnoreCase)
             ? mod.PackageId
             : $"{mod.Name} ({mod.PackageId})";
+    }
+
+    // Listing form: status only for compatible saves; missing mod names (bounded) when something is missing.
+    private static object DescribeSaveCompatibilityCompact(SaveCompatibilityInspection inspection)
+    {
+        var compatibility = inspection.Compatibility;
+        var missing = compatibility.MissingMods;
+        return new
+        {
+            status = DescribeSaveCompatibilityStatus(compatibility.Status),
+            missingModCount = missing.Count > 0 ? missing.Count : (int?)null,
+            missingMods = missing.Count > 0 ? missing.Select(mod => mod.Name ?? mod.PackageId).Take(10).ToList() : null,
+            metadataError = string.IsNullOrWhiteSpace(compatibility.MetadataError) ? null : compatibility.MetadataError
+        };
     }
 
     private static Dictionary<string, object> DescribeSaveCompatibility(SaveCompatibilityInspection inspection)

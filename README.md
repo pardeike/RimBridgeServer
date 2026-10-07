@@ -351,7 +351,7 @@ Playback default: RimBridgeServer enables RimWorld's private `TickManager.UltraS
 - `rimworld/list_architect_categories` - List RimWorld Architect categories using stable category ids
 - `rimworld/list_architect_designators` - List Architect designators for one category, flattening dropdown widgets into actionable child designators
 - `rimworld/select_architect_designator` - Select an Architect designator by stable id without relying on foreground UI interaction
-- `rimworld/apply_architect_designator` - Apply an Architect designator to one cell or a rectangle, with optional dry-run validation
+- `rimworld/apply_architect_designator` - Apply an Architect designator to one cell or a rectangle, with optional dry-run validation, material and rotation; zone designators create a new zone unless `rimworld/set_zone_target` chose an existing one
 - `rimworld/list_zones` - List current-map zones such as stockpiles and growing zones
 - `rimworld/list_areas` - List current-map areas such as home, roof, snow-clear, and allowed areas
 - `rimworld/create_allowed_area` - Create a new allowed area and optionally make it the selected allowed-area target
@@ -360,6 +360,7 @@ Playback default: RimBridgeServer enables RimWorld's private `TickManager.UltraS
 - `rimworld/clear_area` - Clear all cells from a mutable area such as a custom allowed area
 - `rimworld/delete_area` - Delete a mutable area such as a custom allowed area
 - `rimworld/delete_zone` - Delete an existing zone by id
+- `rimworld/list_plans` - List current-map plans (the planning marks players draw to outline intended building areas) with bounds and shape
 - `rimworld/get_cell_info` - Inspect one map cell, including things, blueprints, frames, designations, zones, and areas
 - `rimworld/get_cells_info` - Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas
 - `rimworld/find_random_cell_near` - Use RimWorld's expanding-radius random cell search to find a nearby cell or footprint that satisfies generic map criteria
@@ -440,8 +441,8 @@ Playback default: RimBridgeServer enables RimWorld's private `TickManager.UltraS
 - `rimworld/right_click_cell` - Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
 - `rimworld/click_cell` - Dispatch a live map click at a current-map cell without requiring OS focus, using left, right, or middle mouse button and reporting before/after selection
 - `rimworld/drag_cell` - Dispatch a literal live map mouse drag from one current-map cell to another without requiring OS focus, using left, right, or middle mouse button
-- `rimworld/get_context_menu_options` - Get the currently opened debug context menu options
-- `rimworld/execute_context_menu_option` - Execute a context menu option by index or label
+- `rimworld/get_context_menu_options` - Get the options of the open context menu: one opened by a bridge map click, or any pop-up option menu RimWorld itself opened, such as gizmo, crop or material pickers
+- `rimworld/execute_context_menu_option` - Execute an option of the open context menu or pop-up option menu by index or label
 - `rimworld/close_context_menu` - Close the currently opened debug context menu
 
 <!-- END GENERATED:tool-surface -->

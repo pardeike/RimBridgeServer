@@ -11,7 +11,7 @@ public sealed class CapabilityScriptDefinition
 
     public int MaxDurationMs { get; set; } = 60000;
 
-    public int MaxExecutedStatements { get; set; } = 1000;
+    public int MaxExecutedStatements { get; set; } = 10000;
 
     public int MaxControlDepth { get; set; } = 32;
 

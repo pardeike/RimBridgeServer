@@ -178,6 +178,7 @@ public sealed class CapabilityRegistry
                 ?? OperationEnvelope.Completed(operationId, descriptor.Id, requestedAtUtc, result: null);
 
             NormalizeEnvelope(envelope, operationId, descriptor.Id, requestedAtUtc);
+            AddUnknownArgumentWarning(envelope, descriptor, invocation.Arguments);
             _journal?.RecordCompleted(envelope);
             return envelope;
         }
@@ -200,6 +201,26 @@ public sealed class CapabilityRegistry
             _journal?.RecordCompleted(failed);
             return failed;
         }
+    }
+
+    // Callers (agents in particular) sometimes guess parameter names; unknown arguments are ignored by binding, so
+    // say so instead of letting the guess look accepted.
+    private static void AddUnknownArgumentWarning(OperationEnvelope envelope, CapabilityDescriptor descriptor, IDictionary<string, object> arguments)
+    {
+        if (envelope == null || arguments == null || arguments.Count == 0 || descriptor.Parameters == null)
+            return;
+
+        var known = new HashSet<string>(descriptor.Parameters.Select(parameter => parameter.Name), StringComparer.OrdinalIgnoreCase);
+        var unknown = arguments.Keys.Where(name => !known.Contains(name)).OrderBy(name => name, StringComparer.Ordinal).ToList();
+        if (unknown.Count == 0)
+            return;
+
+        envelope.Warnings ??= [];
+        envelope.Warnings.Add(new OperationWarning
+        {
+            Code = "arguments.unknown",
+            Message = $"Ignored unknown argument(s) {string.Join(", ", unknown)}. Valid parameters: {(known.Count == 0 ? "none" : string.Join(", ", descriptor.Parameters.Select(parameter => parameter.Name)))}."
+        });
     }
 
     private void Register(RimBridgeCapabilityRegistration registration)

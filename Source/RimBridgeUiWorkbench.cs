@@ -406,7 +406,12 @@ internal static class RimBridgeUiWorkbench
         }
 
         var activated = request.Completion.Task.GetAwaiter().GetResult();
-        var after = RimBridgeMainThread.Invoke(RimWorldInput.GetUiState, timeoutMs: 5000);
+        ContextMenuSnapshot openedMenu = null;
+        var after = RimBridgeMainThread.Invoke(() =>
+        {
+            openedMenu = RimBridgeContextMenus.AdoptOpenMenu("ui-click");
+            return RimWorldInput.GetUiState();
+        }, timeoutMs: 5000);
         if (!activated)
         {
             return new
@@ -421,7 +426,7 @@ internal static class RimBridgeUiWorkbench
             };
         }
 
-        return CreateClickResponse(targetId, before, after, request.Message);
+        return CreateClickResponse(targetId, before, after, request.Message, openedMenu);
     }
 
     public static object ScrollUiTargetResponse(
@@ -1963,7 +1968,7 @@ internal static class RimBridgeUiWorkbench
         };
     }
 
-    private static object CreateClickResponse(string targetId, UiStateSnapshot before, UiStateSnapshot after, string message)
+    private static object CreateClickResponse(string targetId, UiStateSnapshot before, UiStateSnapshot after, string message, ContextMenuSnapshot openedMenu = null)
     {
         var beforeIds = new HashSet<string>(before.Windows.Select(window => window.Type + "#" + window.Id), StringComparer.Ordinal);
         var afterIds = new HashSet<string>(after.Windows.Select(window => window.Type + "#" + window.Id), StringComparer.Ordinal);
@@ -1992,10 +1997,18 @@ internal static class RimBridgeUiWorkbench
             changed,
             message = changed ? message : message + " UI state did not change.",
             targetId,
-            before = RimWorldInput.DescribeUiState(before),
-            after = RimWorldInput.DescribeUiState(after),
+            after = new
+            {
+                windowCount = after.WindowCount,
+                topWindowType = after.TopWindowType,
+                focusedWindowType = after.FocusedWindowType,
+                floatMenuOpen = after.FloatMenuOpen,
+                openMainTabId = after.OpenMainTabId,
+                activeDebugTool = after.ActiveDebugTool
+            },
             openedWindowTypes,
-            closedWindowTypes
+            closedWindowTypes,
+            openedMenu = RimBridgeContextMenus.DescribeMenu(openedMenu)
         };
     }
 }

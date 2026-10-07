@@ -84,9 +84,27 @@ internal static class RimWorldDebugActions
         if (limit <= 0)
             limit = 50;
 
-        var allMatches = EnumerateDebugActionNodes(includeHidden)
-            .Select(node => TryCreateSearchMatch(node, normalizedQuery, supportedOnly, requiredTargetKind))
-            .Where(match => match != null)
+        // The full tree has about 90k nodes (generated spawn menus per def) and preparing all of it takes over a
+        // minute of main-thread time. Search breadth-first under a deadline: shallow actions are found at once,
+        // prepared subtrees stay cached, and a repeated search reaches deeper.
+        var deadline = System.Diagnostics.Stopwatch.StartNew();
+        var searchedNodeCount = 0;
+        var complete = true;
+        var allMatches = new List<DebugActionSearchMatch>();
+        foreach (var node in EnumerateDebugActionNodesBreadthFirst(includeHidden))
+        {
+            searchedNodeCount++;
+            var match = TryCreateSearchMatch(node, normalizedQuery, supportedOnly, requiredTargetKind);
+            if (match != null)
+                allMatches.Add(match);
+            if (deadline.ElapsedMilliseconds > SearchTimeBudgetMs)
+            {
+                complete = false;
+                break;
+            }
+        }
+
+        allMatches = allMatches
             .OrderByDescending(match => match.Score)
             .ThenBy(match => match.Path, StringComparer.Ordinal)
             .ToList();
@@ -113,6 +131,9 @@ internal static class RimWorldDebugActions
             matchCount = limitedMatches.Count,
             totalMatchCount,
             truncated = totalMatchCount > limitedMatches.Count,
+            searchComplete = complete,
+            searchedNodeCount,
+            searchHint = complete ? null : $"Searched the {searchedNodeCount} shallowest debug actions within {SearchTimeBudgetMs / 1000} s; deeper generated menus (per-def spawn lists) were not reached yet. Repeat the search to continue deeper, or prefer a more specific tool such as rimworld/spawn_thing.",
             page,
             matches
         };
@@ -460,6 +481,36 @@ internal static class RimWorldDebugActions
 
         PrepareNode(node);
         return true;
+    }
+
+    private const int SearchTimeBudgetMs = 5000;
+
+    private static IEnumerable<DebugActionNode> EnumerateDebugActionNodesBreadthFirst(bool includeHidden)
+    {
+        EnsureNodeGraph();
+
+        var seenPaths = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<DebugActionNode>(Dialog_Debug.roots?
+            .Where(entry => entry.Value != null)
+            .Select(entry => entry.Value) ?? []);
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            PrepareNode(node);
+
+            var path = node.Path?.Trim();
+            if (!string.IsNullOrWhiteSpace(path) && (includeHidden || node.VisibleNow) && seenPaths.Add(path))
+                yield return node;
+
+            if (node.children == null)
+                continue;
+
+            foreach (var child in node.children)
+            {
+                if (child != null)
+                    queue.Enqueue(child);
+            }
+        }
     }
 
     private static void EnsureNodeGraph()

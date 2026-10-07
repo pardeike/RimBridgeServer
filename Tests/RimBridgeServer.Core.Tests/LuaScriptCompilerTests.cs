@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -90,6 +91,72 @@ public class LuaScriptCompilerTests
         Assert.Equal("count", report.Output[0].Message);
         Assert.Equal(0, report.Output[0].Value);
         Assert.Empty(report.Steps);
+    }
+
+    [Fact]
+    public void AcceptsEmptyTableAsCallArguments()
+    {
+        var definition = new LuaScriptCompiler().Compile("""
+            rb.call("test/echo", {})
+            return 1
+            """);
+
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new LuaScriptTestProvider());
+        var report = new CapabilityScriptRunner(registry).Execute(definition);
+
+        Assert.True(report.Success);
+        Assert.Equal(1, report.ExecutedStepCount);
+    }
+
+    [Fact]
+    public void MissingFieldsReadAsNilForOrDefaultsAndNilComparisons()
+    {
+        var definition = new LuaScriptCompiler().Compile("""
+            local item = { x = 4 }
+            local width = item.w or 1
+            local hasNoWidth = item.w == nil
+            return { width = width, hasNoWidth = hasNoWidth, x = item.x or 9 }
+            """);
+
+        var report = new CapabilityScriptRunner(new CapabilityRegistry()).Execute(definition);
+
+        Assert.True(report.Success);
+        var result = Assert.IsType<Dictionary<string, object>>(report.Result);
+        Assert.Equal(1, result["width"]);
+        Assert.True(Assert.IsType<bool>(result["hasNoWidth"]));
+        Assert.Equal(4, result["x"]);
+    }
+
+    [Fact]
+    public void ConcatenatesStrings()
+    {
+        var definition = new LuaScriptCompiler().Compile("""
+            local count = 3
+            return "Wall " .. count .. "x" .. 1.5
+            """);
+
+        var report = new CapabilityScriptRunner(new CapabilityRegistry()).Execute(definition);
+
+        Assert.True(report.Success);
+        Assert.Equal("Wall 3x1.5", report.Result);
+    }
+
+    [Fact]
+    public void PrintAcceptsNonLiteralFirstArgument()
+    {
+        var definition = new LuaScriptCompiler().Compile("""
+            local label = "planned"
+            print(label, 2)
+            """);
+
+        var report = new CapabilityScriptRunner(new CapabilityRegistry()).Execute(definition);
+
+        Assert.True(report.Success);
+        var row = Assert.Single(report.Output);
+        var values = Assert.IsAssignableFrom<IEnumerable<object>>(row.Value).ToList();
+        Assert.Equal("planned", values[0]);
+        Assert.Equal(2, values[1]);
     }
 
     [Fact]

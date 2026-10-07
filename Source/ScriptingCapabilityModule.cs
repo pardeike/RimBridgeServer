@@ -65,6 +65,7 @@ internal sealed class ScriptingCapabilityModule
             return validationFailure;
 
         var report = _runner.Execute(definition, includeStepResults);
+        var budget = ResponseBudget.CurrentMaxChars;
         return new
         {
             success = report.Success,
@@ -79,8 +80,8 @@ internal sealed class ScriptingCapabilityModule
             returned = report.Returned,
             result = report.Result,
             error = report.Error,
-            output = report.Output.ConvertAll(ProjectOutput),
-            script = ProjectReport(report)
+            output = ProjectOutput(report.Output, ref budget),
+            script = ProjectReport(report, includeStepResults, ref budget)
         };
     }
 
@@ -129,6 +130,7 @@ internal sealed class ScriptingCapabilityModule
             return validationFailure;
 
         var report = _runner.Execute(definition, includeStepResults);
+        var budget = ResponseBudget.CurrentMaxChars;
         return new
         {
             success = report.Success,
@@ -144,8 +146,8 @@ internal sealed class ScriptingCapabilityModule
             result = report.Result,
             error = report.Error,
             parameterCount = parameters?.Count ?? 0,
-            output = report.Output.ConvertAll(ProjectOutput),
-            script = ProjectReport(report)
+            output = ProjectOutput(report.Output, ref budget),
+            script = ProjectReport(report, includeStepResults, ref budget)
         };
     }
 
@@ -343,60 +345,104 @@ internal sealed class ScriptingCapabilityModule
         };
     }
 
-    private static object ProjectReport(CapabilityScriptReport report)
+    // Agent-facing script report. Step rows stay compact; with includeStepResults=false only failed steps are
+    // listed. Step results and print values share the response budget: results that do not fit are replaced by
+    // their size so the step list itself is always complete.
+    private static object ProjectReport(CapabilityScriptReport report, bool includeStepResults, ref int budget)
     {
+        var steps = includeStepResults ? report.Steps : report.Steps.Where(step => !step.Success).ToList();
+        var projected = new List<object>(steps.Count);
+        var omittedResults = 0;
+        foreach (var step in steps)
+            projected.Add(ProjectStep(step, ref budget, ref omittedResults));
+
         return new
         {
             name = report.Name,
-            continueOnError = report.ContinueOnError,
             success = report.Success,
-            halted = report.Halted,
-            returned = report.Returned,
+            halted = report.Halted ? true : (bool?)null,
             haltReason = report.HaltReason,
             stepCount = report.StepCount,
             executedStepCount = report.ExecutedStepCount,
             succeededStepCount = report.SucceededStepCount,
             failedStepCount = report.FailedStepCount,
-            startedAtUtc = report.StartedAtUtc,
-            completedAtUtc = report.CompletedAtUtc,
             durationMs = report.DurationMs,
-            steps = report.Steps.ConvertAll(ProjectStep)
+            stepsListed = includeStepResults ? "all" : "failed",
+            omittedStepResultCount = omittedResults > 0 ? omittedResults : (int?)null,
+            steps = projected
         };
     }
 
-    private static object ProjectOutput(CapabilityScriptOutputEntry entry)
+    private static List<object> ProjectOutput(List<CapabilityScriptOutputEntry> entries, ref int budget)
     {
-        return new
+        var projected = new List<object>(entries.Count);
+        foreach (var entry in entries)
         {
-            index = entry.Index,
-            statementId = entry.StatementId,
-            level = entry.Level,
-            message = entry.Message,
-            value = entry.Value,
-            timestampUtc = entry.TimestampUtc
-        };
+            var value = TakeWithinBudget(entry.Value, ref budget, out var omittedChars);
+            projected.Add(new
+            {
+                statementId = entry.StatementId,
+                level = string.Equals(entry.Level, "info", StringComparison.OrdinalIgnoreCase) ? null : entry.Level,
+                message = entry.Message,
+                value,
+                valueOmittedChars = omittedChars
+            });
+        }
+
+        return projected;
     }
 
-    private static object ProjectStep(CapabilityScriptStepReport step)
+    private static object ProjectStep(CapabilityScriptStepReport step, ref int budget, ref int omittedResults)
     {
+        var result = TakeWithinBudget(step.Result, ref budget, out var omittedChars);
+        if (omittedChars.HasValue)
+            omittedResults++;
+
         return new
         {
-            index = step.Index,
             id = step.Id,
             call = step.Call,
-            capabilityId = step.CapabilityId,
-            operationId = step.OperationId,
-            status = step.Status,
             success = step.Success,
-            attempts = step.Attempts,
-            startedAtUtc = step.StartedAtUtc,
-            completedAtUtc = step.CompletedAtUtc,
+            attempts = step.Attempts > 1 ? step.Attempts : (int?)null,
             durationMs = step.DurationMs,
-            result = step.Result,
+            result,
+            resultOmittedChars = omittedChars,
             error = step.Error,
-            warnings = step.Warnings
+            warnings = step.Warnings?.Count > 0 ? step.Warnings : null
         };
     }
+
+    private static object TakeWithinBudget(object value, ref int budget, out int? omittedChars)
+    {
+        omittedChars = null;
+        if (value == null || budget == int.MaxValue)
+            return value;
+
+        int size;
+        try
+        {
+            size = JsonConvert.SerializeObject(value, BudgetMeasureSettings).Length;
+        }
+        catch
+        {
+            return value;
+        }
+
+        if (size <= budget)
+        {
+            budget -= size;
+            return value;
+        }
+
+        omittedChars = size;
+        return null;
+    }
+
+    private static readonly JsonSerializerSettings BudgetMeasureSettings = new()
+    {
+        NullValueHandling = NullValueHandling.Ignore,
+        ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+    };
 
     private static bool TryValidateDefinitionHasSteps(CapabilityScriptDefinition definition, out object failure)
     {

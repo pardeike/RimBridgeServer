@@ -202,7 +202,7 @@ public static class CapabilityLuaReferenceBuilder
                 ("notes", Arr(
                     "Use params.field and static one-based indexing such as params.names[1] to read values.",
                     "params is always present and defaults to an empty object when the caller omits parameters.",
-                    "Missing params fields and static indexes resolve as nil so normal Lua defaulting patterns such as params.retryLimit or 6 work.",
+                    "Missing params fields and static indexes resolve as nil so normal Lua defaulting patterns such as params.retryLimit or 6 work; the same 'or' and '== nil' patterns also work on other locals.",
                     "Reassigning or shadowing params is rejected at compile time.")))),
             ("supportedSubset", Obj(
                 ("statements", Arr(
@@ -223,8 +223,11 @@ public static class CapabilityLuaReferenceBuilder
                     "static one-based index access such as names[1]",
                     "unary minus and unary not",
                     "binary arithmetic",
+                    "string concatenation with ..",
                     "binary comparisons",
-                    "boolean and / or with Lua-style operand return values")),
+                    "boolean and / or with Lua-style operand return values",
+                    "a missing field reads as nil on the left of or (t.w or 1) and in nil comparisons (t.w == nil); elsewhere a missing field is a runtime error",
+                    "an empty table {} as rb.call/rb.poll arguments")),
                 ("hostFunctions", Arr("rb.call", "rb.poll", "rb.print", "rb.assert", "rb.fail", "print", "ipairs")),
                 ("scopeRules", Arr(
                     "local creates a new scoped variable in the current block.",
@@ -269,13 +272,13 @@ public static class CapabilityLuaReferenceBuilder
                     "rb.print",
                     "Append a structured output row to the script result without adding a step report row.",
                     "rb.print(message?, value?)",
-                    Field("message", "string literal", required: false, defaultValue: null, description: "Human-readable output label."),
+                    Field("message", "string literal or expression", required: false, defaultValue: null, description: "Human-readable output label when it is a string literal; any other expression is printed together with value."),
                     Field("value", "expression", required: false, defaultValue: null, description: "Optional structured value included in the output row.")),
                 HostFunction(
                     "print",
                     "Alias of rb.print with the same lowering behavior.",
                     "print(message?, value?)",
-                    Field("message", "string literal", required: false, defaultValue: null, description: "Human-readable output label."),
+                    Field("message", "string literal or expression", required: false, defaultValue: null, description: "Human-readable output label when it is a string literal; any other expression is printed together with value."),
                     Field("value", "expression", required: false, defaultValue: null, description: "Optional structured value included in the output row.")),
                 HostFunction(
                     "rb.assert",

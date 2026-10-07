@@ -198,6 +198,7 @@ public static class CapabilityScriptReferenceBuilder
                 Expr("$negate", "Negate one numeric operand.", 5),
                 Expr("$not", "Apply scripting truthiness and invert the operand.", true),
                 Expr("$and", "Evaluate operands left to right using scripting truthiness and return the first falsey operand or the last operand.", Arr(true, "value")),
+                Expr("$concat", "Concatenate operands as text (Lua '..'); nil becomes 'nil' and numbers use invariant formatting.", Arr("Wall ", 3)),
                 Expr("$or", "Evaluate operands left to right using scripting truthiness and return the first truthy operand or the last operand.", Arr(false, "fallback")),
                 Expr("$equals", "Compare two operands for equality and return a boolean.", Arr(3, 3)),
                 Expr("$notEquals", "Compare two operands for inequality and return a boolean.", Arr(3, 4)),

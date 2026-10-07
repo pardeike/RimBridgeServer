@@ -732,8 +732,19 @@ public sealed class LuaScriptCompiler
         var left = CompilePureExpression(GetRequiredFieldValue(expression, "m_Exp1"), state);
         var right = CompilePureExpression(GetRequiredFieldValue(expression, "m_Exp2"), state);
 
+        // Lua reads a missing table field as nil. Keep strict path resolution elsewhere, but allow the idioms
+        // that only make sense for possibly missing fields: "t.field or default" and "t.field == nil".
+        if (operatorName == "Or")
+            MarkOptionalPath(left);
+        if ((operatorName == "Equal" || operatorName == "NotEqual") && (right == null || left == null))
+        {
+            MarkOptionalPath(left);
+            MarkOptionalPath(right);
+        }
+
         return operatorName switch
         {
+            "StrConcat" => OperatorExpression("$concat", [left, right]),
             "Add" => OperatorExpression("$add", [left, right]),
             "Sub" => OperatorExpression("$subtract", [left, right]),
             "Mul" => OperatorExpression("$multiply", [left, right]),
@@ -1037,11 +1048,14 @@ public sealed class LuaScriptCompiler
             return new HostCall(HostCallKind.Print, "print", value: CompilePureExpression(arguments[0], state));
         }
 
+        if (TryReadLiteralString(arguments[0], out var label))
+            return new HostCall(HostCallKind.Print, "print", message: label, value: CompilePureExpression(arguments[1], state));
+
+        // Non-literal first argument: print both values instead of rejecting the call.
         return new HostCall(
             HostCallKind.Print,
             "print",
-            message: ReadRequiredLiteralString(arguments[0], expression, "print/rb.print requires a literal string as its first argument when two arguments are provided."),
-            value: CompilePureExpression(arguments[1], state));
+            value: new List<object> { CompilePureExpression(arguments[0], state), CompilePureExpression(arguments[1], state) });
     }
 
     private static HostCall ParseAssertCall(IReadOnlyList<object> arguments, CompilerState state, object expression)
@@ -1127,6 +1141,8 @@ public sealed class LuaScriptCompiler
         {
             null => [],
             Dictionary<string, object> dictionary => dictionary,
+            // An empty Lua table literal has neither keys nor positional values and compiles to an empty list.
+            List<object> { Count: 0 } => [],
             _ => throw CreateUnsupportedExpressionException(owner, errorMessage)
         };
     }
@@ -1331,6 +1347,12 @@ public sealed class LuaScriptCompiler
 
         var property = instance.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         return property?.GetValue(instance);
+    }
+
+    private static void MarkOptionalPath(object compiled)
+    {
+        if (compiled is Dictionary<string, object> reference && reference.ContainsKey("$var") && reference.ContainsKey("path"))
+            reference["required"] = false;
     }
 
     private static Dictionary<string, object> VariableReference(string variableName, string path = "", bool required = true)

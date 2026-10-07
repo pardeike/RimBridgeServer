@@ -141,7 +141,7 @@ internal static class RimWorldArchitect
         };
     }
 
-    public static object ListArchitectDesignatorsResponse(string categoryId, bool includeHidden = false)
+    public static object ListArchitectDesignatorsResponse(string categoryId, bool includeHidden = false, bool includeDetails = false, int offset = 0)
     {
         if (!TryGetMapContext(out _, out var error))
             return Failure(error);
@@ -150,6 +150,11 @@ internal static class RimWorldArchitect
             return Failure(error);
 
         var selectionState = CaptureSelectionState();
+        var designators = ResponseBudget.TakePage(
+            category.Designators,
+            offset,
+            descriptor => includeDetails ? DescribeDesignator(descriptor, selectionState) : DescribeDesignatorCompact(descriptor, selectionState),
+            out var page);
         return new
         {
             success = true,
@@ -157,9 +162,36 @@ internal static class RimWorldArchitect
             godMode = DebugSettings.godMode,
             category = DescribeCategory(category),
             designatorCount = category.Designators.Count,
-            designators = category.Designators.Select(descriptor => DescribeDesignator(descriptor, selectionState)).ToList(),
-            designatorState = CreateDesignatorStatePayload(category.Designators, selectionState),
+            includeDetails,
+            page,
+            designators,
+            designatorState = includeDetails ? CreateDesignatorStatePayload(category.Designators, selectionState) : null,
             state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    // What an agent needs to pick and apply a designator: identity, what it places, footprint and material options.
+    private static object DescribeDesignatorCompact(ArchitectDesignatorDescriptor descriptor, ArchitectSelectionState selectionState)
+    {
+        var build = descriptor.Designator as Designator_Build;
+        var thingDef = build?.PlacingDef as ThingDef;
+        return new
+        {
+            id = descriptor.Id,
+            parentId = descriptor.ParentId,
+            kind = descriptor.Kind,
+            applicationKind = descriptor.ApplicationKind,
+            label = descriptor.Designator.Label,
+            buildableDefName = build?.PlacingDef?.defName,
+            size = thingDef != null && (thingDef.size.x != 1 || thingDef.size.z != 1) ? $"{thingDef.size.x}x{thingDef.size.z}" : null,
+            rotatable = thingDef?.rotatable == true ? true : (bool?)null,
+            madeFromStuff = thingDef?.MadeFromStuff == true ? true : (bool?)null,
+            stuffDefName = thingDef?.MadeFromStuff == true ? build.StuffDef?.defName : null,
+            actionable = descriptor.Actionable ? (bool?)null : false,
+            supportsRectangleApplication = descriptor.SupportsRectangleApplication ? (bool?)null : false,
+            childCount = descriptor.ChildCount > 0 ? descriptor.ChildCount : (int?)null,
+            visible = descriptor.Visible ? (bool?)null : false,
+            selected = IsSelectedDescriptor(descriptor, selectionState) ? true : (bool?)null
         };
     }
 
@@ -184,7 +216,7 @@ internal static class RimWorldArchitect
         };
     }
 
-    public static object ApplyArchitectDesignatorResponse(string designatorId, int x, int z, int width = 1, int height = 1, bool dryRun = false, bool keepSelected = true)
+    public static object ApplyArchitectDesignatorResponse(string designatorId, int x, int z, int width = 1, int height = 1, bool dryRun = false, bool keepSelected = true, string stuffDefName = null, string rotation = null)
     {
         if (!TryGetMapContext(out var map, out var error))
             return Failure(error);
@@ -196,6 +228,20 @@ internal static class RimWorldArchitect
             return Failure($"Architect designator '{designatorId}' does not support direct cell application.");
         if (!TrySelectDescriptor(descriptor, out error))
             return Failure(error);
+        if (!TryApplyBuildOptions(descriptor.Designator, stuffDefName, rotation, out error))
+            return Failure(error);
+
+        // Designator_ZoneAdd.SelectedZone is simply the currently selected zone, and RimWorld selects every zone it
+        // creates. Only targets set through set_zone_target expand an existing zone; otherwise start a new zone.
+        Zone explicitTargetZone = null;
+        var zonesBefore = new HashSet<Zone>(map.zoneManager?.AllZones ?? []);
+        if (descriptor.Designator is Designator_ZoneAdd zoneAddDesignator)
+        {
+            explicitTargetZone = ResolveExplicitZoneTarget(map, zoneAddDesignator);
+            var selectedZone = Find.Selector.SelectedZone;
+            if (explicitTargetZone == null && selectedZone != null)
+                Find.Selector.Deselect(selectedZone);
+        }
 
         var requestedCells = EnumerateCells(x, z, width, height).ToList();
         var acceptedCells = new List<IntVec3>(requestedCells.Count);
@@ -232,7 +278,6 @@ internal static class RimWorldArchitect
         }
 
         Exception applyException = null;
-        var explicitTargetZone = descriptor.Designator is Designator_ZoneAdd zoneAddWithTarget ? zoneAddWithTarget.SelectedZone : null;
         if (!dryRun && acceptedCells.Count > 0)
         {
             try
@@ -264,42 +309,181 @@ internal static class RimWorldArchitect
 
         var selectionState = CaptureSelectionState();
         var sampleCell = requestedCells.Count == 1 ? CreateCellInfoPayload(map, requestedCells[0]) : null;
-        if (applyException != null)
-        {
-            return new
+        var resultZone = !dryRun && acceptedCells.Count > 0 && descriptor.Designator is Designator_ZoneAdd
+            ? map.zoneManager?.ZoneAt(acceptedCells[0])
+            : null;
+        var zoneResult = resultZone == null
+            ? null
+            : new
             {
-                success = false,
-                message = $"Applying architect designator '{designatorId}' failed: {applyException.Message}",
-                dryRun,
-                designator = DescribeDesignator(descriptor, selectionState),
-                requestedCellCount = requestedCells.Count,
-                acceptedCellCount = acceptedCells.Count,
-                rejectedCellCount = rejectedCells.Count,
-                acceptedCells = acceptedCells.Select(ToCellPayload).ToList(),
-                rejectedCells,
-                keepSelected,
-                designatorState = CreateDesignatorStatePayload(GetAllDesignatorDescriptors(), selectionState),
-                sampleCell,
-                state = RimWorldState.ToolStateSnapshot()
+                id = resultZone.GetUniqueLoadID(),
+                label = resultZone.RenamableLabel,
+                cellCount = resultZone.CellCount,
+                created = !zonesBefore.Contains(resultZone)
             };
-        }
+        const int maxListedCells = 25;
+        var listedAccepted = acceptedCells.Count <= maxListedCells ? acceptedCells.Select(ToCellPayload).ToList() : null;
+        var listedRejected = rejectedCells.Take(maxListedCells).ToList();
 
         return new
         {
-            success = acceptedCells.Count > 0,
+            success = applyException == null && acceptedCells.Count > 0,
+            message = applyException != null ? $"Applying architect designator '{designatorId}' failed: {applyException.Message}" : null,
             dryRun,
             designator = DescribeDesignator(descriptor, selectionState),
             requestedCellCount = requestedCells.Count,
             acceptedCellCount = acceptedCells.Count,
-            appliedCellCount = dryRun ? 0 : acceptedCells.Count,
+            appliedCellCount = dryRun || applyException != null ? 0 : acceptedCells.Count,
             rejectedCellCount = rejectedCells.Count,
-            acceptedCells = acceptedCells.Select(ToCellPayload).ToList(),
-            rejectedCells,
+            acceptedCells = listedAccepted,
+            acceptedCellsOmitted = listedAccepted == null ? (bool?)true : null,
+            rejectedCells = listedRejected,
+            rejectedCellsOmittedCount = rejectedCells.Count > listedRejected.Count ? rejectedCells.Count - listedRejected.Count : (int?)null,
+            zone = zoneResult,
             keepSelected,
-            designatorState = CreateDesignatorStatePayload(GetAllDesignatorDescriptors(), selectionState),
             sampleCell,
             state = RimWorldState.ToolStateSnapshot()
         };
+    }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Designator_ZoneAdd, Zone> ExplicitZoneTargets = new();
+
+    private static Zone ResolveExplicitZoneTarget(Map map, Designator_ZoneAdd zoneAdd)
+    {
+        if (!ExplicitZoneTargets.TryGetValue(zoneAdd, out var zone))
+            return null;
+
+        var alive = zone != null
+            && zone.CellCount > 0
+            && map.zoneManager?.AllZones?.Contains(zone) == true
+            && (zoneAdd.zoneTypeToPlace == null || zoneAdd.zoneTypeToPlace.IsInstanceOfType(zone));
+        if (alive)
+            return zone;
+
+        ExplicitZoneTargets.Remove(zoneAdd);
+        return null;
+    }
+
+    private static bool TryApplyBuildOptions(Designator designator, string stuffDefName, string rotation, out string error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(stuffDefName) && string.IsNullOrWhiteSpace(rotation))
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(stuffDefName))
+        {
+            if (designator is not Designator_Build build || build.PlacingDef is not ThingDef thingDef)
+            {
+                error = "stuffDefName only applies to build designators that place a thing.";
+                return false;
+            }
+
+            if (!thingDef.MadeFromStuff)
+            {
+                error = $"'{thingDef.defName}' is not made from a material; omit stuffDefName.";
+                return false;
+            }
+
+            var allowed = GenStuff.AllowedStuffsFor(thingDef).ToList();
+            var stuff = allowed.FirstOrDefault(candidate => string.Equals(candidate.defName, stuffDefName.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (stuff == null)
+            {
+                error = $"'{stuffDefName}' is not an allowed material for '{thingDef.defName}'. Allowed: {string.Join(", ", allowed.Select(candidate => candidate.defName).Take(30))}.";
+                return false;
+            }
+
+            build.SetStuffDef(stuff);
+        }
+
+        if (!string.IsNullOrWhiteSpace(rotation))
+        {
+            if (designator is not Designator_Place place)
+            {
+                error = "rotation only applies to placement designators such as buildings.";
+                return false;
+            }
+
+            if (!TryParseRotation(rotation, out var rot))
+            {
+                error = $"Unknown rotation '{rotation}'. Use north, east, south, west or 0-3.";
+                return false;
+            }
+
+            place.placingRot = rot;
+        }
+
+        return true;
+    }
+
+    private static string DescribeRotation(Rot4 rotation)
+    {
+        return rotation.AsInt switch { 0 => "north", 1 => "east", 2 => "south", _ => "west" };
+    }
+
+    private static bool TryParseRotation(string value, out Rot4 rotation)
+    {
+        rotation = Rot4.North;
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "north": case "n": case "up": case "0": rotation = Rot4.North; return true;
+            case "east": case "e": case "right": case "1": rotation = Rot4.East; return true;
+            case "south": case "s": case "down": case "2": rotation = Rot4.South; return true;
+            case "west": case "w": case "left": case "3": rotation = Rot4.West; return true;
+            default: return false;
+        }
+    }
+
+    public static object ListPlansResponse(bool includeCells = false)
+    {
+        if (!TryGetMapContext(out var map, out var error))
+            return Failure(error);
+
+        var plans = map.planManager?.AllPlans?.Where(plan => plan != null).ToList() ?? [];
+        return new
+        {
+            success = true,
+            count = plans.Count,
+            plans = plans.Select(plan => DescribePlan(plan, includeCells)).ToList(),
+            state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    // Plans (1.6 planning designations) are often drawn as outlines; bounds describe the marked area either way.
+    private static object DescribePlan(Plan plan, bool includeCells)
+    {
+        var cells = plan.cells ?? [];
+        int minX = 0, maxX = 0, minZ = 0, maxZ = 0;
+        if (cells.Count > 0)
+        {
+            minX = cells.Min(cell => cell.x);
+            maxX = cells.Max(cell => cell.x);
+            minZ = cells.Min(cell => cell.z);
+            maxZ = cells.Max(cell => cell.z);
+        }
+
+        var width = cells.Count == 0 ? 0 : maxX - minX + 1;
+        var height = cells.Count == 0 ? 0 : maxZ - minZ + 1;
+        var onBorder = cells.Count(cell => cell.x == minX || cell.x == maxX || cell.z == minZ || cell.z == maxZ);
+        return new
+        {
+            id = plan.GetUniqueLoadID(),
+            label = plan.RenamableLabel,
+            color = plan.Color?.defName,
+            hidden = plan.Hidden,
+            cellCount = cells.Count,
+            bounds = cells.Count == 0 ? null : new { x = minX, z = minZ, width, height, maxX, maxZ },
+            shape = cells.Count == 0 ? "empty"
+                : cells.Count == width * height ? "filled_rectangle"
+                : onBorder == cells.Count ? "rectangle_outline"
+                : "irregular",
+            cells = includeCells ? cells.OrderBy(cell => cell.z).ThenBy(cell => cell.x).Select(ToCellPayload).ToList() : null
+        };
+    }
+
+    private static object DescribePlanReference(Map map, IntVec3 cell)
+    {
+        var plan = map.planManager?.PlanAt(cell);
+        return plan == null ? null : new { id = plan.GetUniqueLoadID(), label = plan.RenamableLabel };
     }
 
     public static object GetCellInfoResponse(int x, int z)
@@ -401,6 +585,7 @@ internal static class RimWorldArchitect
             designationCount = designations.Count,
             designations = designations.Count == 0 ? null : designations.Select(DescribeDesignationAtCell).ToList(),
             zone = zone == null ? null : new { id = zoneId, label = zone.RenamableLabel },
+            plan = DescribePlanReference(map, cell),
             areas = cellAreas.Count == 0 ? null : cellAreas.Select(area => new { id = area.GetUniqueLoadID(), label = area.Label }).ToList()
         };
     }
@@ -416,6 +601,7 @@ internal static class RimWorldArchitect
             stuffDefName = thing.Stuff?.defName,
             blueprintBuildDefName = blueprint?.BuildDef?.defName,
             frameBuildDefName = frame?.BuildDef?.defName,
+            rotation = thing.def?.rotatable == true ? DescribeRotation(thing.Rotation) : null,
             hitPoints = thing.HitPoints
         };
     }
@@ -761,6 +947,7 @@ internal static class RimWorldArchitect
 
         if (string.IsNullOrWhiteSpace(zoneId))
         {
+            ExplicitZoneTargets.Remove(zoneAdd);
             zoneAdd.SelectedZone = null;
             var clearedSelectionState = CaptureSelectionState();
             return new
@@ -778,6 +965,8 @@ internal static class RimWorldArchitect
         if (zoneAdd.zoneTypeToPlace != null && !zoneAdd.zoneTypeToPlace.IsInstanceOfType(zone))
             return Failure($"Zone '{zoneId}' is not compatible with architect designator '{designatorId}'.");
 
+        ExplicitZoneTargets.Remove(zoneAdd);
+        ExplicitZoneTargets.Add(zoneAdd, zone);
         zoneAdd.SelectedZone = zone;
         var selectionState = CaptureSelectionState();
         return new
@@ -852,6 +1041,12 @@ internal static class RimWorldArchitect
                      .Where(zoneAdd => ReferenceEquals(zoneAdd.SelectedZone, zone)))
         {
             zoneAdd.SelectedZone = null;
+        }
+
+        foreach (var zoneAdd in GetAllDesignatorDescriptors().Select(descriptor => descriptor.Designator).OfType<Designator_ZoneAdd>())
+        {
+            if (ExplicitZoneTargets.TryGetValue(zoneAdd, out var target) && ReferenceEquals(target, zone))
+                ExplicitZoneTargets.Remove(zoneAdd);
         }
 
         zone.Delete();
@@ -1663,6 +1858,7 @@ internal static class RimWorldArchitect
             frameBuildDefs,
             solidThingDefs,
             zone = DescribeZone(zone),
+            plan = DescribePlanReference(map, cell),
             areaCount = areas.Count,
             areas = areas.Select(DescribeArea).ToList(),
             things = things.Select(DescribeThingAtCell).ToList(),
@@ -1726,6 +1922,7 @@ internal static class RimWorldArchitect
             blueprintBuildDefName = blueprint?.BuildDef?.defName,
             isFrame = frame != null,
             frameBuildDefName = frame?.BuildDef?.defName,
+            rotation = thing.def?.rotatable == true ? DescribeRotation(thing.Rotation) : null,
             hitPoints = thing.HitPoints
         };
     }

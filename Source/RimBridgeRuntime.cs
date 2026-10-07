@@ -325,6 +325,59 @@ internal static class RimBridgeContextMenus
 
     public static ContextMenuSnapshot Current { get; private set; }
 
+    // Pop-up menus opened by bridge actions (gizmos, UI clicks) vanish as soon as the real mouse is far away, which
+    // it always is for background automation, and can open off-screen. Keep such a menu open and on-screen, and
+    // track it so the context-menu tools can read and execute it. Call on the main thread.
+    public static ContextMenuSnapshot AdoptOpenMenu(string provider)
+    {
+        var open = Find.WindowStack?.FloatMenu;
+        if (open == null)
+            return null;
+
+        open.vanishIfMouseDistant = false;
+        var rect = open.windowRect;
+        rect.x = UnityEngine.Mathf.Clamp(rect.x, 0f, UnityEngine.Mathf.Max(0f, UI.screenWidth - rect.width));
+        rect.y = UnityEngine.Mathf.Clamp(rect.y, 0f, UnityEngine.Mathf.Max(0f, UI.screenHeight - rect.height));
+        open.windowRect = rect;
+        return Current?.Menu == open ? Current : Store(provider, open, open.options ?? [], IntVec3.Invalid, null);
+    }
+
+    public static object DescribeMenu(ContextMenuSnapshot snapshot)
+    {
+        if (snapshot == null)
+            return null;
+
+        return new
+        {
+            menuId = snapshot.Id,
+            optionCount = snapshot.Options.Count,
+            options = snapshot.Options.Select((option, index) => (object)new
+            {
+                index = index + 1,
+                label = option.Label,
+                disabled = option.Disabled ? true : (bool?)null
+            }).ToList(),
+            hint = "Choose with rimworld/execute_context_menu_option (index or label)."
+        };
+    }
+
+    // The bridge-opened menu if it is still showing; otherwise adopt any FloatMenu RimWorld itself opened
+    // (gizmo option menus, crop pickers, material pickers) so the context-menu tools can read and execute it.
+    public static ContextMenuSnapshot ResolveOpenMenu()
+    {
+        var open = Find.WindowStack?.FloatMenu;
+        if (open == null)
+        {
+            Current = null;
+            return null;
+        }
+
+        if (Current?.Menu == open)
+            return Current;
+
+        return Store("window", open, open.options ?? [], IntVec3.Invalid, null);
+    }
+
     public static ContextMenuSnapshot Store(string provider, FloatMenu menu, IEnumerable<FloatMenuOption> options, IntVec3 clickCell, string targetLabel)
     {
         Current = new ContextMenuSnapshot

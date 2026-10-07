@@ -23,9 +23,9 @@ internal static class RimWorldContextMenuActions
 {
     public static ContextMenuOptionExecutionResult ExecuteOption(int optionIndex = -1, string label = null, int expectedMenuId = 0)
     {
-        var snapshot = GetActiveSnapshot();
+        var snapshot = RimBridgeContextMenus.ResolveOpenMenu();
         if (snapshot == null)
-            return Failure("No debug context menu is available.");
+            return Failure("No context menu or pop-up option menu is open.");
 
         if (expectedMenuId > 0 && snapshot.Id != expectedMenuId)
         {
@@ -56,19 +56,6 @@ internal static class RimWorldContextMenuActions
             Label = option.Label,
             Message = $"Executed menu option {resolvedIndex} '{option.Label}'."
         };
-    }
-
-    private static ContextMenuSnapshot GetActiveSnapshot()
-    {
-        var snapshot = RimBridgeContextMenus.Current;
-        if (snapshot == null || snapshot.Menu == null)
-            return null;
-
-        if (Find.WindowStack?.FloatMenu == snapshot.Menu)
-            return snapshot;
-
-        RimBridgeContextMenus.Clear();
-        return null;
     }
 
     private static string TryResolveOption(ContextMenuSnapshot snapshot, int optionIndex, string label, out FloatMenuOption option, out int resolvedIndex)
@@ -103,12 +90,28 @@ internal static class RimWorldContextMenuActions
         if (exactMatches.Count > 1)
             return $"Label '{label}' is ambiguous within the current menu.";
 
+        // "corn" should pick "Corn plant" over "Fibercorn": prefer labels that start with the text.
+        var prefixMatches = snapshot.Options
+            .Select((candidate, index) => new { candidate, index })
+            .Where(item => item.candidate.Label.StartsWith(label, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (prefixMatches.Count == 1)
+        {
+            option = prefixMatches[0].candidate;
+            resolvedIndex = prefixMatches[0].index + 1;
+            return null;
+        }
+
         var partialMatches = snapshot.Options
             .Select((candidate, index) => new { candidate, index })
             .Where(item => item.candidate.Label.IndexOf(label, StringComparison.OrdinalIgnoreCase) >= 0)
             .ToList();
         if (partialMatches.Count != 1)
-            return $"Could not resolve menu label '{label}' to a single option.";
+        {
+            return partialMatches.Count == 0
+                ? $"No menu option contains '{label}'."
+                : $"Menu label '{label}' matches several options: {string.Join(", ", partialMatches.Select(item => $"{item.index + 1} '{item.candidate.Label}'"))}. Use optionIndex or a longer label.";
+        }
 
         option = partialMatches[0].candidate;
         resolvedIndex = partialMatches[0].index + 1;

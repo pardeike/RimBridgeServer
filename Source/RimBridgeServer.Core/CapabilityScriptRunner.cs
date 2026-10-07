@@ -1577,6 +1577,15 @@ public sealed class CapabilityScriptRunner
             return true;
         }
 
+        if (expression.Count == 1 && expression.TryGetValue("$concat", out var concatValue))
+        {
+            var operands = concatValue is IEnumerable<object> items && concatValue is not string
+                ? items.Select(item => ResolveValue(item, currentStepId, state))
+                : [ResolveValue(concatValue, currentStepId, state)];
+            value = string.Concat(operands.Select(FormatConcatOperand));
+            return true;
+        }
+
         if (expression.Count == 1 && expression.TryGetValue("$mod", out var modValue))
         {
             var operands = ResolveArithmeticOperands(modValue, currentStepId, state).ToList();
@@ -1588,6 +1597,17 @@ public sealed class CapabilityScriptRunner
         }
 
         return false;
+    }
+
+    private static string FormatConcatOperand(object operand)
+    {
+        return operand switch
+        {
+            null => "nil",
+            bool flag => flag ? "true" : "false",
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => operand.ToString()
+        };
     }
 
     private static bool TryResolveLogicalExpression(
