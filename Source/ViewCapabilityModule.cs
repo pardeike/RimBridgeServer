@@ -391,8 +391,19 @@ internal sealed class ViewCapabilityModule
         bool includeTargets = true,
         bool suppressMessage = true,
         bool doNotResetCamera = false,
-        float rootSize = 0f)
+        float rootSize = 0f,
+        string outputDirectory = null)
     {
+        if (!TryResolveOutputDirectory(outputDirectory, out _, out var outputDirectoryError))
+        {
+            return new
+            {
+                success = false,
+                message = outputDirectoryError,
+                requestedRect = CreateRequestedRectPayload(x, z, width, height)
+            };
+        }
+
         CameraSnapshot cameraBefore = null;
         CellRectFrameResult frame = null;
         ScreenshotCaptureResult capture = null;
@@ -468,7 +479,8 @@ internal sealed class ViewCapabilityModule
                 explicitClipTargetId: "cellRect",
                 explicitClipTargetKind: "cellRect",
                 explicitClipTargetLabel: $"Cell rect ({frame.PaddedRect.X}, {frame.PaddedRect.Z}, {frame.PaddedRect.Width}, {frame.PaddedRect.Height})",
-                clipOutputSuffix: "__cell_rect");
+                clipOutputSuffix: "__cell_rect",
+                outputDirectory: outputDirectory);
         }
         finally
         {
@@ -626,9 +638,52 @@ internal sealed class ViewCapabilityModule
         };
     }
 
-    public object TakeScreenshot(string fileName = null, bool includeTargets = true, bool suppressMessage = true, string clipTargetId = null, int clipPadding = 8)
+    public object TakeScreenshot(string fileName = null, bool includeTargets = true, bool suppressMessage = true, string clipTargetId = null, int clipPadding = 8, string outputDirectory = null)
     {
-        return CreateScreenshotResponse(CaptureScreenshotInternal(fileName, includeTargets, suppressMessage, clipTargetId, clipPadding));
+        return CreateScreenshotResponse(CaptureScreenshotInternal(fileName, includeTargets, suppressMessage, clipTargetId, clipPadding, outputDirectory: outputDirectory));
+    }
+
+    // RimWorld always writes into its own screenshot folder; an output directory lets a caller such as an
+    // agent receive the final image inside its working directory instead.
+    private static bool TryResolveOutputDirectory(string outputDirectory, out string fullPath, out string error)
+    {
+        fullPath = null;
+        error = null;
+        var trimmed = outputDirectory?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return true;
+
+        if (trimmed == "~" || trimmed.StartsWith("~/", StringComparison.Ordinal))
+            trimmed = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), trimmed.Length > 2 ? trimmed.Substring(2) : string.Empty);
+
+        if (!Path.IsPathRooted(trimmed))
+        {
+            error = $"outputDirectory must be an absolute path; '{outputDirectory}' is relative and RimWorld's working directory is not the caller's.";
+            return false;
+        }
+
+        try
+        {
+            fullPath = Path.GetFullPath(trimmed);
+            Directory.CreateDirectory(fullPath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not use outputDirectory '{outputDirectory}': {ex.Message}";
+            return false;
+        }
+    }
+
+    private static string MoveIntoOutputDirectory(string path, string outputDirectory)
+    {
+        var target = Path.Combine(outputDirectory, Path.GetFileName(path));
+        if (string.Equals(Path.GetFullPath(path), target, StringComparison.Ordinal))
+            return target;
+
+        File.Copy(path, target, overwrite: true);
+        File.Delete(path);
+        return target;
     }
 
     private static ScreenshotCaptureResult CaptureScreenshotInternal(
@@ -641,9 +696,20 @@ internal sealed class ViewCapabilityModule
         string explicitClipTargetId = null,
         string explicitClipTargetKind = null,
         string explicitClipTargetLabel = null,
-        string clipOutputSuffix = "__clip")
+        string clipOutputSuffix = "__clip",
+        string outputDirectory = null)
     {
         var safeName = RimWorldState.SanitizeName(fileName, "rimbridge");
+        if (!TryResolveOutputDirectory(outputDirectory, out var resolvedOutputDirectory, out var outputDirectoryError))
+        {
+            return new ScreenshotCaptureResult
+            {
+                Success = false,
+                Message = outputDirectoryError,
+                RequestedFileName = safeName
+            };
+        }
+
         var capture = RimBridgeMainThread.Invoke(() =>
         {
             var screenTargets = includeTargets ? RimWorldTargeting.CreateScreenTargetsPayload() : null;
@@ -744,10 +810,33 @@ internal sealed class ViewCapabilityModule
                             info = new FileInfo(clipPath);
                         }
 
+                        var finalPath = clipPath ?? capture.ExpectedPath;
+                        if (resolvedOutputDirectory != null)
+                        {
+                            try
+                            {
+                                finalPath = MoveIntoOutputDirectory(finalPath, resolvedOutputDirectory);
+                                info = new FileInfo(finalPath);
+                            }
+                            catch (Exception ex)
+                            {
+                                return new ScreenshotCaptureResult
+                                {
+                                    Success = false,
+                                    Message = $"Captured the screenshot but could not move it into outputDirectory '{resolvedOutputDirectory}': {ex.Message}",
+                                    Path = finalPath,
+                                    RequestedFileName = safeName,
+                                    SaveDataFolder = capture.SaveDataFolder,
+                                    ScreenshotFolder = capture.ScreenshotFolder,
+                                    SuppressMessage = suppressMessage
+                                };
+                            }
+                        }
+
                         return new ScreenshotCaptureResult
                         {
                             Success = true,
-                            Path = clipPath ?? capture.ExpectedPath,
+                            Path = finalPath,
                             SourcePath = clipPath == null ? string.Empty : capture.ExpectedPath,
                             FileName = clipPath == null ? safeName : capture.OutputFileName,
                             RequestedFileName = safeName,

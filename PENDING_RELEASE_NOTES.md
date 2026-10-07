@@ -1,0 +1,5 @@
+- New `rimworld/set_text_field` types into text fields found by `get_ui_layout`, either character by character or instantly, and new `rimworld/press_key` sends key presses that reach time controls, gizmo hotkeys and window accept/cancel handling (contributed by beverage).
+- `take_screenshot` and `screenshot_cell_rect` accept an `outputDirectory`, so agents receive the image in their own working directory.
+- Debug-action search and listing no longer run the game's generated submenus (quest scripts, spawn lists), which made the first search take over a minute and threw errors on the main menu; generated submenus are returned with `expandable=true` (contributed by beverage).
+- Held map clicks release again on machines whose uptime makes the system tick counter negative (contributed by beverage).
+- Setting and reading paths such as `Items[0].Name` works (contributed by Spagles).

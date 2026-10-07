@@ -1111,9 +1111,10 @@ public class RimBridgeTools
         [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true,
         [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true,
         [ToolParameter(Description = "True to leave the camera at the framed view after capture instead of restoring it")] bool doNotResetCamera = false,
-        [ToolParameter(Description = "Optional camera root size to use; omit or pass 0 to preserve the current camera zoom")] float rootSize = 0f)
+        [ToolParameter(Description = "Optional camera root size to use; omit or pass 0 to preserve the current camera zoom")] float rootSize = 0f,
+        [ToolParameter(Description = OutputDirectoryDescription)] string outputDirectory = null)
     {
-        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(paddingCells), paddingCells), (nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(doNotResetCamera), doNotResetCamera), (nameof(rootSize), rootSize)));
+        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(paddingCells), paddingCells), (nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(doNotResetCamera), doNotResetCamera), (nameof(rootSize), rootSize), (nameof(outputDirectory), outputDirectory)));
     }
 
     [ReadmeTool("Camera And Screenshots", "Take an in-game screenshot and optionally crop it to a screen target, UI surface, UI element, or scroll-view region")]
@@ -1123,10 +1124,13 @@ public class RimBridgeTools
         [ToolParameter(Description = "Include current screen target metadata such as windows and context menus")] bool includeTargets = true,
         [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true,
         [ToolParameter(Description = "Optional target id from rimworld/get_screen_targets or rimworld/get_ui_layout to crop around, including windows, ui-surface ids, ui-element ids, and scroll_view elements")] string clipTargetId = null,
-        [ToolParameter(Description = "Logical screen-pixel padding to include around the clip target")] int clipPadding = 8)
+        [ToolParameter(Description = "Logical screen-pixel padding to include around the clip target")] int clipPadding = 8,
+        [ToolParameter(Description = OutputDirectoryDescription)] string outputDirectory = null)
     {
-        return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(clipTargetId), clipTargetId), (nameof(clipPadding), clipPadding)));
+        return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(clipTargetId), clipTargetId), (nameof(clipPadding), clipPadding), (nameof(outputDirectory), outputDirectory)));
     }
+
+    private const string OutputDirectoryDescription = "Optional absolute directory (~/ is expanded) that receives the final PNG instead of RimWorld's screenshot folder, for example the caller's working directory; it is created if missing and an existing file of the same name is replaced";
 
     [ReadmeTool("Save/Load And Spawning", "List saved RimWorld games and optionally return only saves whose recorded mods are all currently active")]
     [Tool("rimworld/list_saves", Description = "List saved RimWorld games with mod-compatibility details and optionally return only saves whose recorded mods are all currently active")]

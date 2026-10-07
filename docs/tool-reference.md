@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `126` tools total
+- `128` tools total
 - `18` `rimbridge/*` tools
-- `108` `rimworld/*` tools
+- `110` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -654,6 +654,30 @@ Parameters:
 - `targetId` (`string`, `required`): Actionable ui-element target id returned by rimworld/get_ui_layout
 - `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the target control to be redrawn so the click can be injected
 
+### `rimworld/set_text_field`
+
+Write text into a text_field ui-element target returned by rimworld/get_ui_layout, either instantly or typed character by character through the live widget path. Only elements reported by widgets.text_field or gui.text_field can be driven; a single-line labelled entry also reports its input box as widgets.text_field, and multi-line text areas are not supported
+
+Parameters:
+- `targetId` (`string`, `required`): text_field ui-element target id returned by rimworld/get_ui_layout
+- `text` (`string`, `required`): The text to enter
+- `mode` (`string`, `optional`, default `"typed"`): Entry mode: typed focuses the field and delivers one character per interval like a human typist; instant replaces the value the field is drawn with on the next frame, which does not stick on fields that rewrite their own text
+- `charsPerSecond` (`float`, `optional`, default `9f`): Approximate typing speed in characters per second for typed mode
+- `jitterPercent` (`int`, `optional`, default `35`): Random per-character timing variation in percent for typed mode, so the cadence reads as human
+- `clearFirst` (`bool`, `optional`, default `true`): Select the field's existing content before the first character in typed mode so the new text replaces it; false appends at the end of the existing text
+- `controlName` (`string`, `optional`, default `null`): Optional GUI control name of the field (GUI.SetNextControlName). When provided, focus goes through GUI.FocusControl; otherwise the field is focused through its IMGUI control id
+- `timeoutMs` (`int`, `optional`, default `0`): Maximum time to wait for completion. Zero derives a timeout from the text length and typing speed.
+
+### `rimworld/press_key`
+
+Dispatch a synthetic key press (KeyDown, then KeyUp) through RimWorld's root OnGUI pass. Handlers outside window contents see it: the time controls, gizmo hotkeys, and the window stack's accept and cancel handling for Return and Escape. Code inside a window's own contents, focused text fields included, does not, and success means the event was dispatched, not that anything handled it
+
+Parameters:
+- `key` (`string`, `required`): UnityEngine.KeyCode name such as Return, Escape, A, or Alpha1; common aliases like enter and esc are accepted
+- `character` (`string`, `optional`, default `null`): Optional single character to deliver with the KeyDown event, for handlers that read Event.character
+- `modifiers` (`string`, `optional`, default `null`): Optional comma-, space-, or plus-separated event modifiers such as shift, ctrl, alt, or command
+- `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the key press to be processed
+
 ### `rimworld/scroll_ui_target`
 
 Scroll a scroll_view ui-element target returned by rimworld/get_ui_layout on the next real draw frame
@@ -972,6 +996,7 @@ Parameters:
 - `suppressMessage` (`bool`, `optional`, default `true`): Suppress RimWorld's screenshot-taken message during this automated capture
 - `doNotResetCamera` (`bool`, `optional`, default `false`): True to leave the camera at the framed view after capture instead of restoring it
 - `rootSize` (`float`, `optional`, default `0f`): Optional camera root size to use; omit or pass 0 to preserve the current camera zoom
+- `outputDirectory` (`string`, `optional`, default `null`)
 
 ### `rimworld/take_screenshot`
 
@@ -986,6 +1011,7 @@ Parameters:
 - `suppressMessage` (`bool`, `optional`, default `true`): Suppress RimWorld's screenshot-taken message during this automated capture
 - `clipTargetId` (`string`, `optional`, default `null`): Optional target id from rimworld/get_screen_targets or rimworld/get_ui_layout to crop around, including windows, ui-surface ids, ui-element ids, and scroll_view elements
 - `clipPadding` (`int`, `optional`, default `8`): Logical screen-pixel padding to include around the clip target
+- `outputDirectory` (`string`, `optional`, default `null`)
 
 ### `rimworld/list_saves`
 
