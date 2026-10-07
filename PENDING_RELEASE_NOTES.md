@@ -8,4 +8,6 @@
 - Debug-action search answers within about five seconds and says when deeper menus were not searched yet.
 - Lua scripts accept `{}` as call arguments, `field or default` on missing fields, `..` concatenation and any `print` label, with a larger statement budget; script reports are compact.
 - `spawn_thing` suggests close matches for unknown defs, and inspecting things without inspect tabs (such as coolers) no longer fails.
-- Unknown arguments in script calls produce a warning that lists the valid parameters.
+- Unknown or misspelled tool arguments produce a warning that lists the valid parameters instead of being silently ignored.
+- RimWorld keeps running in the background for automation even after the game re-applies its preferences, for example when a Multiplayer session ends.
+- `open_window_by_type` no longer fails when reflection-only assemblies are loaded.

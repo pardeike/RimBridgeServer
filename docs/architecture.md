@@ -335,6 +335,10 @@ Every operation should return a consistent envelope:
 
 Even immediate operations should have an `operationId` so logs, events, and reports can correlate cleanly.
 
+The agent-facing GABP reply is shaped separately from this internal envelope (`Source/AgentResponseShaper.cs`): the payload is merged with a compact `operation` object (`OperationId`, `Status`, `Success`, `DurationMs`, plus `Warnings`/`Error` when present), nested and top-level `state` snapshots keep only the fields consumers read plus the game `tick`, and null or empty-string fields are dropped. Script runners and companion SDK calls consume the unshaped capability payloads.
+
+List-shaped results use `Source/ResponseBudget.cs`: direct agent calls (no parent operation) page results under a character budget and report `page.nextOffset`; nested calls from scripts or companions are unbounded.
+
 ### Target references
 
 Introduce small, reusable reference types:

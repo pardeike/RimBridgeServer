@@ -26,6 +26,8 @@ RimBridgeServer runs inside RimWorld and exposes a tool surface for:
 
 It is designed to stay as close as possible to RimWorld's own logical seams instead of reimplementing gameplay logic outside the game.
 
+RimWorld keeps running while its window is in the background, so agents can drive it without OS focus; the bridge restores this after RimWorld re-applies its preferences, without changing the saved preference.
+
 ## Installation
 
 ### Recommended: Use GABS
@@ -168,11 +170,25 @@ If you only need the shortest possible mental model, use this:
 4. Wait until the bridge is connected.
 5. Use tools like `rimbridge/get_bridge_status`, `rimworld/start_debug_game`, `rimworld/get_ui_layout`, `rimworld/take_screenshot`, `rimworld/list_mods`, and `rimworld/update_mod_settings` to drive and validate the game.
 
+## Agent-Facing Replies
+
+Tool replies are shaped for AI clients, whose tool output is capped (Codex keeps only the head and tail of about 48K characters):
+
+- Large lists are paged under a response budget of about 30K characters. Paged replies carry `page` with `offset`, `returned`, `total` and, when more remains, `nextOffset` plus a hint; pass `offset` to continue. This applies to `rimworld/get_cells_info`, `rimworld/get_ui_layout`, `rimworld/list_mods`, `rimworld/list_saves`, `rimworld/list_architect_designators`, `rimbridge/list_capabilities` and `rimworld/search_debug_actions`.
+- Calls made from Lua/JSON scripts or companion tools are not paged; they always receive complete results.
+- Every reply carries `operation` (`OperationId`, `Status`, `Success`, `DurationMs`, and `Warnings`/`Error` when present) and a compact `state` including the current game `tick`. Null and empty-string fields are omitted.
+- Unknown arguments are ignored but reported as an `arguments.unknown` warning that lists the valid parameters.
+- Script reports list compact step rows; with `includeStepResults: false` only failed steps are listed. When results exceed the budget, the largest are replaced by their size so small results such as file paths remain.
+
 ## UI Layout Targets And Cropped Screenshots
 
-Use `rimworld/get_ui_layout` when visual verification needs something more precise than a full-frame screenshot. The layout response exposes `ui-surface` ids for open windows/main tabs and `ui-element` ids for controls and natural regions such as `scroll_view` elements. Each surface and element includes its local `rect` plus a crop-ready `screenRect`.
+Use `rimworld/get_ui_layout` when visual verification needs something more precise than a full-frame screenshot. The layout response exposes `ui-surface` ids for open windows/main tabs and `ui-element` ids for controls and natural regions such as `scroll_view` elements. Each surface and element includes a crop-ready `screenRect`. Elements scrolled outside their scroll view's viewport are counted (`offscreenElementCount`) instead of listed, and label-less layout filler is counted as `omittedLayoutFillerCount`; pass `includeOffscreen: true` to list everything.
 
 Pass those ids to `rimworld/take_screenshot` as `clipTargetId` to crop a screenshot around a dialog, a window surface, a button, a label row, or a scroll viewport. For scroll views, use the element's `scroll` payload to read current offsets and limits, then call `rimworld/scroll_ui_target` with a delta or absolute target offset before capturing the next layout or cropped screenshot.
+
+## Development Companions
+
+`Companions/Multiplayer` is an optional test companion that drives the Multiplayer mod's native local host/join, faction, time-speed, save/replay and loading-diagnostics flows through RimBridgeServer. The main build builds it, and Mods-folder deployment puts its DLL in the sibling `BridgeTools/Multiplayer` folder; it is never part of the player mod ZIP. See [Companions/Multiplayer/README.md](Companions/Multiplayer/README.md).
 
 ## Third-Party Extension Tools
 

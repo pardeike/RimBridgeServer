@@ -191,7 +191,10 @@ The first Lua slice should be intentionally narrow.
 - table literals
 - field and index access
 - arithmetic and comparisons
+- string concatenation with `..`
 - boolean operators
+- missing fields read as `nil` on the left of `or` and in `nil` comparisons (`item.w or 1`, `item.w == nil`); elsewhere a missing field is a runtime error
+- `{}` as empty call arguments, and any expression as the first argument of a two-argument `print`
 - `if` / `elseif` / `else`
 - numeric `for`
 - array iteration via `ipairs`
