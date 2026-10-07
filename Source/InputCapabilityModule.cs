@@ -67,9 +67,9 @@ internal sealed class InputCapabilityModule
         return RimWorldInspectTabs.OpenInspectTabResponse(inspectTabId);
     }
 
-    public object GetUiLayout(string surfaceId = null, int timeoutMs = 2000)
+    public object GetUiLayout(string surfaceId = null, int timeoutMs = 2000, bool includeOffscreen = false, int offset = 0)
     {
-        return RimBridgeUiWorkbench.GetUiLayoutResponse(surfaceId, timeoutMs);
+        return RimBridgeUiWorkbench.GetUiLayoutResponse(surfaceId, timeoutMs, includeOffscreen, offset);
     }
 
     public object ClickUiTarget(string targetId, int timeoutMs = 2000)

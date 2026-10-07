@@ -318,7 +318,7 @@ internal static class RimWorldArchitect
         };
     }
 
-    public static object GetCellsInfoResponse(int x, int z, int width = 1, int height = 1)
+    public static object GetCellsInfoResponse(int x, int z, int width = 1, int height = 1, int offset = 0)
     {
         if (!TryGetMapContext(out var map, out var error))
             return Failure(error);
@@ -337,6 +337,10 @@ internal static class RimWorldArchitect
                 return Failure($"Cell ({cell.x}, {cell.z}) is out of bounds for the current map.");
         }
 
+        var zones = new Dictionary<string, object>(StringComparer.Ordinal);
+        var areas = new Dictionary<string, object>(StringComparer.Ordinal);
+        var cells = ResponseBudget.TakePage(requestedCells, offset, cell => CreateCompactCellInfoPayload(map, cell, zones, areas), out var page);
+
         return new
         {
             success = true,
@@ -348,8 +352,71 @@ internal static class RimWorldArchitect
                 height
             },
             cellCount = requestedCells.Count,
-            cells = requestedCells.Select(cell => CreateCellInfoPayload(map, cell)).ToList(),
+            page,
+            zones,
+            areas,
+            cells,
             state = RimWorldState.ToolStateSnapshot()
+        };
+    }
+
+    // Rectangle variant: zones and areas are described once at the top level and referenced per cell
+    // by id and label; empty per-cell lists are omitted while the counts stay explicit.
+    private static object CreateCompactCellInfoPayload(Map map, IntVec3 cell, Dictionary<string, object> zones, Dictionary<string, object> areas)
+    {
+        var things = map.thingGrid.ThingsListAt(cell).Where(thing => thing != null).ToList();
+        var designations = map.designationManager.AllDesignationsAt(cell).Where(designation => designation != null).ToList();
+        var zone = map.zoneManager?.ZoneAt(cell);
+        var cellAreas = map.areaManager?.AllAreas
+            ?.Where(area => area != null && area[cell])
+            .OrderBy(area => area.ListPriority)
+            .ThenBy(area => area.Label, StringComparer.Ordinal)
+            .ToList() ?? [];
+
+        string zoneId = null;
+        if (zone != null)
+        {
+            zoneId = zone.GetUniqueLoadID();
+            if (!zones.ContainsKey(zoneId))
+                zones[zoneId] = DescribeZone(zone);
+        }
+
+        foreach (var area in cellAreas)
+        {
+            var areaId = area.GetUniqueLoadID();
+            if (!areas.ContainsKey(areaId))
+                areas[areaId] = DescribeArea(area);
+        }
+
+        return new
+        {
+            x = cell.x,
+            z = cell.z,
+            terrain = map.terrainGrid.TerrainAt(cell)?.defName,
+            roof = map.roofGrid.RoofAt(cell)?.defName,
+            fogged = cell.Fogged(map),
+            walkable = cell.Walkable(map),
+            thingCount = things.Count,
+            things = things.Count == 0 ? null : things.Select(DescribeCompactThingAtCell).ToList(),
+            designationCount = designations.Count,
+            designations = designations.Count == 0 ? null : designations.Select(DescribeDesignationAtCell).ToList(),
+            zone = zone == null ? null : new { id = zoneId, label = zone.RenamableLabel },
+            areas = cellAreas.Count == 0 ? null : cellAreas.Select(area => new { id = area.GetUniqueLoadID(), label = area.Label }).ToList()
+        };
+    }
+
+    private static object DescribeCompactThingAtCell(Thing thing)
+    {
+        var blueprint = thing as Blueprint_Build;
+        var frame = thing as Frame;
+        return new
+        {
+            defName = thing.def?.defName,
+            label = thing.LabelCap.ToString(),
+            stuffDefName = thing.Stuff?.defName,
+            blueprintBuildDefName = blueprint?.BuildDef?.defName,
+            frameBuildDefName = frame?.BuildDef?.defName,
+            hitPoints = thing.HitPoints
         };
     }
 

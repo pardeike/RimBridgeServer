@@ -12,9 +12,9 @@ internal sealed class DebugActionsCapabilityModule
         return RimWorldDebugActions.ListDebugActionChildrenResponse(path, includeHidden);
     }
 
-    public object SearchDebugActions(string query, int limit = 50, bool includeHidden = false, bool supportedOnly = false, string requiredTargetKind = null)
+    public object SearchDebugActions(string query, int limit = 50, bool includeHidden = false, bool supportedOnly = false, string requiredTargetKind = null, int offset = 0)
     {
-        return RimWorldDebugActions.SearchDebugActionsResponse(query, limit, includeHidden, supportedOnly, requiredTargetKind);
+        return RimWorldDebugActions.SearchDebugActionsResponse(query, limit, includeHidden, supportedOnly, requiredTargetKind, offset);
     }
 
     public object GetDebugAction(string path, bool includeChildren = true, bool includeHiddenChildren = false)

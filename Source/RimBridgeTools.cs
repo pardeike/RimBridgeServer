@@ -43,9 +43,10 @@ public class RimBridgeTools
         [ToolParameter(Description = "Optional category filter")] string category = null,
         [ToolParameter(Description = "Optional source filter: core, optional, or extension")] string source = null,
         [ToolParameter(Description = "Optional case-insensitive free-text query across ids, aliases, titles, summaries, and parameter names")] string query = null,
-        [ToolParameter(Description = "Include parameter descriptors for each capability")] bool includeParameters = true)
+        [ToolParameter(Description = "Include parameter descriptors for each capability; rimbridge/get_capability returns them for one capability")] bool includeParameters = false,
+        [ToolParameter(Description = "Zero-based capability offset for paging; long results return page.nextOffset when the response size budget is reached")] int offset = 0)
     {
-        return InvokeAlias(Arguments((nameof(limit), limit), (nameof(providerId), providerId), (nameof(category), category), (nameof(source), source), (nameof(query), query), (nameof(includeParameters), includeParameters)));
+        return InvokeAlias(Arguments((nameof(limit), limit), (nameof(providerId), providerId), (nameof(category), category), (nameof(source), source), (nameof(query), query), (nameof(includeParameters), includeParameters), (nameof(offset), offset)));
     }
 
     [ReadmeTool("Bridge Diagnostics", "Get one registered bridge capability descriptor by capability id or alias")]
@@ -315,9 +316,10 @@ public class RimBridgeTools
         [ToolParameter(Description = "Maximum number of matches to return")] int limit = 50,
         [ToolParameter(Description = "Include nodes that are currently hidden in the active game state")] bool includeHidden = false,
         [ToolParameter(Description = "Only return nodes whose execution metadata reports supported=true")] bool supportedOnly = false,
-        [ToolParameter(Description = "Optional required target kind filter such as pawn or map")] string requiredTargetKind = null)
+        [ToolParameter(Description = "Optional required target kind filter such as pawn or map")] string requiredTargetKind = null,
+        [ToolParameter(Description = "Zero-based match offset for paging; long results return page.nextOffset when the response size budget is reached")] int offset = 0)
     {
-        return InvokeAlias(Arguments((nameof(query), query), (nameof(limit), limit), (nameof(includeHidden), includeHidden), (nameof(supportedOnly), supportedOnly), (nameof(requiredTargetKind), requiredTargetKind)));
+        return InvokeAlias(Arguments((nameof(query), query), (nameof(limit), limit), (nameof(includeHidden), includeHidden), (nameof(supportedOnly), supportedOnly), (nameof(requiredTargetKind), requiredTargetKind), (nameof(offset), offset)));
     }
 
     [ReadmeTool("Debug Actions And Mods", "Get metadata for one RimWorld debug action path and, optionally, its immediate children")]
@@ -364,9 +366,12 @@ public class RimBridgeTools
 
     [ReadmeTool("Debug Actions And Mods", "List installed RimWorld mods, whether each one is enabled in the current configuration, and whether it matches the currently loaded session")]
     [Tool("rimworld/list_mods", Description = "List installed RimWorld mods, whether each one is enabled in the current configuration, and whether it matches the currently loaded session")]
-    public object ListMods([ToolParameter(Description = "Include inactive installed mods as well as the active load order")] bool includeInactive = true)
+    public object ListMods(
+        [ToolParameter(Description = "Include inactive installed mods as well as the active load order")] bool includeInactive = true,
+        [ToolParameter(Description = "Return full metadata per mod (authors, alternative package ids, load-order rules); the default compact entries list problems only when present")] bool includeDetails = false,
+        [ToolParameter(Description = "Zero-based mod offset for paging; long mod lists return page.nextOffset when the response size budget is reached")] int offset = 0)
     {
-        return InvokeAlias(Arguments((nameof(includeInactive), includeInactive)));
+        return InvokeAlias(Arguments((nameof(includeInactive), includeInactive), (nameof(includeDetails), includeDetails), (nameof(offset), offset)));
     }
 
     [ReadmeTool("Debug Actions And Mods", "Read semantic mod-configuration status for the current active load order, including warnings, ordering issues, and whether a restart is required to match the loaded session")]
@@ -577,9 +582,10 @@ public class RimBridgeTools
         [ToolParameter(Description = "Top-left cell x coordinate")] int x,
         [ToolParameter(Description = "Top-left cell z coordinate")] int z,
         [ToolParameter(Description = "Rectangle width in cells; width * height must not exceed 1024")] int width = 1,
-        [ToolParameter(Description = "Rectangle height in cells; width * height must not exceed 1024")] int height = 1)
+        [ToolParameter(Description = "Rectangle height in cells; width * height must not exceed 1024")] int height = 1,
+        [ToolParameter(Description = "Zero-based row-major cell offset for paging; large rectangles return page.nextOffset when the response size budget is reached")] int offset = 0)
     {
-        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height)));
+        return InvokeAlias(Arguments((nameof(x), x), (nameof(z), z), (nameof(width), width), (nameof(height), height), (nameof(offset), offset)));
     }
 
     [ReadmeTool("Architect And Map State", "Use RimWorld's expanding-radius random cell search to find a nearby cell or footprint that satisfies generic map criteria")]
@@ -700,9 +706,11 @@ public class RimBridgeTools
     [Tool("rimworld/get_ui_layout", Description = "Capture a generic structured layout snapshot of the current dialogs, windows, main tabs, dynamic inspect tab strip, or selected gizmo grid, including actionable controls, crop-ready screen rects, and scroll-view metadata", ResultDescription = "A structured layout snapshot for the requested surface, including ui-surface and ui-element target ids that can be passed to rimworld/take_screenshot, rimworld/click_ui_target, rimworld/scroll_ui_target, or rimworld/set_hover_target.")]
     public object GetUiLayout(
         [ToolParameter(Description = "Optional surface target id such as a window target from rimworld/get_screen_targets, a main-tab target from rimworld/list_main_tabs, or selection-gizmos for the selected-pawn gizmo grid")] string surfaceId = null,
-        [ToolParameter(Description = "Maximum time to wait for the requested UI surface to draw on screen")] int timeoutMs = 2000)
+        [ToolParameter(Description = "Maximum time to wait for the requested UI surface to draw on screen")] int timeoutMs = 2000,
+        [ToolParameter(Description = "Include elements scrolled outside their scroll view's visible viewport; by default they are counted but omitted")] bool includeOffscreen = false,
+        [ToolParameter(Description = "Zero-based element offset for paging; large layouts return page.nextOffset when the response size budget is reached")] int offset = 0)
     {
-        return InvokeAlias(Arguments((nameof(surfaceId), surfaceId), (nameof(timeoutMs), timeoutMs)));
+        return InvokeAlias(Arguments((nameof(surfaceId), surfaceId), (nameof(timeoutMs), timeoutMs), (nameof(includeOffscreen), includeOffscreen), (nameof(offset), offset)));
     }
 
     [ReadmeTool("UI And Input", "Activate an actionable UI control target returned by rimworld/get_ui_layout on the next real draw frame")]
@@ -1085,9 +1093,10 @@ public class RimBridgeTools
     [ReadmeTool("Save/Load And Spawning", "List saved RimWorld games and optionally return only saves whose recorded mods are all currently active")]
     [Tool("rimworld/list_saves", Description = "List saved RimWorld games with mod-compatibility details and optionally return only saves whose recorded mods are all currently active")]
     public object ListSaves(
-        [ToolParameter(Description = "Return only saves whose recorded mods are all currently active; extra currently active mods are allowed")] bool compatibleOnly = false)
+        [ToolParameter(Description = "Return only saves whose recorded mods are all currently active; extra currently active mods are allowed")] bool compatibleOnly = false,
+        [ToolParameter(Description = "Zero-based save (newest first) offset for paging; long results return page.nextOffset when the response size budget is reached")] int offset = 0)
     {
-        return InvokeAlias(Arguments((nameof(compatibleOnly), compatibleOnly)));
+        return InvokeAlias(Arguments((nameof(compatibleOnly), compatibleOnly), (nameof(offset), offset)));
     }
 
     [ReadmeTool("Save/Load And Spawning", "Spawn a thing on the current map at a target cell")]

@@ -75,7 +75,7 @@ internal static class RimWorldDebugActions
         };
     }
 
-    public static object SearchDebugActionsResponse(string query, int limit = 50, bool includeHidden = false, bool supportedOnly = false, string requiredTargetKind = null)
+    public static object SearchDebugActionsResponse(string query, int limit = 50, bool includeHidden = false, bool supportedOnly = false, string requiredTargetKind = null, int offset = 0)
     {
         var normalizedQuery = query?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(normalizedQuery))
@@ -84,15 +84,22 @@ internal static class RimWorldDebugActions
         if (limit <= 0)
             limit = 50;
 
-        var matches = EnumerateDebugActionNodes(includeHidden)
+        var allMatches = EnumerateDebugActionNodes(includeHidden)
             .Select(node => TryCreateSearchMatch(node, normalizedQuery, supportedOnly, requiredTargetKind))
             .Where(match => match != null)
             .OrderByDescending(match => match.Score)
             .ThenBy(match => match.Path, StringComparer.Ordinal)
             .ToList();
 
-        var totalMatchCount = matches.Count;
-        var limitedMatches = matches.Take(limit).ToList();
+        var totalMatchCount = allMatches.Count;
+        var limitedMatches = allMatches.Take(limit).ToList();
+        var matches = ResponseBudget.TakePage(limitedMatches, offset, match => (object)new
+        {
+            score = match.Score,
+            matchFields = match.MatchFields,
+            path = match.Path,
+            node = DescribeNode(match.Node)
+        }, out var page);
 
         return new
         {
@@ -106,13 +113,8 @@ internal static class RimWorldDebugActions
             matchCount = limitedMatches.Count,
             totalMatchCount,
             truncated = totalMatchCount > limitedMatches.Count,
-            matches = limitedMatches.Select(match => new
-            {
-                score = match.Score,
-                matchFields = match.MatchFields,
-                path = match.Path,
-                node = DescribeNode(match.Node)
-            }).ToList()
+            page,
+            matches
         };
     }
 

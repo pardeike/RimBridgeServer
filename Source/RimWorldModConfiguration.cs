@@ -104,15 +104,17 @@ internal static class RimWorldModConfiguration
         public int SessionMismatchCount { get; set; }
     }
 
-    public static object ListModsResponse(bool includeInactive = true)
+    public static object ListModsResponse(bool includeInactive = true, bool includeDetails = false, int offset = 0)
     {
         var snapshot = DescribeConfiguration();
         var mods = includeInactive ? snapshot.Mods : snapshot.ActiveMods;
+        var entries = ResponseBudget.TakePage(mods, offset, mod => includeDetails ? ToResponseEntry(mod) : ToCompactEntry(mod, includeRootDir: false), out var page);
 
         return new
         {
             success = true,
             includeInactive,
+            includeDetails,
             modCount = mods.Count,
             activeCount = snapshot.ActiveMods.Count,
             loadedSessionModCount = snapshot.LoadedSessionMods.Count,
@@ -120,7 +122,8 @@ internal static class RimWorldModConfiguration
             restartReasonCount = snapshot.RestartReasons.Count,
             restartReasons = snapshot.RestartReasons,
             sessionMismatchCount = snapshot.SessionMismatchCount,
-            mods = mods.Select(ToResponseEntry).ToList()
+            page,
+            mods = entries
         };
     }
 
@@ -508,6 +511,8 @@ internal static class RimWorldModConfiguration
 
     private static object ToResponseStatus(ModConfigurationSnapshot snapshot)
     {
+        var sessionMatchesActive = snapshot.ActiveMods.Select(mod => mod.ModId)
+            .SequenceEqual(snapshot.LoadedSessionMods.Select(mod => mod.ModId), StringComparer.Ordinal);
         return new
         {
             success = true,
@@ -525,10 +530,33 @@ internal static class RimWorldModConfiguration
             restartReasons = snapshot.RestartReasons,
             currentConfigurationHash = snapshot.CurrentConfigurationHash,
             loadedSessionHash = snapshot.LoadedSessionHash,
-            currentActiveModIds = snapshot.ActiveMods.Select(mod => mod.ModId).ToList(),
-            loadedSessionModIds = snapshot.LoadedSessionMods.Select(mod => mod.ModId).ToList(),
-            activeMods = snapshot.ActiveMods.Select(ToResponseEntry).ToList(),
-            loadedSessionMods = snapshot.LoadedSessionMods.Select(ToResponseEntry).ToList()
+            loadedSessionMatchesActive = sessionMatchesActive,
+            activeMods = snapshot.ActiveMods.Select(mod => ToCompactEntry(mod, includeRootDir: true)).ToList(),
+            loadedSessionMods = sessionMatchesActive ? null : snapshot.LoadedSessionMods.Select(mod => ToCompactEntry(mod, includeRootDir: true)).ToList()
+        };
+    }
+
+    // Agent-facing default: identity, state and order, with problem fields only when a problem exists.
+    private static object ToCompactEntry(ModConfigurationEntrySnapshot snapshot, bool includeRootDir)
+    {
+        return new
+        {
+            modId = snapshot.ModId,
+            packageId = snapshot.PackageId,
+            name = snapshot.Name,
+            folderName = snapshot.FolderName,
+            rootDir = includeRootDir ? snapshot.RootDir : null,
+            source = snapshot.Source,
+            version = snapshot.Version,
+            enabled = snapshot.Enabled,
+            loadedInSession = snapshot.LoadedInSession,
+            activeLoadOrder = snapshot.ActiveLoadOrder,
+            loadedSessionOrder = snapshot.LoadedSessionOrder == snapshot.ActiveLoadOrder ? null : snapshot.LoadedSessionOrder,
+            matchesLoadedSession = snapshot.MatchesLoadedSession ? (bool?)null : false,
+            configurationWarning = snapshot.HasConfigurationWarning ? snapshot.ConfigurationWarning : null,
+            hasVersionWarning = snapshot.HasVersionWarning ? true : (bool?)null,
+            hasOrderingIssues = snapshot.HasOrderingIssues ? true : (bool?)null,
+            unsatisfiedDependencies = snapshot.UnsatisfiedDependencies?.Count > 0 ? snapshot.UnsatisfiedDependencies : null
         };
     }
 

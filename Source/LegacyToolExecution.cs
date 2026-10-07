@@ -47,9 +47,7 @@ internal static class LegacyToolExecution
 
     private static object ComposeLegacyResponse(object payload, OperationEnvelope envelope)
     {
-        var values = ToDictionary(payload);
-        values["operation"] = envelope.WithoutResult();
-        return values;
+        return AgentResponseShaper.Shape(ToDictionary(payload), envelope);
     }
 
     private static Dictionary<string, object> ToDictionary(object payload)

@@ -334,7 +334,7 @@ internal static class RimBridgeUiWorkbench
     private const int MaxRetainedCaptures = 8;
     internal const string SelectionGizmosSurfaceId = "selection-gizmos";
 
-    public static object GetUiLayoutResponse(string surfaceId = null, int timeoutMs = 2000)
+    public static object GetUiLayoutResponse(string surfaceId = null, int timeoutMs = 2000, bool includeOffscreen = false, int offset = 0)
     {
         timeoutMs = timeoutMs <= 0 ? 2000 : timeoutMs;
 
@@ -363,7 +363,7 @@ internal static class RimBridgeUiWorkbench
         }
 
         var snapshot = request.Completion.Task.GetAwaiter().GetResult();
-        return DescribeLayout(snapshot);
+        return DescribeLayout(snapshot, includeOffscreen, offset);
     }
 
     public static object ClickUiTargetResponse(string targetId, int timeoutMs = 2000)
@@ -1781,71 +1781,164 @@ internal static class RimBridgeUiWorkbench
         };
     }
 
-    private static object DescribeLayout(UiLayoutSnapshot snapshot)
+    private static object DescribeLayout(UiLayoutSnapshot snapshot, bool includeOffscreen = false, int offset = 0)
     {
+        var entries = new List<(UiLayoutSurfaceSnapshot Surface, UiLayoutElementSnapshot Element)>();
+        var surfaceStats = new Dictionary<UiLayoutSurfaceSnapshot, (int Offscreen, int Filler)>();
+        foreach (var surface in snapshot.Surfaces)
+        {
+            var offscreen = 0;
+            var filler = 0;
+            var scrollByContentRoot = FindScrollContentRoots(surface.Elements);
+            var byId = surface.Elements
+                .Where(element => string.IsNullOrEmpty(element.TargetId) == false)
+                .GroupBy(element => element.TargetId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+            foreach (var element in surface.Elements)
+            {
+                var scrollView = FindEnclosingScrollView(element, byId, scrollByContentRoot);
+                var outside = scrollView != null && !Intersects(element.ScreenRect, scrollView.Scroll.ViewportScreenRect);
+
+                if (IsLayoutFiller(element))
+                {
+                    filler++;
+                    continue;
+                }
+
+                if (!includeOffscreen && outside)
+                {
+                    offscreen++;
+                    continue;
+                }
+
+                entries.Add((surface, element));
+            }
+
+            surfaceStats[surface] = (offscreen, filler);
+        }
+
+        var described = ResponseBudget.TakePage(entries, offset, entry => DescribeLayoutElement(entry.Element), out var page);
+        var pageSurfaces = entries.Skip(Math.Max(0, offset)).Take(described.Count).Select(entry => entry.Surface).ToList();
+
         return new
         {
             success = true,
             captureId = snapshot.CaptureId,
             capturedFrame = snapshot.CapturedFrame,
-            capturedAtUtc = snapshot.CapturedAtUtc,
             surfaceCount = snapshot.Surfaces.Count,
-            surfaces = snapshot.Surfaces.Select(surface => new
+            page,
+            surfaces = snapshot.Surfaces.Select(surface =>
             {
-                captureTargetId = surface.CaptureTargetId,
-                surfaceTargetId = surface.SurfaceTargetId,
-                surfaceKind = surface.SurfaceKind,
-                type = surface.Type,
-                title = surface.Title,
-                label = surface.Label,
-                semanticKind = string.IsNullOrWhiteSpace(surface.SemanticKind) ? null : surface.SemanticKind,
-                semanticDetails = surface.SemanticDetails,
-                rect = new
+                var elements = described.Where((_, index) => ReferenceEquals(pageSurfaces[index], surface)).ToList();
+                var stats = surfaceStats[surface];
+                return new
                 {
-                    x = surface.Rect.X,
-                    y = surface.Rect.Y,
-                    width = surface.Rect.Width,
-                    height = surface.Rect.Height
-                },
-                screenRect = new
-                {
-                    x = surface.ScreenRect.X,
-                    y = surface.ScreenRect.Y,
-                    width = surface.ScreenRect.Width,
-                    height = surface.ScreenRect.Height
-                },
-                elementCount = surface.Elements.Count,
-                actionableElementCount = surface.Elements.Count(element => element.Actionable),
-                elements = surface.Elements.Select(element => new
-                {
-                    targetId = element.TargetId,
-                    kind = element.Kind,
-                    source = element.Source,
-                    label = element.Label,
-                    valueText = element.ValueText,
-                    actionable = element.Actionable,
-                    clipCapable = element.ClipCapable,
-                    isChecked = element.Checked,
-                    disabled = element.Disabled,
-                    depth = element.Depth,
-                    parentTargetId = element.ParentTargetId,
-                    rect = new
-                    {
-                        x = element.Rect.X,
-                        y = element.Rect.Y,
-                        width = element.Rect.Width,
-                        height = element.Rect.Height
-                    },
-                    screenRect = new
-                    {
-                        x = element.ScreenRect.X,
-                        y = element.ScreenRect.Y,
-                        width = element.ScreenRect.Width,
-                        height = element.ScreenRect.Height
-                    },
-                    scroll = DescribeScroll(element.Scroll)
-                }).ToList()
-            }).ToList()
+                    captureTargetId = surface.CaptureTargetId,
+                    surfaceTargetId = surface.SurfaceTargetId,
+                    surfaceKind = surface.SurfaceKind,
+                    type = surface.Type,
+                    title = surface.Title,
+                    label = surface.Label,
+                    semanticKind = string.IsNullOrWhiteSpace(surface.SemanticKind) ? null : surface.SemanticKind,
+                    semanticDetails = surface.SemanticDetails,
+                    screenRect = DescribeRect(surface.ScreenRect),
+                    elementCount = surface.Elements.Count,
+                    actionableElementCount = surface.Elements.Count(element => element.Actionable),
+                    offscreenElementCount = stats.Offscreen,
+                    omittedLayoutFillerCount = stats.Filler,
+                    elements
+                };
+            }).ToList(),
+            offscreenHint = includeOffscreen || surfaceStats.Values.All(stats => stats.Offscreen == 0)
+                ? null
+                : "Elements scrolled out of view are omitted; scroll with rimworld/scroll_ui_target or pass includeOffscreen=true."
+        };
+    }
+
+    // Spacers and empty layout slots carry geometry only: no label, value, or action.
+    private static bool IsLayoutFiller(UiLayoutElementSnapshot element)
+    {
+        return element.Actionable == false
+            && element.Scroll == null
+            && string.IsNullOrEmpty(element.Label)
+            && string.IsNullOrEmpty(element.ValueText)
+            && (element.Kind == "spacing" || element.Kind == "slot");
+    }
+
+    // Listings draw their scroll content as the sibling directly after the scroll view; that
+    // sibling (same depth and parent) is the content root for everything parented under it.
+    private static Dictionary<string, UiLayoutElementSnapshot> FindScrollContentRoots(List<UiLayoutElementSnapshot> elements)
+    {
+        var roots = new Dictionary<string, UiLayoutElementSnapshot>(StringComparer.Ordinal);
+        for (var index = 0; index + 1 < elements.Count; index++)
+        {
+            var scrollView = elements[index];
+            var next = elements[index + 1];
+            if (scrollView.Scroll != null
+                && next.Depth == scrollView.Depth
+                && string.Equals(next.ParentTargetId, scrollView.ParentTargetId, StringComparison.Ordinal)
+                && string.IsNullOrEmpty(next.TargetId) == false)
+            {
+                roots[next.TargetId] = scrollView;
+            }
+        }
+
+        return roots;
+    }
+
+    private static UiLayoutElementSnapshot FindEnclosingScrollView(
+        UiLayoutElementSnapshot element,
+        Dictionary<string, UiLayoutElementSnapshot> byId,
+        Dictionary<string, UiLayoutElementSnapshot> scrollByContentRoot)
+    {
+        var parentId = element.ParentTargetId;
+        for (var guard = 0; guard < 64 && string.IsNullOrEmpty(parentId) == false; guard++)
+        {
+            if (scrollByContentRoot.TryGetValue(parentId, out var scrollView))
+                return scrollView;
+            if (!byId.TryGetValue(parentId, out var parent))
+                return null;
+            if (parent.Scroll != null)
+                return parent;
+            parentId = parent.ParentTargetId;
+        }
+
+        return null;
+    }
+
+    private static bool Intersects(UiRectSnapshot a, UiRectSnapshot b)
+    {
+        return a.X < b.X + b.Width && a.X + a.Width > b.X && a.Y < b.Y + b.Height && a.Y + a.Height > b.Y;
+    }
+
+    private static object DescribeRect(UiRectSnapshot rect)
+    {
+        return new
+        {
+            x = Math.Round(rect.X),
+            y = Math.Round(rect.Y),
+            width = Math.Round(rect.Width),
+            height = Math.Round(rect.Height)
+        };
+    }
+
+    private static object DescribeLayoutElement(UiLayoutElementSnapshot element)
+    {
+        return new
+        {
+            targetId = element.TargetId,
+            kind = element.Kind,
+            source = element.Source,
+            label = element.Label,
+            valueText = element.ValueText,
+            actionable = element.Actionable,
+            clipCapable = element.ClipCapable ? (bool?)null : false,
+            isChecked = element.Checked,
+            disabled = element.Disabled,
+            depth = element.Depth,
+            parentTargetId = element.ParentTargetId,
+            screenRect = DescribeRect(element.ScreenRect),
+            scroll = DescribeScroll(element.Scroll)
         };
     }
 

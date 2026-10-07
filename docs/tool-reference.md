@@ -41,7 +41,8 @@ Parameters:
 - `category` (`string`, `optional`, default `null`): Optional category filter
 - `source` (`string`, `optional`, default `null`): Optional source filter: core, optional, or extension
 - `query` (`string`, `optional`, default `null`): Optional case-insensitive free-text query across ids, aliases, titles, summaries, and parameter names
-- `includeParameters` (`bool`, `optional`, default `true`): Include parameter descriptors for each capability
+- `includeParameters` (`bool`, `optional`, default `false`): Include parameter descriptors for each capability; rimbridge/get_capability returns them for one capability
+- `offset` (`int`, `optional`, default `0`): Zero-based capability offset for paging; long results return page.nextOffset when the response size budget is reached
 
 ### `rimbridge/get_capability`
 
@@ -290,6 +291,7 @@ Parameters:
 - `includeHidden` (`bool`, `optional`, default `false`): Include nodes that are currently hidden in the active game state
 - `supportedOnly` (`bool`, `optional`, default `false`): Only return nodes whose execution metadata reports supported=true
 - `requiredTargetKind` (`string`, `optional`, default `null`): Optional required target kind filter such as pawn or map
+- `offset` (`int`, `optional`, default `0`): Zero-based match offset for paging; long results return page.nextOffset when the response size budget is reached
 
 ### `rimworld/get_debug_action`
 
@@ -338,6 +340,8 @@ List installed RimWorld mods, whether each one is enabled in the current configu
 
 Parameters:
 - `includeInactive` (`bool`, `optional`, default `true`): Include inactive installed mods as well as the active load order
+- `includeDetails` (`bool`, `optional`, default `false`): Return full metadata per mod (authors, alternative package ids, load-order rules); the default compact entries list problems only when present
+- `offset` (`int`, `optional`, default `0`): Zero-based mod offset for paging; long mod lists return page.nextOffset when the response size budget is reached
 
 ### `rimworld/get_mod_configuration_status`
 
@@ -534,6 +538,7 @@ Parameters:
 - `z` (`int`, `required`): Top-left cell z coordinate
 - `width` (`int`, `optional`, default `1`): Rectangle width in cells; width * height must not exceed 1024
 - `height` (`int`, `optional`, default `1`): Rectangle height in cells; width * height must not exceed 1024
+- `offset` (`int`, `optional`, default `0`): Zero-based row-major cell offset for paging; large rectangles return page.nextOffset when the response size budget is reached
 
 ### `rimworld/find_random_cell_near`
 
@@ -627,6 +632,8 @@ Returns:
 Parameters:
 - `surfaceId` (`string`, `optional`, default `null`): Optional surface target id such as a window target from rimworld/get_screen_targets, a main-tab target from rimworld/list_main_tabs, or selection-gizmos for the selected-pawn gizmo grid
 - `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the requested UI surface to draw on screen
+- `includeOffscreen` (`bool`, `optional`, default `false`): Include elements scrolled outside their scroll view's visible viewport; by default they are counted but omitted
+- `offset` (`int`, `optional`, default `0`): Zero-based element offset for paging; large layouts return page.nextOffset when the response size budget is reached
 
 ### `rimworld/click_ui_target`
 
@@ -975,6 +982,7 @@ List saved RimWorld games with mod-compatibility details and optionally return o
 
 Parameters:
 - `compatibleOnly` (`bool`, `optional`, default `false`): Return only saves whose recorded mods are all currently active; extra currently active mods are allowed
+- `offset` (`int`, `optional`, default `0`): Zero-based save (newest first) offset for paging; long results return page.nextOffset when the response size budget is reached
 
 ### `rimworld/spawn_thing`
 

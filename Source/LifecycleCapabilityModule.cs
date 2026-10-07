@@ -741,7 +741,7 @@ internal sealed class LifecycleCapabilityModule
         };
     }
 
-    public object ListSaves(bool compatibleOnly = false)
+    public object ListSaves(bool compatibleOnly = false, int offset = 0)
     {
         var runtime = Dispatcher.Invoke(CaptureSaveCompatibilityRuntimeSnapshot, timeoutMs: 5000);
         var inspectedSaves = GenFilePaths.AllSavedGameFiles
@@ -753,15 +753,15 @@ internal sealed class LifecycleCapabilityModule
             .ToList();
         var saves = inspectedSaves
             .Where(save => compatibleOnly == false || save.Compatibility.Compatibility.IsCompatible)
-            .Select(save => new
+            .OrderByDescending(save => save.File.LastWriteTimeUtc)
+            .ToList();
+        var savePage = ResponseBudget.TakePage(saves, offset, save => (object)new
             {
                 name = Path.GetFileNameWithoutExtension(save.File.Name),
-                path = save.File.FullName,
                 lastWriteTimeUtc = save.File.LastWriteTimeUtc,
                 sizeBytes = save.File.Length,
                 compatibility = DescribeSaveCompatibility(save.Compatibility)
-            })
-            .ToList();
+            }, out var page);
         var compatibleCount = inspectedSaves.Count(save => save.Compatibility.Compatibility.IsCompatible);
         var missingModsCount = inspectedSaves.Count(save => save.Compatibility.Compatibility.Status == SaveModCompatibilityStatus.MissingMods);
         var metadataUnavailableCount = inspectedSaves.Count(save => save.Compatibility.Compatibility.Status == SaveModCompatibilityStatus.MetadataUnavailable);
@@ -777,7 +777,8 @@ internal sealed class LifecycleCapabilityModule
             incompatibleCount = inspectedSaves.Count - compatibleCount,
             missingModsCount,
             metadataUnavailableCount,
-            saves
+            page,
+            saves = savePage
         };
     }
 

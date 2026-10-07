@@ -353,8 +353,6 @@ internal sealed class ScriptingCapabilityModule
             halted = report.Halted,
             returned = report.Returned,
             haltReason = report.HaltReason,
-            result = report.Result,
-            error = report.Error,
             stepCount = report.StepCount,
             executedStepCount = report.ExecutedStepCount,
             succeededStepCount = report.SucceededStepCount,
@@ -362,7 +360,6 @@ internal sealed class ScriptingCapabilityModule
             startedAtUtc = report.StartedAtUtc,
             completedAtUtc = report.CompletedAtUtc,
             durationMs = report.DurationMs,
-            output = report.Output.ConvertAll(ProjectOutput),
             steps = report.Steps.ConvertAll(ProjectStep)
         };
     }

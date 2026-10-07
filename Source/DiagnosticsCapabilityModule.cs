@@ -59,7 +59,7 @@ internal sealed class DiagnosticsCapabilityModule
         return RimWorldWaits.GetBridgeStatus(_journal, _logJournal);
     }
 
-    public object ListCapabilities(int limit = 200, string providerId = null, string category = null, string source = null, string query = null, bool includeParameters = true)
+    public object ListCapabilities(int limit = 200, string providerId = null, string category = null, string source = null, string query = null, bool includeParameters = false, int offset = 0)
     {
         if (limit <= 0)
             return new { success = true, totalCount = 0, returnedCount = 0, capabilities = Array.Empty<object>() };
@@ -72,10 +72,8 @@ internal sealed class DiagnosticsCapabilityModule
             .Where(descriptor => string.IsNullOrWhiteSpace(query) || MatchesCapabilityQuery(descriptor, query))
             .ToList();
 
-        var returned = descriptors
-            .Take(limit)
-            .Select(descriptor => DescribeCapability(descriptor, includeParameters))
-            .ToList();
+        var limited = descriptors.Take(limit).ToList();
+        var returned = ResponseBudget.TakePage(limited, offset, descriptor => DescribeCapability(descriptor, includeParameters), out var page);
 
         return new
         {
@@ -83,6 +81,8 @@ internal sealed class DiagnosticsCapabilityModule
             totalCount = descriptors.Count,
             returnedCount = returned.Count,
             truncated = returned.Count < descriptors.Count,
+            page,
+            parametersHint = includeParameters ? null : "Parameters omitted; use rimbridge/get_capability or includeParameters=true for parameter details.",
             capabilities = returned
         };
     }

@@ -2,9 +2,9 @@ namespace RimBridgeServer;
 
 internal sealed class ModConfigurationCapabilityModule
 {
-    public object ListMods(bool includeInactive = true)
+    public object ListMods(bool includeInactive = true, bool includeDetails = false, int offset = 0)
     {
-        return RimWorldModConfiguration.ListModsResponse(includeInactive);
+        return RimWorldModConfiguration.ListModsResponse(includeInactive, includeDetails, offset);
     }
 
     public object GetModConfigurationStatus()
