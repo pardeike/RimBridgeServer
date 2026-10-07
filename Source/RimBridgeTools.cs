@@ -301,7 +301,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("Debug Actions And Mods", "List direct children of a RimWorld debug action path")]
-    [Tool("rimworld/list_debug_action_children", Description = "List direct children of a RimWorld debug action path")]
+    [Tool("rimworld/list_debug_action_children", Description = "List direct children of a RimWorld debug action path. Naming a generated submenu such as Spawn thing... runs its generator, as opening it in the debug menu does; generated submenus among the children are returned with expandable=true and left unopened")]
     public object ListDebugActionChildren(
         [ToolParameter(Description = "Stable debug action path returned by the discovery tools")] string path,
         [ToolParameter(Description = "Include child nodes that are currently hidden in the active game state")] bool includeHidden = false)
@@ -309,8 +309,8 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(path), path), (nameof(includeHidden), includeHidden)));
     }
 
-    [ReadmeTool("Debug Actions And Mods", "Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time")]
-    [Tool("rimworld/search_debug_actions", Description = "Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time")]
+    [ReadmeTool("Debug Actions And Mods", "Search the RimWorld debug-action tree by path, label, category, and source metadata; submenus the game generates on demand are returned with expandable=true until opened, and their entries are not searched")]
+    [Tool("rimworld/search_debug_actions", Description = "Search the RimWorld debug-action tree by path, label, category, and source metadata. Generated submenus such as Spawn thing... and Generate quest... are returned with expandable=true until something opens them, and their entries are not searched, because running every generator at once blocks the main thread for minutes on a large mod list. Open one with list_debug_action_children and later searches include its entries")]
     public object SearchDebugActions(
         [ToolParameter(Description = "Case-insensitive search text such as Toggle Job Logging or Log Job Details")] string query,
         [ToolParameter(Description = "Maximum number of matches to return")] int limit = 50,

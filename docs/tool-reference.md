@@ -275,7 +275,7 @@ Parameters:
 
 ### `rimworld/list_debug_action_children`
 
-List direct children of a RimWorld debug action path
+List direct children of a RimWorld debug action path. Naming a generated submenu such as Spawn thing... runs its generator, as opening it in the debug menu does; generated submenus among the children are returned with expandable=true and left unopened
 
 Parameters:
 - `path` (`string`, `required`): Stable debug action path returned by the discovery tools
@@ -283,7 +283,7 @@ Parameters:
 
 ### `rimworld/search_debug_actions`
 
-Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time
+Search the RimWorld debug-action tree by path, label, category, and source metadata. Generated submenus such as Spawn thing... and Generate quest... are returned with expandable=true until something opens them, and their entries are not searched, because running every generator at once blocks the main thread for minutes on a large mod list. Open one with list_debug_action_children and later searches include its entries
 
 Parameters:
 - `query` (`string`, `required`): Case-insensitive search text such as Toggle Job Logging or Log Job Details

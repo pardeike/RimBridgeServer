@@ -38,7 +38,7 @@ internal static class RimWorldDebugActions
             .Where(entry => entry.Value != null)
             .Select(entry =>
             {
-                PrepareNode(entry.Value);
+                PrepareStaticNode(entry.Value);
                 return new
                 {
                     TabDef = entry.Key,
@@ -527,6 +527,19 @@ internal static class RimWorldDebugActions
         node.TrySort();
     }
 
+    // Opening a childGetter node runs game code (a quest script's submenu test-runs the
+    // quest once per option it lists), so walks and listings leave unopened ones closed.
+    private static bool IsUnexpandedGenerated(DebugActionNode node)
+    {
+        return node != null && node.childGetter != null && !node.childrenSetup;
+    }
+
+    private static void PrepareStaticNode(DebugActionNode node)
+    {
+        if (!IsUnexpandedGenerated(node))
+            PrepareNode(node);
+    }
+
     private static void RefreshNode(DebugActionNode node)
     {
         if (node == null)
@@ -560,7 +573,7 @@ internal static class RimWorldDebugActions
         if (node == null)
             yield break;
 
-        PrepareNode(node);
+        PrepareStaticNode(node);
 
         var path = node.Path?.Trim();
         var shouldInclude = !string.IsNullOrWhiteSpace(path) && (includeHidden || node.VisibleNow);
@@ -592,7 +605,7 @@ internal static class RimWorldDebugActions
             if (child == null)
                 continue;
 
-            PrepareNode(child);
+            PrepareStaticNode(child);
             if (!includeHidden && !child.VisibleNow)
                 continue;
 
@@ -604,13 +617,12 @@ internal static class RimWorldDebugActions
 
     private static bool HasChildren(DebugActionNode node)
     {
-        PrepareNode(node);
-        return node.children != null && node.children.Count > 0;
+        return IsUnexpandedGenerated(node) || (node.children != null && node.children.Count > 0);
     }
 
     private static DebugActionSearchMatch TryCreateSearchMatch(DebugActionNode node, string query, bool supportedOnly, string requiredTargetKind)
     {
-        PrepareNode(node);
+        PrepareStaticNode(node);
 
         var assessment = DebugActionExecutionPolicy.Evaluate(
             HasChildren(node),
@@ -695,13 +707,14 @@ internal static class RimWorldDebugActions
 
     private static object DescribeNode(DebugActionNode node, string tabDefName = null)
     {
-        PrepareNode(node);
+        PrepareStaticNode(node);
+        var expandable = IsUnexpandedGenerated(node);
         var childCount = node.children?.Count ?? 0;
         var visibleChildCount = node.children?.Count(child => child != null && child.VisibleNow) ?? 0;
         var tabRootPath = ResolveTabRootPath(node);
         var (tabId, tabTitle) = ResolveTabMetadata(tabRootPath, tabDefName);
         var assessment = DebugActionExecutionPolicy.Evaluate(
-            childCount > 0,
+            childCount > 0 || expandable,
             node.actionType.ToString(),
             node.action != null,
             node.pawnAction != null);
@@ -723,7 +736,8 @@ internal static class RimWorldDebugActions
             tabTitle,
             tabRootPath,
             tabDefName = tabDefName,
-            hasChildren = childCount > 0,
+            hasChildren = childCount > 0 || expandable,
+            expandable,
             childCount,
             visibleChildCount,
             hasDirectAction = node.action != null,

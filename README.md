@@ -345,7 +345,7 @@ Playback default: RimBridgeServer enables RimWorld's private `TickManager.UltraS
 - `rimworld/step_game_ticks` - Advance the paused game by an exact number of ticks, one tick per Unity update frame, mirroring RimWorld's Dev_TickOnce path while preserving render-frame boundaries
 - `rimworld/list_debug_action_roots` - List top-level RimWorld debug action roots using stable internal debug-action paths
 - `rimworld/list_debug_action_children` - List direct children of a RimWorld debug action path
-- `rimworld/search_debug_actions` - Search the full RimWorld debug-action tree globally by path, label, category, and source metadata so callers do not need to walk one subtree at a time
+- `rimworld/search_debug_actions` - Search the RimWorld debug-action tree by path, label, category, and source metadata; submenus the game generates on demand are returned with expandable=true until opened, and their entries are not searched
 - `rimworld/get_debug_action` - Get metadata for one RimWorld debug action path and, optionally, its immediate children
 - `rimworld/execute_debug_action` - Execute direct, pawn-target, or map-target RimWorld debug actions by stable path
 - `rimworld/set_debug_setting` - Set a RimWorld debug setting toggle by stable path to a deterministic on/off state
