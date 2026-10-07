@@ -131,8 +131,18 @@
 		<Copy SourceFiles="@(CopyLicense)" DestinationFolder="$(RimWorldModDeployDir)" />
 	</Target>
 
+	<!-- Release ZIPs are wrapped in one $(ModFileName)/ directory, matching the established GitHub release layout. -->
 	<Target Name="ZipMod" AfterTargets="CopyToRimworld" Condition="'$(RimWorldModDeployDir)' != '' And '$(RimWorldModZipPath)' != ''">
-		<ZipDirectory SourceDirectory="$(RimWorldModDeployDir)" DestinationFile="$(RimWorldModZipPath)" Overwrite="true" />
+		<PropertyGroup>
+			<RimWorldModZipStage>$(BaseIntermediateOutputPath)zip-stage\</RimWorldModZipStage>
+		</PropertyGroup>
+		<RemoveDir Directories="$(RimWorldModZipStage)" />
+		<ItemGroup>
+			<RimWorldModZipFiles Include="$(RimWorldModDeployDir)\**\*" Exclude="$(RimWorldModDeployDir)\**\.DS_Store;$(RimWorldModDeployDir)\**\._*" />
+		</ItemGroup>
+		<Copy SourceFiles="@(RimWorldModZipFiles)" DestinationFiles="@(RimWorldModZipFiles->'$(RimWorldModZipStage)$(ModFileName)\%(RecursiveDir)%(Filename)%(Extension)')" />
+		<ZipDirectory SourceDirectory="$(RimWorldModZipStage)" DestinationFile="$(RimWorldModZipPath)" Overwrite="true" />
+		<RemoveDir Directories="$(RimWorldModZipStage)" />
 	</Target>
 
 	<Target Name="CopyMultiplayerBridgeTools" AfterTargets="CopyToRimworld" Condition="'$(RIMWORLD_MOD_DIR)' != ''">

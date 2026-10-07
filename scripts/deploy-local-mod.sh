@@ -154,14 +154,21 @@ from pathlib import Path
 import sys
 import zipfile
 
+import re
+
 root, deployed, archive = map(Path, sys.argv[1:4])
+mod_file_name = re.search(r'<ModFileName>([^<]+)</ModFileName>', (root/'Directory.Build.props').read_text()).group(1)
 with zipfile.ZipFile(archive) as package:
     if package.testzip() is not None:
         raise RuntimeError('Deployed mod ZIP failed its CRC check')
+    if any(not name.startswith(mod_file_name+'/') for name in package.namelist()):
+        raise RuntimeError('Mod ZIP must wrap all content in one '+mod_file_name+'/ directory')
+    if mod_file_name+'/About/About.xml' not in package.namelist():
+        raise RuntimeError('Mod ZIP is missing '+mod_file_name+'/About/About.xml')
     for source in (root/'1.6/Assemblies').glob('*.dll'):
         relative = '1.6/Assemblies/'+source.name
         expected = source.read_bytes()
-        if (deployed/relative).read_bytes() != expected or package.read(relative) != expected:
+        if (deployed/relative).read_bytes() != expected or package.read(mod_file_name+'/'+relative) != expected:
             raise RuntimeError('Deployed DLL or ZIP differs from the build: '+source.name)
     if any('BridgeTools' in name for name in package.namelist()):
         raise RuntimeError('Test companions must not enter the player mod ZIP')
