@@ -100,9 +100,8 @@ internal static class RimBridgeStartup
                     typeof(DebugViewSettings)
                         .GetField("showTpsCounter", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
                         ?.SetValue(null, true);
-                    typeof(TickManager)
-                        .GetField("UltraSpeedBoost", BindingFlags.Static | BindingFlags.NonPublic)
-                        ?.SetValue(null, true);
+                    // TickManager.UltraSpeedBoost is left alone here: it changes speed 4 for normal play too
+                    // (and for mods that mirror vanilla's boost branch). Playback tools enable it per run.
                 }
 
                 RimBridgeTools tools;

@@ -298,7 +298,7 @@ For the generated parameter-level reference pulled straight from the annotated s
 
 Lua authoring note: `rimbridge/run_lua` is intentionally a lowered Lua subset, not general-purpose Lua. Start with `rimbridge/get_lua_reference` and `rimbridge/compile_lua`; prefer `local` bindings, `rb.call`/`rb.poll`, static field access, and static one-based indexes such as `names[1]`. Dynamic indexing such as `names[i]`, arbitrary global assignment, and most broader Lua features are rejected in v1.
 
-Playback default: RimBridgeServer enables RimWorld's private `TickManager.UltraSpeedBoost` process-wide at startup. Speed 4 (`Ultrafast`) therefore uses the boosted debug rate by default until `rimworld/set_time_speed` changes the flag; the next RimWorld startup enables it again.
+Playback default: RimWorld's private `TickManager.UltraSpeedBoost` is left off, so having the mod installed does not change speed 4 (`Ultrafast`) for normal play. `rimworld/play_for` and `rimworld/play_until_letter` turn the boost on for the duration of an `Ultrafast` run (or a `forceRequestedSpeed` run) and restore the previous value afterwards; `rimworld/set_time_speed` with `ultraSpeedBoost` sets it explicitly for the rest of the session.
 
 <!-- BEGIN GENERATED:tool-surface -->
 
@@ -339,9 +339,9 @@ Playback default: RimBridgeServer enables RimWorld's private `TickManager.UltraS
 ### Debug Actions And Mods
 
 - `rimworld/pause_game` - Pause or unpause the game
-- `rimworld/set_time_speed` - Set RimWorld's current time speed directly; RimBridgeServer enables the boost for speed 4 (Ultrafast) at startup, and this tool can change that state
-- `rimworld/play_for` - Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again; speed 4 (Ultrafast) is boosted by default, and forced-normal-speed slowdown can optionally be suppressed during the run
-- `rimworld/play_until_letter` - Unpause the current game at a requested time speed until a new right-side letter appears, then pause and return the new letter payload; speed 4 (Ultrafast) is boosted by default, and forced-normal-speed slowdown can optionally be suppressed during the run
+- `rimworld/set_time_speed` - Set RimWorld's current time speed directly; the boost for speed 4 (Ultrafast) is off by default, and this tool can turn it on or off
+- `rimworld/play_for` - Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again; speed 4 (Ultrafast) is boosted for the duration of the run, and forced-normal-speed slowdown can optionally be suppressed during the run
+- `rimworld/play_until_letter` - Unpause the current game at a requested time speed until a new right-side letter appears, then pause and return the new letter payload; speed 4 (Ultrafast) is boosted for the duration of the run, and forced-normal-speed slowdown can optionally be suppressed during the run
 - `rimworld/step_game_ticks` - Advance the paused game by an exact number of ticks, one tick per Unity update frame, mirroring RimWorld's Dev_TickOnce path while preserving render-frame boundaries
 - `rimworld/list_debug_action_roots` - List top-level RimWorld debug action roots using stable internal debug-action paths
 - `rimworld/list_debug_action_children` - List direct children of a RimWorld debug action path

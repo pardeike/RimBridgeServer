@@ -249,33 +249,33 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pause), pause)));
     }
 
-    [ReadmeTool("Debug Actions And Mods", "Set RimWorld's current time speed directly; RimBridgeServer enables the boost for speed 4 (Ultrafast) at startup, and this tool can change that state")]
-    [Tool("rimworld/set_time_speed", Description = "Set RimWorld's current time speed directly; RimBridgeServer enables the boost for speed 4 (Ultrafast) at startup, and this tool can change that state")]
+    [ReadmeTool("Debug Actions And Mods", "Set RimWorld's current time speed directly; the boost for speed 4 (Ultrafast) is off by default, and this tool can turn it on or off")]
+    [Tool("rimworld/set_time_speed", Description = "Set RimWorld's current time speed directly; the boost for speed 4 (Ultrafast) is off by default, and this tool can turn it on or off")]
     public object SetTimeSpeed(
         [ToolParameter(Description = "Desired time speed: Paused, Normal, Fast, Superfast, or Ultrafast")] string speed = "Normal",
-        [ToolParameter(Description = "When set, change RimWorld's private TickManager.UltraSpeedBoost flag. RimBridgeServer enables it at startup; leave null to preserve the current value.")] bool? ultraSpeedBoost = null)
+        [ToolParameter(Description = "When set, change RimWorld's private TickManager.UltraSpeedBoost flag. It is off by default and process-wide, so it also affects normal play until turned off; leave null to preserve the current value.")] bool? ultraSpeedBoost = null)
     {
         return InvokeAlias(Arguments((nameof(speed), speed), (nameof(ultraSpeedBoost), ultraSpeedBoost)));
     }
 
-    [ReadmeTool("Debug Actions And Mods", "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again; speed 4 (Ultrafast) is boosted by default, and forced-normal-speed slowdown can optionally be suppressed during the run")]
-    [Tool("rimworld/play_for", Description = "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again; speed 4 (Ultrafast) is boosted by default, and forced-normal-speed slowdown can optionally be suppressed during the run")]
+    [ReadmeTool("Debug Actions And Mods", "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again; speed 4 (Ultrafast) is boosted for the duration of the run, and forced-normal-speed slowdown can optionally be suppressed during the run")]
+    [Tool("rimworld/play_for", Description = "Unpause the current game at a requested time speed for a bounded real-time duration, then pause it again; speed 4 (Ultrafast) is boosted for the duration of the run, and forced-normal-speed slowdown can optionally be suppressed during the run")]
     public object PlayFor(
         [ToolParameter(Description = "Real-time duration in milliseconds to keep the game unpaused before pausing it again")] int durationMs,
         [ToolParameter(Description = "Desired play speed while the game is running: Normal, Fast, Superfast, or Ultrafast")] string speed = "Normal",
         [ToolParameter(Description = "How often to poll playback state while waiting to repause")] int pollIntervalMs = 25,
-        [ToolParameter(Description = "When true, temporarily suppress RimWorld's forced-normal-speed slowdown and ensure TickManager.UltraSpeedBoost is enabled while preserving the normal TickManager update path, then restore both prior values. The boost is enabled at bridge startup by default.")] bool forceRequestedSpeed = false)
+        [ToolParameter(Description = "When true, temporarily suppress RimWorld's forced-normal-speed slowdown and ensure TickManager.UltraSpeedBoost is enabled while preserving the normal TickManager update path, then restore both prior values. Ultrafast runs enable the boost for the run even without this flag.")] bool forceRequestedSpeed = false)
     {
         return InvokeAlias(Arguments((nameof(durationMs), durationMs), (nameof(speed), speed), (nameof(pollIntervalMs), pollIntervalMs), (nameof(forceRequestedSpeed), forceRequestedSpeed)));
     }
 
-    [ReadmeTool("Debug Actions And Mods", "Unpause the current game at a requested time speed until a new right-side letter appears, then pause and return the new letter payload; speed 4 (Ultrafast) is boosted by default, and forced-normal-speed slowdown can optionally be suppressed during the run")]
-    [Tool("rimworld/play_until_letter", Description = "Unpause the current game at a requested time speed until a new right-side letter appears, then pause and return the new letter payload; speed 4 (Ultrafast) is boosted by default, and forced-normal-speed slowdown can optionally be suppressed during the run")]
+    [ReadmeTool("Debug Actions And Mods", "Unpause the current game at a requested time speed until a new right-side letter appears, then pause and return the new letter payload; speed 4 (Ultrafast) is boosted for the duration of the run, and forced-normal-speed slowdown can optionally be suppressed during the run")]
+    [Tool("rimworld/play_until_letter", Description = "Unpause the current game at a requested time speed until a new right-side letter appears, then pause and return the new letter payload; speed 4 (Ultrafast) is boosted for the duration of the run, and forced-normal-speed slowdown can optionally be suppressed during the run")]
     public object PlayUntilLetter(
         [ToolParameter(Description = "Maximum real-time wait in milliseconds before pausing and timing out")] int timeoutMs = 1800000,
         [ToolParameter(Description = "Desired play speed while waiting: Normal, Fast, Superfast, or Ultrafast")] string speed = "Normal",
         [ToolParameter(Description = "How often to poll the letter stack while waiting")] int pollIntervalMs = 250,
-        [ToolParameter(Description = "When true, temporarily suppress RimWorld's forced-normal-speed slowdown and ensure TickManager.UltraSpeedBoost is enabled while preserving the normal TickManager update path, then restore both prior values. The boost is enabled at bridge startup by default.")] bool forceRequestedSpeed = false,
+        [ToolParameter(Description = "When true, temporarily suppress RimWorld's forced-normal-speed slowdown and ensure TickManager.UltraSpeedBoost is enabled while preserving the normal TickManager update path, then restore both prior values. Ultrafast runs enable the boost for the run even without this flag.")] bool forceRequestedSpeed = false,
         [ToolParameter(Description = "When false, letters already present when the wait starts are ignored and only newly added letters complete the wait")] bool includeExistingLetters = false)
     {
         return InvokeAlias(Arguments((nameof(timeoutMs), timeoutMs), (nameof(speed), speed), (nameof(pollIntervalMs), pollIntervalMs), (nameof(forceRequestedSpeed), forceRequestedSpeed), (nameof(includeExistingLetters), includeExistingLetters)));
