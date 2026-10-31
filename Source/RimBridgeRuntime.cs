@@ -200,15 +200,11 @@ internal static class RimBridgeMainThread
 
     private static readonly Queue<IMainThreadWorkItem> Pending = [];
     private static readonly object Sync = new();
-    private static int _mainThreadId;
 
-    public static void Initialize()
-    {
-        if (_mainThreadId == 0)
-            _mainThreadId = Thread.CurrentThread.ManagedThreadId;
-    }
-
-    public static bool IsMainThread => Thread.CurrentThread.ManagedThreadId == _mainThreadId;
+    // Mod constructors run on the play-data loading thread, so a thread id taken there
+    // names that thread, and once it exits the runtime can hand its id to a pool thread.
+    // The engine records the real main thread before any mod loads.
+    public static bool IsMainThread => UnityData.IsInMainThread;
 
     public static void Pump()
     {
