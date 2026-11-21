@@ -49,6 +49,7 @@ internal static class SmokeScenarioCatalog
     public const string MapLeftClickSelectionScenarioName = "map-left-click-selection";
     public const string MapShiftRightClickQueueScenarioName = "map-shift-right-click-queue";
     public const string UltrafastBoostOptInScenarioName = "ultrafast-boost-opt-in";
+    public const string WorldMainTabScenarioName = "world-main-tab";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -246,6 +247,12 @@ internal static class SmokeScenarioCatalog
                 Name = UltrafastBoostOptInScenarioName,
                 Description = "Verify that a freshly started game leaves the ultrafast speed boost off, and that Ultrafast playback restores the boost value it found.",
                 RunAsync = RunUltrafastBoostOptInAsync
+            },
+            [WorldMainTabScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = WorldMainTabScenarioName,
+                Description = "Open the World main button through rimworld/open_main_tab, verify the world view opens without blocking attention, and close it again.",
+                RunAsync = RunWorldMainTabAsync
             }
         };
 
@@ -5705,6 +5712,23 @@ internal static class SmokeScenarioCatalog
 
         if (await ReadUltraSpeedBoostAsync(context, "ultrafast_boost.read_after_play", cancellationToken))
             throw new InvalidOperationException("Ultrafast playback must restore the ultrafast speed boost value it found.");
+    }
+
+    private static async Task RunWorldMainTabAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("world_tab.wait_for_long_event_idle", cancellationToken);
+
+        var open = await context.CallGameToolAsync("world_tab.open", "rimworld/open_main_tab", new { mainTabId = "main-tab:World" }, cancellationToken);
+        await AssertNoOpenAttentionAsync(context, "world_tab.attention", "Opening the World main tab", cancellationToken);
+        context.EnsureSucceeded(open, "Opening the World main tab");
+        if (JsonNodeHelpers.ReadBoolean(open.StructuredContent, "after", "worldViewOpen") != true)
+            throw new InvalidOperationException("Opening the World main tab must open the world view.");
+
+        var close = await context.CallGameToolAsync("world_tab.close", "rimworld/close_main_tab", new { mainTabId = "main-tab:World" }, cancellationToken);
+        context.EnsureSucceeded(close, "Closing the World main tab");
+        if (JsonNodeHelpers.ReadBoolean(close.StructuredContent, "after", "worldViewOpen") != false)
+            throw new InvalidOperationException("Closing the World main tab must return to the map.");
     }
 
     private static async Task<bool> ReadUltraSpeedBoostAsync(SmokeScenarioContext context, string stepName, CancellationToken cancellationToken)

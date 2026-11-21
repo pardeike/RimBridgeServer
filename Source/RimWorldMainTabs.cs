@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using RimBridgeServer.Core;
 using RimWorld;
+using RimWorld.Planet;
 using UnityEngine;
 using Verse;
 
@@ -72,7 +73,16 @@ internal static class RimWorldMainTabs
         if (root == null)
             return CreateFailedCommandResponse("open_main_tab", before, "RimWorld main tabs are not available.");
 
-        root.SetCurrentTab(tab, playSound: false);
+        // Buttons such as World have no tab window; the visible button runs their worker instead. Opening them through
+        // MainTabsRoot would add a null window. The World worker toggles, so an open world view stays open.
+        if (tab.TabWindow == null)
+        {
+            if (!(tab.Worker is MainButtonWorker_ToggleWorld && IsWorldViewOpen()))
+                tab.Worker.InterfaceTryActivate();
+        }
+        else
+            root.SetCurrentTab(tab, playSound: false);
+
         var after = RimWorldInput.GetUiState();
         return CreateCommandResponse(
             "open_main_tab",
@@ -81,11 +91,26 @@ internal static class RimWorldMainTabs
             $"Opened RimWorld main tab '{tab.defName}'.");
     }
 
+    internal static bool IsWorldViewOpen()
+    {
+        return Current.Game != null && Find.World?.renderer?.wantedMode == WorldRenderMode.Planet;
+    }
+
     public static object CloseMainTabResponse(string mainTabId = null)
     {
         var before = RimWorldInput.GetUiState();
         var root = TryGetMainTabsRoot();
         var openTab = root?.OpenTab;
+        if (MainTabMatches(mainTabId, MainButtonDefOf.World) && IsWorldViewOpen())
+        {
+            CameraJumper.TryHideWorld();
+            return CreateCommandResponse(
+                "close_main_tab",
+                before,
+                RimWorldInput.GetUiState(),
+                "Closed the RimWorld world view.");
+        }
+
         if (openTab == null)
         {
             return CreateFailedCommandResponse(
@@ -316,7 +341,8 @@ internal static class RimWorldMainTabs
     private static object CreateCommandResponse(string command, UiStateSnapshot before, UiStateSnapshot after, string message)
     {
         var changed = !string.Equals(before.OpenMainTabId, after.OpenMainTabId, StringComparison.Ordinal)
-            || before.MainTabOpen != after.MainTabOpen;
+            || before.MainTabOpen != after.MainTabOpen
+            || before.WorldViewOpen != after.WorldViewOpen;
 
         return new
         {

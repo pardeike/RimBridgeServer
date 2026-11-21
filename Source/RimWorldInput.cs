@@ -97,6 +97,8 @@ internal sealed class UiStateSnapshot
 
     public bool MainTabOpen { get; set; }
 
+    public bool WorldViewOpen { get; set; }
+
     public string OpenMainTabId { get; set; }
 
     public string OpenMainTabType { get; set; }
@@ -208,6 +210,7 @@ internal static class RimWorldInput
             TopWindowType = topWindow?.Type,
             TopWindowTitle = topWindow?.Title,
             MainTabOpen = mainTab != null,
+            WorldViewOpen = RimWorldMainTabs.IsWorldViewOpen(),
             OpenMainTabId = mainTab?.Id,
             OpenMainTabType = mainTab?.Type,
             OpenMainTabLabel = mainTab?.Label,
@@ -725,6 +728,7 @@ internal static class RimWorldInput
             topWindowType = state.TopWindowType,
             topWindowTitle = state.TopWindowTitle,
             mainTabOpen = state.MainTabOpen,
+            worldViewOpen = state.WorldViewOpen,
             openMainTabId = state.OpenMainTabId,
             openMainTabType = state.OpenMainTabType,
             openMainTabLabel = state.OpenMainTabLabel,
