@@ -40,6 +40,8 @@ internal sealed class SmokeScenarioContext
         return result;
     }
 
+    public string GameId => _options.GameId;
+
     public Task<ToolInvocationResult> CallGameToolAsync(string stepName, string toolName, object arguments, CancellationToken cancellationToken)
     {
         return CallServerToolAsync(

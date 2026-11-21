@@ -43,6 +43,7 @@ internal static class SmokeScenarioCatalog
     public const string SaveModCompatibilityGuardScenarioName = "save-mod-compatibility-guard";
     public const string SaveModCompatibilityOverrideScenarioName = "save-mod-compatibility-override";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
+    public const string CameraStateWithoutMapScenarioName = "camera-state-without-map";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -204,6 +205,12 @@ internal static class SmokeScenarioCatalog
                 Name = ScreenshotCaptureScenarioName,
                 Description = "Ensure a playable game exists, frame a real pawn, capture a screenshot, and verify the file artifact.",
                 RunAsync = RunScreenshotCaptureAsync
+            },
+            [CameraStateWithoutMapScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = CameraStateWithoutMapScenarioName,
+                Description = "Return to the main menu, verify the camera state reports an unavailable camera without opening blocking attention, then read it again in a playable game.",
+                RunAsync = RunCameraStateWithoutMapAsync
             }
         };
 
@@ -5414,5 +5421,31 @@ internal static class SmokeScenarioCatalog
         var width = BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(16, 4));
         var height = BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(20, 4));
         return (width, height);
+    }
+
+    private static async Task RunCameraStateWithoutMapAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await EnsureDebugGameEntrySceneAsync(context, "camera_without_map.entry", cancellationToken);
+
+        var camera = await context.CallGameToolAsync("camera_without_map.read", "rimworld/get_camera_state", new { }, cancellationToken);
+        await AssertNoOpenAttentionAsync(context, "camera_without_map.attention", "Reading the camera state at the main menu", cancellationToken);
+        if (camera.Success || JsonNodeHelpers.ReadBoolean(camera.StructuredContent, "available") != false)
+            throw new InvalidOperationException($"Reading the camera state at the main menu must report an unavailable camera. {camera.Message}".Trim());
+
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        var playable = await context.CallGameToolAsync("camera_without_map.read_playable", "rimworld/get_camera_state", new { }, cancellationToken);
+        context.EnsureSucceeded(playable, "Reading the camera state in a playable game");
+    }
+
+    private static async Task AssertNoOpenAttentionAsync(SmokeScenarioContext context, string stepName, string actionDescription, CancellationToken cancellationToken)
+    {
+        var attention = await context.CallServerToolAsync(stepName, "games.get_attention", new { gameId = context.GameId }, cancellationToken);
+        var item = JsonNodeHelpers.GetPath(attention.StructuredContent, "attention");
+        var attentionId = JsonNodeHelpers.ReadString(item, "attentionId");
+        if (string.IsNullOrWhiteSpace(attentionId))
+            return;
+
+        await context.CallServerToolAsync($"{stepName}.ack", "games.ack_attention", new { gameId = context.GameId, attentionId }, cancellationToken);
+        throw new InvalidOperationException($"{actionDescription} opened blocking attention: {JsonNodeHelpers.ReadString(item, "summary")}");
     }
 }

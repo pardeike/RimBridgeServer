@@ -287,6 +287,17 @@ internal static class RimWorldState
     public static object DescribeCamera()
     {
         var driver = Find.CameraDriver;
+        if (driver == null)
+        {
+            return new
+            {
+                success = false,
+                available = false,
+                programState = Current.ProgramState.ToString(),
+                message = "No map camera is available because no game is loaded."
+            };
+        }
+
         var currentMap = Find.CurrentMap;
         var sizeRange = driver.config.sizeRange;
 
