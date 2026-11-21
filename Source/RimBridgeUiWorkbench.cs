@@ -767,7 +767,7 @@ internal static class RimBridgeUiWorkbench
                     SyntheticEvents.SetType(injectedEvent, EventType.KeyDown);
                     injectedEvent.keyCode = KeyCode.None;
                     injectedEvent.character = request.Text[request.TypedCount];
-                    injectedEvent.modifiers = EventModifiers.None;
+                    SyntheticEvents.SetModifiers(injectedEvent, EventModifiers.None);
                     request.PhaseInjectedFrame = Time.frameCount;
                     var expectedPrefix = request.Text.Substring(0, request.TypedCount + 1);
                     var state = new TextFieldPatchState

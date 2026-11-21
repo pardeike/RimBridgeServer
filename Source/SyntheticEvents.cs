@@ -3,9 +3,9 @@ using UnityEngine;
 namespace RimBridgeServer;
 
 /// <summary>
-/// Waylith's <see cref="Event"/> stores <c>rawType</c> separately from <c>type</c>, unlike Unity, where both come from
-/// one native field. RimWorld reads <c>rawType</c> in places such as the selector's mouse-up handling, so synthetic
-/// events must set both.
+/// Waylith's <see cref="Event"/> stores <c>rawType</c>, <c>shift</c> and <c>alt</c> in their own fields, unlike Unity,
+/// where they derive from the native event type and modifiers. RimWorld reads <c>rawType</c> in the selector's mouse-up
+/// handling and <c>shift</c> for queued orders, so synthetic events must set them explicitly.
 /// </summary>
 internal static class SyntheticEvents
 {
@@ -13,5 +13,12 @@ internal static class SyntheticEvents
     {
         injectedEvent.type = type;
         injectedEvent.rawType = type;
+    }
+
+    public static void SetModifiers(Event injectedEvent, EventModifiers modifiers)
+    {
+        injectedEvent.modifiers = modifiers;
+        injectedEvent.shift = (modifiers & EventModifiers.Shift) != 0;
+        injectedEvent.alt = (modifiers & EventModifiers.Alt) != 0;
     }
 }

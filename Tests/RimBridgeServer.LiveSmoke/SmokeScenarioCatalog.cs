@@ -47,6 +47,7 @@ internal static class SmokeScenarioCatalog
     public const string MissingMapTargetScenarioName = "missing-map-target";
     public const string ArchitectSingleCellZoneScenarioName = "architect-single-cell-zone";
     public const string MapLeftClickSelectionScenarioName = "map-left-click-selection";
+    public const string MapShiftRightClickQueueScenarioName = "map-shift-right-click-queue";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -232,6 +233,12 @@ internal static class SmokeScenarioCatalog
                 Name = MapLeftClickSelectionScenarioName,
                 Description = "Clear the selection, left-click a visible colonist's cell through the live map click path, and verify that the colonist is selected.",
                 RunAsync = RunMapLeftClickSelectionAsync
+            },
+            [MapShiftRightClickQueueScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = MapShiftRightClickQueueScenarioName,
+                Description = "Give a drafted colonist a move order, then a Shift right-click move order, and verify from job-tracker logs that the second order was queued instead of replacing the first.",
+                RunAsync = RunMapShiftRightClickQueueAsync
             }
         };
 
@@ -5574,6 +5581,98 @@ internal static class SmokeScenarioCatalog
             .ToList();
         if (!selected.Contains(pawnId))
             throw new InvalidOperationException($"Left-clicking the cell of colonist {pawnId} must select it. Selected: [{string.Join(", ", selected)}].");
+    }
+
+    private static async Task RunMapShiftRightClickQueueAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("map_shift_queue.wait_for_long_event_idle", cancellationToken);
+
+        var pause = await context.CallGameToolAsync("map_shift_queue.pause", "rimworld/pause_game", new { pause = true }, cancellationToken);
+        context.EnsureSucceeded(pause, "Pausing before the move orders");
+
+        var colonists = await context.CallGameToolAsync("map_shift_queue.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists");
+        var colonist = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists").FirstOrDefault()
+            ?? throw new InvalidOperationException("The queued-order scenario needs a current-map colonist.");
+        var pawnId = JsonNodeHelpers.ReadString(colonist, "pawnId");
+        var x = JsonNodeHelpers.ReadInt32(colonist, "position", "x") ?? throw new InvalidOperationException("The colonist has no x position.");
+        var z = JsonNodeHelpers.ReadInt32(colonist, "position", "z") ?? throw new InvalidOperationException("The colonist has no z position.");
+
+        var first = await FindStandableCellAsync(context, "map_shift_queue.find_first", x, z, 6, 12, cancellationToken);
+        var second = await FindStandableCellAsync(context, "map_shift_queue.find_second", x, z, 13, 20, cancellationToken);
+        if (Math.Abs(first.X - second.X) + Math.Abs(first.Z - second.Z) < 3)
+            throw new InvalidOperationException($"The cell searches returned destinations too close together: ({first.X}, {first.Z}) and ({second.X}, {second.Z}).");
+
+        var draft = await context.CallGameToolAsync("map_shift_queue.draft", "rimworld/set_draft", new { pawnId, drafted = true }, cancellationToken);
+        context.EnsureSucceeded(draft, "Drafting the colonist");
+        try
+        {
+            var jump = await context.CallGameToolAsync("map_shift_queue.jump_camera", "rimworld/jump_camera_to_pawn", new { pawnId }, cancellationToken);
+            context.EnsureSucceeded(jump, "Centering the camera on the colonist");
+            var select = await context.CallGameToolAsync("map_shift_queue.select", "rimworld/select_pawn", new { pawnId }, cancellationToken);
+            context.EnsureSucceeded(select, "Selecting the drafted colonist");
+
+            var logging = await context.CallGameToolAsync("map_shift_queue.enable_job_logging", "rimworld/set_colonist_job_logging", new { pawnId, enabled = true }, cancellationToken);
+            context.EnsureSucceeded(logging, "Enabling job-tracker logging");
+            var logCursor = JsonNodeHelpers.ReadInt32(logging.StructuredContent, "logCursor") ?? 0;
+
+            var firstOrder = await context.CallGameToolAsync("map_shift_queue.first_order", "rimworld/right_click_cell", new { x = first.X, z = first.Z }, cancellationToken);
+            context.EnsureSucceeded(firstOrder, $"Ordering a move to ({first.X}, {first.Z})");
+
+            var queuedOrder = await context.CallGameToolAsync("map_shift_queue.shift_order", "rimworld/right_click_cell", new
+            {
+                x = second.X,
+                z = second.Z,
+                modifiers = "shift"
+            }, cancellationToken);
+            context.EnsureSucceeded(queuedOrder, $"Shift-ordering a move to ({second.X}, {second.Z})");
+
+            var logs = await context.CallGameToolAsync("map_shift_queue.read_logs", "rimbridge/list_logs", new { afterSequence = logCursor, limit = 100 }, cancellationToken);
+            context.EnsureSucceeded(logs, "Reading job-tracker logs");
+            var messages = JsonNodeHelpers.ReadArray(logs.StructuredContent, "logs")
+                .Select(entry => JsonNodeHelpers.ReadString(entry, "Message") ?? string.Empty)
+                .ToList();
+            // Job strings name their target as "A = (x, 0, z)".
+            var firstTarget = $"({first.X}, 0, {first.Z})";
+            var secondTarget = $"({second.X}, 0, {second.Z})";
+            if (!messages.Any(message => message.Contains("StartJob [Goto", StringComparison.Ordinal) && message.Contains(firstTarget, StringComparison.Ordinal)))
+                throw new InvalidOperationException($"The first right-click did not start a move to {firstTarget}.");
+            if (!messages.Any(message => message.Contains("TryTakeOrderedJob", StringComparison.Ordinal) && message.Contains(secondTarget, StringComparison.Ordinal)))
+                throw new InvalidOperationException($"The Shift right-click did not order a move to {secondTarget}.");
+            if (messages.Any(message => message.Contains("StartJob", StringComparison.Ordinal) && message.Contains(secondTarget, StringComparison.Ordinal)))
+                throw new InvalidOperationException("The Shift right-click replaced the active move instead of queueing it.");
+        }
+        finally
+        {
+            await context.CallGameToolAsync("map_shift_queue.disable_job_logging", "rimworld/set_colonist_job_logging", new { pawnId, enabled = false }, cancellationToken);
+            await context.CallGameToolAsync("map_shift_queue.undraft", "rimworld/set_draft", new { pawnId, drafted = false }, cancellationToken);
+        }
+    }
+
+    private static async Task<(int X, int Z)> FindStandableCellAsync(
+        SmokeScenarioContext context,
+        string stepName,
+        int x,
+        int z,
+        int minRadius,
+        int maxRadius,
+        CancellationToken cancellationToken)
+    {
+        var result = await context.CallGameToolAsync(stepName, "rimworld/find_random_cell_near", new
+        {
+            x,
+            z,
+            startingSearchRadius = minRadius,
+            maxSearchRadius = maxRadius,
+            requireStandable = true,
+            requireNotFogged = true,
+            requireNoImpassableThings = true
+        }, cancellationToken);
+        context.EnsureSucceeded(result, $"Finding a standable cell {minRadius}-{maxRadius} cells from ({x}, {z})");
+        return (
+            JsonNodeHelpers.ReadInt32(result.StructuredContent, "cell", "x") ?? throw new InvalidOperationException("The cell search returned no x."),
+            JsonNodeHelpers.ReadInt32(result.StructuredContent, "cell", "z") ?? throw new InvalidOperationException("The cell search returned no z."));
     }
 
     private static async Task AssertNoOpenAttentionAsync(SmokeScenarioContext context, string stepName, string actionDescription, CancellationToken cancellationToken)

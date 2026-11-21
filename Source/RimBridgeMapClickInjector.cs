@@ -468,7 +468,7 @@ internal static class RimBridgeMapClickInjector
         var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent);
         injectedEvent.button = request.Options.Button;
         injectedEvent.clickCount = 1;
-        injectedEvent.modifiers = request.Options.Modifiers;
+        SyntheticEvents.SetModifiers(injectedEvent, request.Options.Modifiers);
         injectedEvent.mousePosition = GetCurrentMousePosition(request);
         injectedEvent.delta = GetCurrentMouseDelta(request);
         var type = request.Phase switch
@@ -491,7 +491,7 @@ internal static class RimBridgeMapClickInjector
         var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent);
         injectedEvent.button = 0;
         injectedEvent.clickCount = 0;
-        injectedEvent.modifiers = request.Modifiers;
+        SyntheticEvents.SetModifiers(injectedEvent, request.Modifiers);
         injectedEvent.keyCode = request.KeyCode;
         injectedEvent.character = request.Phase == KeyPressPhase.KeyDown ? request.Character : '\0';
         SyntheticEvents.SetType(injectedEvent, request.Phase == KeyPressPhase.KeyDown ? EventType.KeyDown : EventType.KeyUp);

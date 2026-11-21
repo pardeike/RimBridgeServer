@@ -3,3 +3,4 @@
 - Return missing or ambiguous pawn and thing lookups as ordinary failures that do not block GABS.
 - Let `rimworld/apply_architect_designator` place a zone on a single cell, and fail when no zone appears.
 - Make bridge left clicks select things on the RimWorld 1.7 map instead of starting a selection box.
+- Pass Shift and Alt through bridge clicks on RimWorld 1.7, so Shift right-clicks queue orders.
