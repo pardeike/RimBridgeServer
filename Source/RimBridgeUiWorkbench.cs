@@ -1166,14 +1166,24 @@ internal static class RimBridgeUiWorkbench
         failedText?.Completion.TrySetResult(false);
     }
 
+    // These surface hooks run on every GUI event. Describing a surface allocates, so skip it while no UI
+    // capture, click, scroll, hover or text request is pending.
+    private static bool HasPendingUiWork()
+    {
+        lock (Sync)
+        {
+            return _pendingCapture != null || _pendingClick != null || _pendingScroll != null || _hoveredElement != null || _pendingText != null;
+        }
+    }
+
     public static void BeginSurface(Window window)
     {
-        BeginSurface(window == null ? null : DescribeSurface(window));
+        BeginSurface(window == null || !HasPendingUiWork() ? null : DescribeSurface(window));
     }
 
     public static void BeginSelectedGizmosSurface()
     {
-        if (!TryCreateSelectedGizmosSurface(out var descriptor))
+        if (!HasPendingUiWork() || !TryCreateSelectedGizmosSurface(out var descriptor))
         {
             BeginSurface((SurfaceDescriptor)null);
             return;
@@ -1184,7 +1194,7 @@ internal static class RimBridgeUiWorkbench
 
     public static void BeginInspectTabsSurface(IInspectPane pane)
     {
-        if (pane == null)
+        if (pane == null || !HasPendingUiWork())
         {
             BeginSurface((SurfaceDescriptor)null);
             return;
@@ -1331,6 +1341,18 @@ internal static class RimBridgeUiWorkbench
         }
     }
 
+    // Returned for untracked controls, which are almost all of them while no UI request is pending. Every
+    // consumer ignores a state that neither tracks nor activates, so sharing one instance is safe.
+    private static readonly UiPatchControlState InertControlState = new();
+
+    public static bool IsTrackingCurrentSurface()
+    {
+        lock (Sync)
+        {
+            return GetCurrentSurface()?.TrackingEnabled == true;
+        }
+    }
+
     public static UiPatchControlState BeginCompoundControl(
         string kind,
         string source,
@@ -1345,7 +1367,7 @@ internal static class RimBridgeUiWorkbench
         {
             var surface = GetCurrentSurface();
             if (surface == null || !surface.TrackingEnabled)
-                return new UiPatchControlState();
+                return InertControlState;
             if (surface.CompoundDepth > 0)
             {
                 return new UiPatchControlState
@@ -1509,6 +1531,14 @@ internal static class RimBridgeUiWorkbench
                     RimBridgeVirtualPointer.UpdatePersistentPointerPosition(pointerInverted);
             }
         }
+    }
+
+    public static void ObserveTargetActivation(UiPatchControlState state, bool activated, string label, string fallbackLabel)
+    {
+        if (state == null || !state.ShouldActivate || !activated)
+            return;
+
+        ObserveControlResult(state, activated, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? fallbackLabel : label)}' on the current surface.");
     }
 
     public static void ObserveControlResult(UiPatchControlState state, bool activated, string message)
@@ -2667,7 +2697,7 @@ internal static class Listing_Gap_UiWorkbench_Patch
     public static void Postfix(Listing __instance, float __state)
     {
         var height = Math.Max(__instance.curY - __state, 0f);
-        if (height <= 0f)
+        if (height <= 0f || !RimBridgeUiWorkbench.IsTrackingCurrentSurface())
             return;
 
         var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __state, __instance.ColumnWidth, height);
@@ -2686,7 +2716,7 @@ internal static class Listing_GapLine_UiWorkbench_Patch
     public static void Postfix(Listing __instance, float __state)
     {
         var height = Math.Max(__instance.curY - __state, 0f);
-        if (height <= 0f)
+        if (height <= 0f || !RimBridgeUiWorkbench.IsTrackingCurrentSurface())
             return;
 
         var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __state, __instance.ColumnWidth, height);
@@ -2835,7 +2865,7 @@ internal static class Gui_Button_String_UiWorkbench_Patch
     public static void Postfix(string text, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
-        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "button" : text)}' on the current surface.");
+        RimBridgeUiWorkbench.ObserveTargetActivation(__state, __result, text, "button");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -2853,7 +2883,7 @@ internal static class Gui_Button_StringStyle_UiWorkbench_Patch
     public static void Postfix(string text, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
-        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "button" : text)}' on the current surface.");
+        RimBridgeUiWorkbench.ObserveTargetActivation(__state, __result, text, "button");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -2873,7 +2903,7 @@ internal static class Gui_Button_Content_UiWorkbench_Patch
     {
         var label = content?.text;
         RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
-        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
+        RimBridgeUiWorkbench.ObserveTargetActivation(__state, __result, label, "button");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -2893,7 +2923,7 @@ internal static class Gui_Button_ContentStyle_UiWorkbench_Patch
     {
         var label = content?.text;
         RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
-        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
+        RimBridgeUiWorkbench.ObserveTargetActivation(__state, __result, label, "button");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -2911,10 +2941,11 @@ internal static class Gui_Toggle_String_UiWorkbench_Patch
 
     public static void Postfix(string text, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        RimBridgeUiWorkbench.ObserveControlResult(
+        RimBridgeUiWorkbench.ObserveTargetActivation(
             __state,
             __state.InitialCheckedState.HasValue && __result != __state.InitialCheckedState.Value,
-            $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "checkbox" : text)}' on the current surface.");
+            text,
+            "checkbox");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -2932,10 +2963,11 @@ internal static class Gui_Toggle_StringStyle_UiWorkbench_Patch
 
     public static void Postfix(string text, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        RimBridgeUiWorkbench.ObserveControlResult(
+        RimBridgeUiWorkbench.ObserveTargetActivation(
             __state,
             __state.InitialCheckedState.HasValue && __result != __state.InitialCheckedState.Value,
-            $"Activated UI target '{(string.IsNullOrWhiteSpace(text) ? "checkbox" : text)}' on the current surface.");
+            text,
+            "checkbox");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -2955,10 +2987,11 @@ internal static class Gui_Toggle_Content_UiWorkbench_Patch
     public static void Postfix(GUIContent content, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var label = content?.text;
-        RimBridgeUiWorkbench.ObserveControlResult(
+        RimBridgeUiWorkbench.ObserveTargetActivation(
             __state,
             __state.InitialCheckedState.HasValue && __result != __state.InitialCheckedState.Value,
-            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
+            label,
+            "checkbox");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -2978,10 +3011,11 @@ internal static class Gui_Toggle_ContentStyle_UiWorkbench_Patch
     public static void Postfix(GUIContent content, bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var label = content?.text;
-        RimBridgeUiWorkbench.ObserveControlResult(
+        RimBridgeUiWorkbench.ObserveTargetActivation(
             __state,
             __state.InitialCheckedState.HasValue && __result != __state.InitialCheckedState.Value,
-            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
+            label,
+            "checkbox");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -3004,10 +3038,11 @@ internal static class Widgets_CheckboxLabeled_UiWorkbench_Patch
 
     public static void Postfix(string label, bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        RimBridgeUiWorkbench.ObserveControlResult(
+        RimBridgeUiWorkbench.ObserveTargetActivation(
             __state,
             __state.InitialCheckedState.HasValue && checkOn != __state.InitialCheckedState.Value,
-            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
+            label,
+            "checkbox");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -3087,7 +3122,7 @@ internal static class Widgets_RadioButtonLabeled_UiWorkbench_Patch
     public static void Postfix(string labelText, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
-        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(labelText) ? "radio button" : labelText)}' on the current surface.");
+        RimBridgeUiWorkbench.ObserveTargetActivation(__state, __result, labelText, "radio button");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -3142,7 +3177,7 @@ internal static class Widgets_ButtonText_UiWorkbench_Patch
     public static void Postfix(string label, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
-        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
+        RimBridgeUiWorkbench.ObserveTargetActivation(__state, __result, label, "button");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -3160,7 +3195,7 @@ internal static class Widgets_ButtonTextColored_UiWorkbench_Patch
     public static void Postfix(string label, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
-        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
+        RimBridgeUiWorkbench.ObserveTargetActivation(__state, __result, label, "button");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -3258,10 +3293,11 @@ internal static class ListingStandard_CheckboxLabeled_Basic_UiWorkbench_Patch
 
     public static void Postfix(string label, bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        RimBridgeUiWorkbench.ObserveControlResult(
+        RimBridgeUiWorkbench.ObserveTargetActivation(
             __state,
             __state.InitialCheckedState.HasValue && checkOn != __state.InitialCheckedState.Value,
-            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
+            label,
+            "checkbox");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -3285,10 +3321,11 @@ internal static class ListingStandard_CheckboxLabeled_Tooltip_UiWorkbench_Patch
 
     public static void Postfix(string label, bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        RimBridgeUiWorkbench.ObserveControlResult(
+        RimBridgeUiWorkbench.ObserveTargetActivation(
             __state,
             __state.InitialCheckedState.HasValue && checkOn != __state.InitialCheckedState.Value,
-            $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "checkbox" : label)}' on the current surface.");
+            label,
+            "checkbox");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -3307,7 +3344,7 @@ internal static class ListingStandard_ButtonText_UiWorkbench_Patch
     public static void Postfix(string label, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
-        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(label) ? "button" : label)}' on the current surface.");
+        RimBridgeUiWorkbench.ObserveTargetActivation(__state, __result, label, "button");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -3319,14 +3356,14 @@ internal static class ListingStandard_ButtonTextLabeled_UiWorkbench_Patch
     public static void Prefix(Listing_Standard __instance, string label, string buttonLabel, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
-        __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "listing_standard.button_text_labeled", rect, $"{label}: {buttonLabel}", actionable: true);
+        __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "listing_standard.button_text_labeled", rect, RimBridgeUiWorkbench.IsTrackingCurrentSurface() ? $"{label}: {buttonLabel}" : null, actionable: true);
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
 
     public static void Postfix(string buttonLabel, ref bool __result, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
         RimBridgeUiWorkbench.OverrideButtonResultIfPending(__state, ref __result);
-        RimBridgeUiWorkbench.ObserveControlResult(__state, __result, $"Activated UI target '{(string.IsNullOrWhiteSpace(buttonLabel) ? "button" : buttonLabel)}' on the current surface.");
+        RimBridgeUiWorkbench.ObserveTargetActivation(__state, __result, buttonLabel, "button");
         RimBridgeUiWorkbench.EndCompoundControl(__state);
     }
 }
@@ -3346,6 +3383,9 @@ internal static class ListingStandard_SliderLabeled_UiWorkbench_Patch
 {
     public static void Prefix(Listing_Standard __instance, string label, float val, float min, float max)
     {
+        if (!RimBridgeUiWorkbench.IsTrackingCurrentSurface())
+            return;
+
         var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         RimBridgeUiWorkbench.RegisterPassiveElement("slider", "listing_standard.slider_labeled", rect, label, $"{val:0.##} [{min:0.##}, {max:0.##}]");
     }
