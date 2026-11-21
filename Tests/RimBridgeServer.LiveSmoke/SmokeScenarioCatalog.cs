@@ -45,6 +45,7 @@ internal static class SmokeScenarioCatalog
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
     public const string CameraStateWithoutMapScenarioName = "camera-state-without-map";
     public const string MissingMapTargetScenarioName = "missing-map-target";
+    public const string ArchitectSingleCellZoneScenarioName = "architect-single-cell-zone";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -218,6 +219,12 @@ internal static class SmokeScenarioCatalog
                 Name = MissingMapTargetScenarioName,
                 Description = "Look up a thing id that is not on the current map, verify an ordinary not-found failure without blocking attention, and verify that pausing still works.",
                 RunAsync = RunMissingMapTargetAsync
+            },
+            [ArchitectSingleCellZoneScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ArchitectSingleCellZoneScenarioName,
+                Description = "Apply the stockpile zone designator to one cell, verify that a zone was created there, and delete it again.",
+                RunAsync = RunArchitectSingleCellZoneAsync
             }
         };
 
@@ -5461,6 +5468,74 @@ internal static class SmokeScenarioCatalog
 
         var pause = await context.CallGameToolAsync("missing_map_target.pause", "rimworld/pause_game", new { pause = true }, cancellationToken);
         context.EnsureSucceeded(pause, "Pausing after a missing-thing lookup");
+    }
+
+    private static async Task RunArchitectSingleCellZoneAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("architect_single_zone.wait_for_long_event_idle", cancellationToken);
+
+        var categories = await context.CallGameToolAsync("architect_single_zone.list_categories", "rimworld/list_architect_categories", new
+        {
+            includeHidden = false,
+            includeEmpty = false
+        }, cancellationToken);
+        context.EnsureSucceeded(categories, "Listing architect categories");
+        var zoneCategoryId = ResolveArchitectCategoryId(JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories"), "Zone");
+
+        var designators = await context.CallGameToolAsync("architect_single_zone.list_designators", "rimworld/list_architect_designators", new
+        {
+            categoryId = zoneCategoryId,
+            includeHidden = false
+        }, cancellationToken);
+        context.EnsureSucceeded(designators, "Listing zone designators");
+        var stockpileDesignatorId = ResolveArchitectDesignatorIdByClassName(
+            JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators"),
+            "RimWorld.Designator_ZoneAddStockpile_Resources");
+
+        var colonists = await context.CallGameToolAsync("architect_single_zone.list_colonists", "rimworld/list_colonists", new
+        {
+            currentMapOnly = true
+        }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists for zone placement");
+
+        var cell = await FindAcceptedArchitectPlacementCellAsync(
+            context,
+            "architect_single_zone.find_cell",
+            stockpileDesignatorId,
+            colonists.StructuredContent,
+            new HashSet<string>(StringComparer.Ordinal),
+            cancellationToken,
+            minRadius: 20,
+            maxRadius: 34,
+            preflightAsync: RectangleHasNoZoneAsync);
+
+        var placement = await context.CallGameToolAsync("architect_single_zone.apply", "rimworld/apply_architect_designator", new
+        {
+            designatorId = stockpileDesignatorId,
+            x = cell.X,
+            z = cell.Z,
+            width = 1,
+            height = 1,
+            keepSelected = false
+        }, cancellationToken);
+        context.EnsureSucceeded(placement, $"Applying the stockpile zone designator to cell ({cell.X}, {cell.Z})");
+
+        var zoneId = JsonNodeHelpers.ReadString(placement.StructuredContent, "zone", "id");
+        if (string.IsNullOrWhiteSpace(zoneId) || JsonNodeHelpers.ReadBoolean(placement.StructuredContent, "zone", "created") != true)
+            throw new InvalidOperationException("A single-cell stockpile placement must report the zone it created.");
+
+        var cellInfo = await context.CallGameToolAsync("architect_single_zone.cell_info", "rimworld/get_cell_info", new
+        {
+            x = cell.X,
+            z = cell.Z
+        }, cancellationToken);
+        context.EnsureSucceeded(cellInfo, $"Reading cell info for ({cell.X}, {cell.Z})");
+        if (!string.Equals(JsonNodeHelpers.ReadString(cellInfo.StructuredContent, "cell", "zone", "id"), zoneId, StringComparison.Ordinal))
+            throw new InvalidOperationException("The placed cell must belong to the reported zone.");
+
+        var deleteZone = await context.CallGameToolAsync("architect_single_zone.delete_zone", "rimworld/delete_zone", new { zoneId }, cancellationToken);
+        context.EnsureSucceeded(deleteZone, "Deleting the single-cell stockpile zone");
     }
 
     private static async Task AssertNoOpenAttentionAsync(SmokeScenarioContext context, string stepName, string actionDescription, CancellationToken cancellationToken)

@@ -291,12 +291,18 @@ internal static class RimWorldArchitect
                     foreach (var cell in acceptedCells)
                         explicitTargetZone.AddCell(cell);
                 }
-                else if (acceptedCells.Count == 1)
+                // Mirror DesignatorManager.ProcessInputEvents: only designators without a drag style take single-cell
+                // clicks. Zones and other drag designators implement only DesignateMultiCell, which finalizes itself.
+                else if (acceptedCells.Count == 1 && Find.DesignatorManager.SelectedStyle == null)
+                {
                     descriptor.Designator.DesignateSingleCell(acceptedCells[0]);
+                    descriptor.Designator.Finalize(true);
+                }
                 else
                     descriptor.Designator.DesignateMultiCell(acceptedCells);
 
-                descriptor.Designator.Finalize(true);
+                if (explicitTargetZone != null)
+                    descriptor.Designator.Finalize(true);
             }
             catch (Exception ex)
             {
@@ -326,15 +332,22 @@ internal static class RimWorldArchitect
         var listedAccepted = acceptedCells.Count <= maxListedCells ? acceptedCells.Select(ToCellPayload).ToList() : null;
         var listedRejected = rejectedCells.Take(maxListedCells).ToList();
 
+        // Count the accepted cells that really lie in a zone of the placed type; fishing zones split by water body.
+        int? zonedCellCount = !dryRun && applyException == null && descriptor.Designator is Designator_ZoneAdd placedZoneAdd
+            ? acceptedCells.Count(cell => map.zoneManager?.ZoneAt(cell)?.GetType() == placedZoneAdd.zoneTypeToPlace)
+            : null;
+        var zoneMissing = acceptedCells.Count > 0 && zonedCellCount == 0;
         return new
         {
-            success = applyException == null && acceptedCells.Count > 0,
-            message = applyException != null ? $"Applying architect designator '{designatorId}' failed: {applyException.Message}" : null,
+            success = applyException == null && acceptedCells.Count > 0 && !zoneMissing,
+            message = applyException != null
+                ? $"Applying architect designator '{designatorId}' failed: {applyException.Message}"
+                : zoneMissing ? $"Architect designator '{designatorId}' accepted {acceptedCells.Count} cell(s) but none of them is in a zone afterwards." : null,
             dryRun,
             designator = DescribeDesignator(descriptor, selectionState),
             requestedCellCount = requestedCells.Count,
             acceptedCellCount = acceptedCells.Count,
-            appliedCellCount = dryRun || applyException != null ? 0 : acceptedCells.Count,
+            appliedCellCount = dryRun || applyException != null ? 0 : zonedCellCount ?? acceptedCells.Count,
             rejectedCellCount = rejectedCells.Count,
             acceptedCells = listedAccepted,
             acceptedCellsOmitted = listedAccepted == null ? (bool?)true : null,
