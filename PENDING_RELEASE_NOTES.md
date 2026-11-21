@@ -9,3 +9,4 @@
 - Skip UI tracking work and stop growing log bookkeeping while no client uses the bridge, so normal play costs less.
 - Start the standalone bridge on a free port when port 5174 is taken, and log routine startup details only with verbose logging.
 - Open the World main button through `rimworld/open_main_tab` like the visible button does, and close the world view with `rimworld/close_main_tab`.
+- Activate bridge UI clicks only outside layout passes, so windows they open get a layout pass before their first repaint.

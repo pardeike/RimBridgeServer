@@ -1687,6 +1687,10 @@ internal static class RimBridgeUiWorkbench
     {
         if (!actionable || disabled == true || _pendingClick == null || _pendingClick.Activated)
             return false;
+        // Real clicks never arrive in a layout pass. A window opened from one gets its first repaint without layout
+        // data, which breaks GUILayout windows, so wait for the next non-layout pass.
+        if (Event.current?.type == EventType.Layout)
+            return false;
         if (!string.Equals(_pendingClick.SurfaceTargetId, surface.SurfaceTargetId, StringComparison.Ordinal))
             return false;
         if (!string.Equals(_pendingClick.Kind, kind, StringComparison.Ordinal))
