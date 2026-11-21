@@ -92,7 +92,7 @@ Your client then connects to:
 ## Published packages
 
 The host and companion projects use the published `RimBridgeServer.Sdk` 2.0.0 package from NuGet.org.
-Lib.GAB remains at public version 1.0.6.
+The host uses the public Lib.GAB 1.0.7 package.
 They need no local SDK feed or package generation.
 The SDK source project and `scripts/pack-sdk.sh` remain available for SDK development and tests.
 

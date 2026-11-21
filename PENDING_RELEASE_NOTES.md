@@ -4,3 +4,4 @@
 - Let `rimworld/apply_architect_designator` place a zone on a single cell, and fail when no zone appears.
 - Make bridge left clicks select things on the RimWorld 1.7 map instead of starting a selection box.
 - Pass Shift and Alt through bridge clicks on RimWorld 1.7, so Shift right-clicks queue orders.
+- Update Lib.GAB to 1.0.7, so a client that disconnects during a request no longer terminates RimWorld 1.7.

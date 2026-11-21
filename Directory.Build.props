@@ -5,7 +5,7 @@
         <Repository>https://github.com/pardeike/RimBridgeServer</Repository>
         <ModVersion>2.3.1</ModVersion>
         <ProjectGuid>{6A41B185-4CC6-43FD-A4D3-5D2819F4DC96}</ProjectGuid>
-        <LibGabPackageVersion Condition="'$(LibGabPackageVersion)' == ''">1.0.6</LibGabPackageVersion>
+        <LibGabPackageVersion Condition="'$(LibGabPackageVersion)' == ''">1.0.7</LibGabPackageVersion>
         <RimBridgeServerSdkVersion>2.0.0</RimBridgeServerSdkVersion>
         <RimBridgeServerSdkPackageVersion Condition="'$(RimBridgeServerSdkPackageVersion)' == ''">$(RimBridgeServerSdkVersion)</RimBridgeServerSdkPackageVersion>
     </PropertyGroup>
