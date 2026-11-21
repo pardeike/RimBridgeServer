@@ -5586,6 +5586,8 @@ internal static class SmokeScenarioCatalog
         var selected = JsonNodeHelpers.ReadArray(click.StructuredContent, "selectionAfter", "selectedObjects")
             .Select(item => JsonNodeHelpers.ReadString(item, "id"))
             .ToList();
+        // A selection opens the Inspect pane, which later scenarios do not expect.
+        await context.CallGameToolAsync("map_left_click.clear_selection_after", "rimworld/clear_selection", new { }, cancellationToken);
         if (!selected.Contains(pawnId))
             throw new InvalidOperationException($"Left-clicking the cell of colonist {pawnId} must select it. Selected: [{string.Join(", ", selected)}].");
     }
@@ -5654,6 +5656,7 @@ internal static class SmokeScenarioCatalog
         {
             await context.CallGameToolAsync("map_shift_queue.disable_job_logging", "rimworld/set_colonist_job_logging", new { pawnId, enabled = false }, cancellationToken);
             await context.CallGameToolAsync("map_shift_queue.undraft", "rimworld/set_draft", new { pawnId, drafted = false }, cancellationToken);
+            await context.CallGameToolAsync("map_shift_queue.clear_selection", "rimworld/clear_selection", new { }, cancellationToken);
         }
     }
 
