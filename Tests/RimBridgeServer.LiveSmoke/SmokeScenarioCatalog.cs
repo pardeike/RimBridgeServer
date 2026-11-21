@@ -48,6 +48,7 @@ internal static class SmokeScenarioCatalog
     public const string ArchitectSingleCellZoneScenarioName = "architect-single-cell-zone";
     public const string MapLeftClickSelectionScenarioName = "map-left-click-selection";
     public const string MapShiftRightClickQueueScenarioName = "map-shift-right-click-queue";
+    public const string UltrafastBoostOptInScenarioName = "ultrafast-boost-opt-in";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -239,6 +240,12 @@ internal static class SmokeScenarioCatalog
                 Name = MapShiftRightClickQueueScenarioName,
                 Description = "Give a drafted colonist a move order, then a Shift right-click move order, and verify from job-tracker logs that the second order was queued instead of replacing the first.",
                 RunAsync = RunMapShiftRightClickQueueAsync
+            },
+            [UltrafastBoostOptInScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = UltrafastBoostOptInScenarioName,
+                Description = "Verify that a freshly started game leaves the ultrafast speed boost off, and that Ultrafast playback restores the boost value it found.",
+                RunAsync = RunUltrafastBoostOptInAsync
             }
         };
 
@@ -5673,6 +5680,36 @@ internal static class SmokeScenarioCatalog
         return (
             JsonNodeHelpers.ReadInt32(result.StructuredContent, "cell", "x") ?? throw new InvalidOperationException("The cell search returned no x."),
             JsonNodeHelpers.ReadInt32(result.StructuredContent, "cell", "z") ?? throw new InvalidOperationException("The cell search returned no z."));
+    }
+
+    private static async Task RunUltrafastBoostOptInAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        var startedFresh = context.StartedGameByHarness;
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("ultrafast_boost.wait_for_long_event_idle", cancellationToken);
+
+        var startupBoost = await ReadUltraSpeedBoostAsync(context, "ultrafast_boost.read_startup", cancellationToken);
+        if (!startedFresh)
+            context.Note("Reused a running game, so the startup default of the ultrafast speed boost was not checked.");
+        else if (startupBoost)
+            throw new InvalidOperationException("A freshly started game must leave TickManager.UltraSpeedBoost off.");
+
+        var disable = await context.CallGameToolAsync("ultrafast_boost.disable", "rimworld/set_time_speed", new { speed = "Paused", ultraSpeedBoost = false }, cancellationToken);
+        context.EnsureSucceeded(disable, "Turning the ultrafast speed boost off");
+
+        var play = await context.CallGameToolAsync("ultrafast_boost.play_ultrafast", "rimworld/play_for", new { durationMs = 300, speed = "Ultrafast" }, cancellationToken);
+        context.EnsureSucceeded(play, "Playing briefly at Ultrafast");
+
+        if (await ReadUltraSpeedBoostAsync(context, "ultrafast_boost.read_after_play", cancellationToken))
+            throw new InvalidOperationException("Ultrafast playback must restore the ultrafast speed boost value it found.");
+    }
+
+    private static async Task<bool> ReadUltraSpeedBoostAsync(SmokeScenarioContext context, string stepName, CancellationToken cancellationToken)
+    {
+        var probe = await context.CallGameToolAsync(stepName, "rimworld/set_time_speed", new { speed = "Paused", ultraSpeedBoost = (bool?)null }, cancellationToken);
+        context.EnsureSucceeded(probe, "Reading the ultrafast speed boost");
+        return JsonNodeHelpers.ReadBoolean(probe.StructuredContent, "currentUltraSpeedBoost")
+            ?? throw new InvalidOperationException("The time-speed response did not report currentUltraSpeedBoost.");
     }
 
     private static async Task AssertNoOpenAttentionAsync(SmokeScenarioContext context, string stepName, string actionDescription, CancellationToken cancellationToken)

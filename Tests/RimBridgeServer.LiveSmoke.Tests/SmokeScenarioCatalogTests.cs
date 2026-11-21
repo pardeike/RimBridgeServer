@@ -36,6 +36,7 @@ public class SmokeScenarioCatalogTests
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.ArchitectSingleCellZoneScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.MapLeftClickSelectionScenarioName);
         Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.MapShiftRightClickQueueScenarioName);
+        Assert.Contains(scenarios, scenario => scenario.Name == SmokeScenarioCatalog.UltrafastBoostOptInScenarioName);
     }
 
     [Fact]
