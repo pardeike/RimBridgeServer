@@ -397,15 +397,16 @@ internal static class RimBridgeExtensionDiscovery
         if (string.Equals(requestedName.Name, CompanionFileDiscovery.SdkAssemblyName, StringComparison.OrdinalIgnoreCase))
             return typeof(ToolAttribute).Assembly;
 
+        // Only companion assemblies resolve through the bridge; every other request keeps the runtime default.
         var scope = TryGetScope(args.RequestingAssembly);
-        if (scope != null)
+        if (scope == null)
+            return null;
+
+        foreach (var directory in GetResolutionDirectories(scope))
         {
-            foreach (var directory in GetResolutionDirectories(scope))
-            {
-                var path = Path.Combine(directory, requestedName.Name + ".dll");
-                if (File.Exists(path))
-                    return LoadScopedAssembly(path, scope);
-            }
+            var path = Path.Combine(directory, requestedName.Name + ".dll");
+            if (File.Exists(path))
+                return LoadScopedAssembly(path, scope);
         }
 
         return AppDomain.CurrentDomain.GetAssemblies()
