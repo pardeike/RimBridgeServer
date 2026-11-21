@@ -96,7 +96,7 @@ public sealed class AttentionAggregator
     };
 
     private readonly object _gate = new();
-    private readonly Dictionary<string, int> _logRepeatCountsByEntryId = new(StringComparer.Ordinal);
+    private readonly RecentRepeatCounts _logRepeatCountsByEntryId = new();
     private readonly Dictionary<string, SampleAccumulator> _samplesByKey = new(StringComparer.Ordinal);
     private readonly RimBridgeAttentionPolicy _policy;
     private BridgeAttentionSnapshot _current;
@@ -202,8 +202,8 @@ public sealed class AttentionAggregator
     private int GetLogRepeatDelta(BridgeLogEntry entry)
     {
         var currentRepeatCount = Math.Max(1, entry.RepeatCount);
-        _logRepeatCountsByEntryId.TryGetValue(entry.EntryId ?? string.Empty, out var previousRepeatCount);
-        _logRepeatCountsByEntryId[entry.EntryId ?? string.Empty] = currentRepeatCount;
+        _logRepeatCountsByEntryId.TryGet(entry.EntryId, out var previousRepeatCount);
+        _logRepeatCountsByEntryId.Set(entry.EntryId, currentRepeatCount);
 
         if (previousRepeatCount <= 0)
             return currentRepeatCount;

@@ -12,7 +12,7 @@ internal static class RimBridgeEventRelay
     private const string LogChannel = "rimbridge.log";
 
     private static readonly object Sync = new();
-    private static readonly Dictionary<string, int> PublishedRepeatCountsByEntryId = new(StringComparer.Ordinal);
+    private static readonly RecentRepeatCounts PublishedRepeatCountsByEntryId = new();
     private static IEventManager _eventManager;
 
     public static void Initialize(IEventManager eventManager, OperationJournal operationJournal, LogJournal logJournal)
@@ -83,17 +83,17 @@ internal static class RimBridgeEventRelay
         {
             if (entry.RepeatCount <= 1)
             {
-                PublishedRepeatCountsByEntryId[entry.EntryId] = 1;
+                PublishedRepeatCountsByEntryId.Set(entry.EntryId, 1);
                 return true;
             }
 
-            if (!PublishedRepeatCountsByEntryId.TryGetValue(entry.EntryId, out var lastPublishedRepeatCount))
+            if (!PublishedRepeatCountsByEntryId.TryGet(entry.EntryId, out var lastPublishedRepeatCount))
                 lastPublishedRepeatCount = 1;
 
             if (ShouldPublishRepeatCount(entry.RepeatCount, lastPublishedRepeatCount) == false)
                 return false;
 
-            PublishedRepeatCountsByEntryId[entry.EntryId] = entry.RepeatCount;
+            PublishedRepeatCountsByEntryId.Set(entry.EntryId, entry.RepeatCount);
             return true;
         }
     }
