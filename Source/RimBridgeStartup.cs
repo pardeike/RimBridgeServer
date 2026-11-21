@@ -93,16 +93,22 @@ internal static class RimBridgeStartup
                     RimBridgeCapabilities.Initialize();
                 using (RimBridgeStartupTiming.Phase("logs.initialize"))
                     RimBridgeLogs.Initialize(RimBridgeCapabilities.LogJournal);
-                using (RimBridgeStartupTiming.Phase("application.run-in-background"))
-                    Application.runInBackground = true;
-                using (RimBridgeStartupTiming.Phase("debug.playback-defaults"))
+                // Automation wants a game that keeps running unfocused and shows its tick rate. Only a GABS launch
+                // changes these player-visible settings; a player who just has the mod installed keeps their own.
+                var usingGabsConfig = Lib.GAB.Gabp.IsRunningUnderGabs();
+                if (usingGabsConfig)
                 {
-                    typeof(DebugViewSettings)
-                        .GetField("showTpsCounter", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-                        ?.SetValue(null, true);
-                    // TickManager.UltraSpeedBoost is left alone here: it changes speed 4 for normal play too
-                    // (and for mods that mirror vanilla's boost branch). Playback tools enable it per run.
+                    using (RimBridgeStartupTiming.Phase("application.run-in-background"))
+                        Application.runInBackground = true;
+                    using (RimBridgeStartupTiming.Phase("debug.playback-defaults"))
+                    {
+                        typeof(DebugViewSettings)
+                            .GetField("showTpsCounter", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                            ?.SetValue(null, true);
+                    }
                 }
+                // TickManager.UltraSpeedBoost is left alone here: it changes speed 4 for normal play too
+                // (and for mods that mirror vanilla's boost branch). Playback tools enable it per run.
 
                 RimBridgeTools tools;
                 using (RimBridgeStartupTiming.Phase("tools.construct"))
@@ -116,8 +122,6 @@ internal static class RimBridgeStartup
                         .UseAppInfo("RimBridgeServer", version)
                         .UseGabsEnvironmentIfAvailable();
                 }
-
-                var usingGabsConfig = Lib.GAB.Gabp.IsRunningUnderGabs();
 
                 using (RimBridgeStartupTiming.Phase("gabp.server.build"))
                 {

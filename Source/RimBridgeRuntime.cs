@@ -114,9 +114,10 @@ internal static class PrefsData_Apply_BackgroundBridge_Patch
     [HarmonyPriority(Priority.Last)]
     public static void Postfix()
     {
-        // Native session cleanup reapplies preferences. Keep the bridge's existing
-        // background execution contract without changing the saved preference.
-        Application.runInBackground = true;
+        // Native session cleanup reapplies preferences. Under GABS, keep the game running unfocused
+        // without changing the saved preference; otherwise the player's own setting stays in effect.
+        if (Lib.GAB.Gabp.IsRunningUnderGabs())
+            Application.runInBackground = true;
     }
 }
 
