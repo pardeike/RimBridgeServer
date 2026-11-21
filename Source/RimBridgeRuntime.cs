@@ -63,7 +63,8 @@ internal static class RimBridgePatches
                 original: AccessTools.Method(typeof(Root), nameof(Root.Update)),
                 postfix: new HarmonyMethod(typeof(Root_Update_Patch), nameof(Root_Update_Patch.Postfix)));
             _essentialApplied = true;
-            Log.Message("[RimBridge] Applied essential Harmony patches.");
+            if (RimBridgeStartupTiming.IsVerbose())
+                Log.Message("[RimBridge] Applied essential Harmony patches.");
         }
         catch (Exception ex)
         {
@@ -100,7 +101,8 @@ internal static class RimBridgePatches
 
         if (OptionalPatchFailures.Count == 0)
         {
-            Log.Message($"[RimBridge] Applied {_optionalPatchSuccessCount} optional Harmony patch classes.");
+            if (RimBridgeStartupTiming.IsVerbose())
+                Log.Message($"[RimBridge] Applied {_optionalPatchSuccessCount} optional Harmony patch classes.");
             return;
         }
 

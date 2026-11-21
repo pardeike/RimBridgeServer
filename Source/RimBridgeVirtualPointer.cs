@@ -521,7 +521,10 @@ internal static class RimBridgeVirtualPointer
             }
 
             if (LateInputPatchFailures.Count == 0)
-                Log.Message($"[RimBridge] Applied {_lateInputPatchSuccessCount} late virtual-input patch classes.");
+            {
+                if (RimBridgeStartupTiming.IsVerbose())
+                    Log.Message($"[RimBridge] Applied {_lateInputPatchSuccessCount} late virtual-input patch classes.");
+            }
             else
                 Log.Warning($"[RimBridge] Applied {_lateInputPatchSuccessCount} of {_lateInputPatchAttemptCount} late virtual-input patch classes. Failed: {LateInputPatchFailures.Count}.");
         }

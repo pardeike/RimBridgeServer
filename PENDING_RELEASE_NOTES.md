@@ -7,3 +7,4 @@
 - Update Lib.GAB to 1.0.7, so a client that disconnects during a request no longer terminates RimWorld 1.7.
 - Leave the player's "Run in background" option and the TPS counter alone unless GABS launched the game.
 - Skip UI tracking work and stop growing log bookkeeping while no client uses the bridge, so normal play costs less.
+- Start the standalone bridge on a free port when port 5174 is taken, and log routine startup details only with verbose logging.

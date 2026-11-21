@@ -1,4 +1,6 @@
 using System;
+using System.Net;
+using System.Net.Sockets;
 using System.Diagnostics;
 using System.Reflection;
 using Lib.GAB.Server;
@@ -42,7 +44,7 @@ internal static class RimBridgeStartup
             alreadyStarted = _started;
         }
 
-        if (shouldLog)
+        if (shouldLog && RimBridgeStartupTiming.IsVerbose())
         {
             Log.Message(alreadyStarted
                 ? "[RimBridge] Play-data load complete; bridge services are already available."
@@ -126,7 +128,7 @@ internal static class RimBridgeStartup
                 using (RimBridgeStartupTiming.Phase("gabp.server.build"))
                 {
                     _server = builder
-                        .UsePortIfNotSet(5174)
+                        .UsePortIfNotSet(usingGabsConfig ? 5174 : ChooseStandalonePort(5174))
                         .EnableAttentionSupport()
                         .Build();
                 }
@@ -184,6 +186,28 @@ internal static class RimBridgeStartup
             return System.Threading.Tasks.Task.FromResult(value);
         }
     }
+
+    // Standalone clients read the port from the log. When another process, often a second game instance,
+    // already holds the preferred port, take a free loopback port instead of failing to start.
+    private static int ChooseStandalonePort(int preferredPort)
+    {
+        foreach (var port in new[] { preferredPort, 0 })
+        {
+            try
+            {
+                var probe = new TcpListener(IPAddress.Loopback, port);
+                probe.Start();
+                var chosen = ((IPEndPoint)probe.LocalEndpoint).Port;
+                probe.Stop();
+                return chosen;
+            }
+            catch (SocketException)
+            {
+            }
+        }
+
+        return preferredPort;
+    }
 }
 
 internal static class RimBridgeStartupTiming
@@ -199,14 +223,15 @@ internal static class RimBridgeStartupTiming
 
     public static void LogCompletedPhase(string name, long startedElapsedMilliseconds)
     {
-        if (!IsVerboseTimingEnabled())
+        if (!IsVerbose())
             return;
 
         var ended = Clock.ElapsedMilliseconds;
         Log.Warning($"[RimBridge] STARTUP_TIMING phase={name} durationMs={ended - startedElapsedMilliseconds} elapsedMs={ended}");
     }
 
-    private static bool IsVerboseTimingEnabled()
+    // Routine startup diagnostics only go to the log when the player enabled verbose logging.
+    internal static bool IsVerbose()
     {
         try
         {
