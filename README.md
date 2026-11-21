@@ -454,7 +454,7 @@ The optional [Waylith development companion](Companions/Waylith/README.md) and e
 
 The active gameplay bridge and Multiplayer companion target .NET 10 and AnyCPU.
 Shared contracts and SDK projects retain their existing target frameworks.
-Mod version 2.3.1 adds 1.7 support while retaining the published 1.6 runtime files.
+Mod version 2.4.0 adds 1.7 support while retaining the published 1.6 runtime files.
 The host ships the published SDK 2.0.0 DLL independently of the server version.
 Companions reference `RimBridgeServer.Sdk, Version=2.0.0.0` and do not bundle their own SDK copy.
 
