@@ -471,13 +471,18 @@ internal static class RimBridgeMapClickInjector
         injectedEvent.modifiers = request.Options.Modifiers;
         injectedEvent.mousePosition = GetCurrentMousePosition(request);
         injectedEvent.delta = GetCurrentMouseDelta(request);
-        injectedEvent.type = request.Phase switch
+        var type = request.Phase switch
         {
             MapClickPhase.MouseDown => EventType.MouseDown,
             MapClickPhase.MouseDrag => EventType.MouseDrag,
             MapClickPhase.MouseUp => EventType.MouseUp,
             _ => EventType.Layout
         };
+        // A hold frame only masks the real event; it keeps the real raw type that AdvancePhase observes.
+        if (type == EventType.Layout)
+            injectedEvent.type = type;
+        else
+            SyntheticEvents.SetType(injectedEvent, type);
         return injectedEvent;
     }
 
@@ -489,7 +494,7 @@ internal static class RimBridgeMapClickInjector
         injectedEvent.modifiers = request.Modifiers;
         injectedEvent.keyCode = request.KeyCode;
         injectedEvent.character = request.Phase == KeyPressPhase.KeyDown ? request.Character : '\0';
-        injectedEvent.type = request.Phase == KeyPressPhase.KeyDown ? EventType.KeyDown : EventType.KeyUp;
+        SyntheticEvents.SetType(injectedEvent, request.Phase == KeyPressPhase.KeyDown ? EventType.KeyDown : EventType.KeyUp);
         return injectedEvent;
     }
 

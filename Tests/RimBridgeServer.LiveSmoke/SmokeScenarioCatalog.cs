@@ -46,6 +46,7 @@ internal static class SmokeScenarioCatalog
     public const string CameraStateWithoutMapScenarioName = "camera-state-without-map";
     public const string MissingMapTargetScenarioName = "missing-map-target";
     public const string ArchitectSingleCellZoneScenarioName = "architect-single-cell-zone";
+    public const string MapLeftClickSelectionScenarioName = "map-left-click-selection";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -225,6 +226,12 @@ internal static class SmokeScenarioCatalog
                 Name = ArchitectSingleCellZoneScenarioName,
                 Description = "Apply the stockpile zone designator to one cell, verify that a zone was created there, and delete it again.",
                 RunAsync = RunArchitectSingleCellZoneAsync
+            },
+            [MapLeftClickSelectionScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = MapLeftClickSelectionScenarioName,
+                Description = "Clear the selection, left-click a visible colonist's cell through the live map click path, and verify that the colonist is selected.",
+                RunAsync = RunMapLeftClickSelectionAsync
             }
         };
 
@@ -5536,6 +5543,37 @@ internal static class SmokeScenarioCatalog
 
         var deleteZone = await context.CallGameToolAsync("architect_single_zone.delete_zone", "rimworld/delete_zone", new { zoneId }, cancellationToken);
         context.EnsureSucceeded(deleteZone, "Deleting the single-cell stockpile zone");
+    }
+
+    private static async Task RunMapLeftClickSelectionAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("map_left_click.wait_for_long_event_idle", cancellationToken);
+
+        var pause = await context.CallGameToolAsync("map_left_click.pause", "rimworld/pause_game", new { pause = true }, cancellationToken);
+        context.EnsureSucceeded(pause, "Pausing before the map click");
+
+        var colonists = await context.CallGameToolAsync("map_left_click.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists");
+        var colonist = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists").FirstOrDefault()
+            ?? throw new InvalidOperationException("The map click scenario needs a current-map colonist.");
+        var pawnId = JsonNodeHelpers.ReadString(colonist, "pawnId");
+        var x = JsonNodeHelpers.ReadInt32(colonist, "position", "x") ?? throw new InvalidOperationException("The colonist has no x position.");
+        var z = JsonNodeHelpers.ReadInt32(colonist, "position", "z") ?? throw new InvalidOperationException("The colonist has no z position.");
+
+        var jump = await context.CallGameToolAsync("map_left_click.jump_camera", "rimworld/jump_camera_to_pawn", new { pawnId }, cancellationToken);
+        context.EnsureSucceeded(jump, "Centering the camera on the colonist");
+        var clear = await context.CallGameToolAsync("map_left_click.clear_selection", "rimworld/clear_selection", new { }, cancellationToken);
+        context.EnsureSucceeded(clear, "Clearing the selection before the map click");
+
+        var click = await context.CallGameToolAsync("map_left_click.click", "rimworld/click_cell", new { x, z, button = "left" }, cancellationToken);
+        context.EnsureSucceeded(click, $"Left-clicking cell ({x}, {z})");
+
+        var selected = JsonNodeHelpers.ReadArray(click.StructuredContent, "selectionAfter", "selectedObjects")
+            .Select(item => JsonNodeHelpers.ReadString(item, "id"))
+            .ToList();
+        if (!selected.Contains(pawnId))
+            throw new InvalidOperationException($"Left-clicking the cell of colonist {pawnId} must select it. Selected: [{string.Join(", ", selected)}].");
     }
 
     private static async Task AssertNoOpenAttentionAsync(SmokeScenarioContext context, string stepName, string actionDescription, CancellationToken cancellationToken)

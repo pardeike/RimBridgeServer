@@ -632,6 +632,7 @@ internal static class RimWorldNotifications
         var clickEvent = new Event
         {
             type = EventType.MouseDown,
+            rawType = EventType.MouseDown,
             button = 0,
             clickCount = 1
         };

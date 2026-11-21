@@ -764,7 +764,7 @@ internal static class RimBridgeUiWorkbench
 
                     var currentEvent = Event.current;
                     var injectedEvent = currentEvent == null ? new Event() : new Event(currentEvent);
-                    injectedEvent.type = EventType.KeyDown;
+                    SyntheticEvents.SetType(injectedEvent, EventType.KeyDown);
                     injectedEvent.keyCode = KeyCode.None;
                     injectedEvent.character = request.Text[request.TypedCount];
                     injectedEvent.modifiers = EventModifiers.None;
@@ -1482,7 +1482,7 @@ internal static class RimBridgeUiWorkbench
 
             if (state.ShouldActivate && _pendingClick != null)
             {
-                injectedEvent.type = _pendingClick.Phase == ClickPhase.MouseDown ? EventType.MouseDown : EventType.MouseUp;
+                SyntheticEvents.SetType(injectedEvent, _pendingClick.Phase == ClickPhase.MouseDown ? EventType.MouseDown : EventType.MouseUp);
                 injectedEvent.button = 0;
                 injectedEvent.clickCount = 1;
                 _pendingClick.PhaseInjectedFrame = Time.frameCount;
