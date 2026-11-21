@@ -182,8 +182,9 @@ internal sealed class LifecycleCapabilityModule
                     {
                         previousNeverForceNormalSpeed = DebugViewSettings.neverForceNormalSpeed;
                         DebugViewSettings.neverForceNormalSpeed = true;
-                        previousUltraSpeedBoost = TrySetUltraSpeedBoost(true);
                     }
+                    if (ShouldBoostPlayback(parsedSpeed, forceRequestedSpeed) && previousUltraSpeedBoost == null)
+                        previousUltraSpeedBoost = TrySetUltraSpeedBoost(true);
                     stopwatch = Stopwatch.StartNew();
                     EnsurePlaybackRunning(parsedSpeed);
                 }, timeoutMs: 5000),
@@ -240,23 +241,11 @@ internal sealed class LifecycleCapabilityModule
         }
         catch (Exception ex)
         {
-            if (forceRequestedSpeed && previousNeverForceNormalSpeed != null)
-            {
-                try
-                {
-                    restoredNeverForceNormalSpeed = RimBridgeMainThread.Invoke(
-                        () => RestoreNeverForceNormalSpeed(previousNeverForceNormalSpeed),
-                        timeoutMs: 5000);
-                    restoredUltraSpeedBoost = RimBridgeMainThread.Invoke(
-                        () => RestoreUltraSpeedBoost(previousUltraSpeedBoost),
-                        timeoutMs: 5000);
-                }
-                catch
-                {
-                    restoredNeverForceNormalSpeed = null;
-                    restoredUltraSpeedBoost = null;
-                }
-            }
+            RestorePlaybackOverridesAfterFailure(
+                previousNeverForceNormalSpeed,
+                previousUltraSpeedBoost,
+                ref restoredNeverForceNormalSpeed,
+                ref restoredUltraSpeedBoost);
 
             return new
             {
@@ -382,8 +371,9 @@ internal sealed class LifecycleCapabilityModule
                     {
                         previousNeverForceNormalSpeed = DebugViewSettings.neverForceNormalSpeed;
                         DebugViewSettings.neverForceNormalSpeed = true;
-                        previousUltraSpeedBoost = TrySetUltraSpeedBoost(true);
                     }
+                    if (ShouldBoostPlayback(parsedSpeed, forceRequestedSpeed) && previousUltraSpeedBoost == null)
+                        previousUltraSpeedBoost = TrySetUltraSpeedBoost(true);
                     EnsurePlaybackRunning(parsedSpeed);
                 }, timeoutMs: 5000);
 
@@ -435,6 +425,9 @@ internal sealed class LifecycleCapabilityModule
                         restoredNeverForceNormalSpeed = RimBridgeMainThread.Invoke(
                             () => RestoreNeverForceNormalSpeed(previousNeverForceNormalSpeed),
                             timeoutMs: 5000);
+                    }
+                    if (previousUltraSpeedBoost != null)
+                    {
                         restoredUltraSpeedBoost = RimBridgeMainThread.Invoke(
                             () => RestoreUltraSpeedBoost(previousUltraSpeedBoost),
                             timeoutMs: 5000);
@@ -479,23 +472,11 @@ internal sealed class LifecycleCapabilityModule
         }
         catch (Exception ex)
         {
-            if (forceRequestedSpeed && previousNeverForceNormalSpeed != null)
-            {
-                try
-                {
-                    restoredNeverForceNormalSpeed = RimBridgeMainThread.Invoke(
-                        () => RestoreNeverForceNormalSpeed(previousNeverForceNormalSpeed),
-                        timeoutMs: 5000);
-                    restoredUltraSpeedBoost = RimBridgeMainThread.Invoke(
-                        () => RestoreUltraSpeedBoost(previousUltraSpeedBoost),
-                        timeoutMs: 5000);
-                }
-                catch
-                {
-                    restoredNeverForceNormalSpeed = null;
-                    restoredUltraSpeedBoost = null;
-                }
-            }
+            RestorePlaybackOverridesAfterFailure(
+                previousNeverForceNormalSpeed,
+                previousUltraSpeedBoost,
+                ref restoredNeverForceNormalSpeed,
+                ref restoredUltraSpeedBoost);
 
             try
             {
@@ -1383,5 +1364,40 @@ internal sealed class LifecycleCapabilityModule
 
         UltraSpeedBoostField?.SetValue(null, previousUltraSpeedBoost.Value);
         return TryReadUltraSpeedBoost();
+    }
+
+    // The boost is process-wide and also affects normal play, so playback only holds it for the
+    // duration of a run that asks for Ultrafast (or forces the requested speed) and then restores it.
+    private static bool ShouldBoostPlayback(TimeSpeed speed, bool forceRequestedSpeed)
+    {
+        return forceRequestedSpeed || speed == TimeSpeed.Ultrafast;
+    }
+
+    private static void RestorePlaybackOverridesAfterFailure(
+        bool? previousNeverForceNormalSpeed,
+        bool? previousUltraSpeedBoost,
+        ref bool? restoredNeverForceNormalSpeed,
+        ref bool? restoredUltraSpeedBoost)
+    {
+        try
+        {
+            if (previousNeverForceNormalSpeed != null)
+            {
+                restoredNeverForceNormalSpeed = RimBridgeMainThread.Invoke(
+                    () => RestoreNeverForceNormalSpeed(previousNeverForceNormalSpeed),
+                    timeoutMs: 5000);
+            }
+            if (previousUltraSpeedBoost != null)
+            {
+                restoredUltraSpeedBoost = RimBridgeMainThread.Invoke(
+                    () => RestoreUltraSpeedBoost(previousUltraSpeedBoost),
+                    timeoutMs: 5000);
+            }
+        }
+        catch
+        {
+            restoredNeverForceNormalSpeed = null;
+            restoredUltraSpeedBoost = null;
+        }
     }
 }
