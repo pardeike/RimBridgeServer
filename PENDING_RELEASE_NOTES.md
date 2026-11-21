@@ -1,0 +1,1 @@
+- Add support for RimWorld 1.7.

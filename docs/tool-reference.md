@@ -1012,6 +1012,10 @@ Parameters:
 - `clipTargetId` (`string`, `optional`, default `null`): Optional target id from rimworld/get_screen_targets or rimworld/get_ui_layout to crop around, including windows, ui-surface ids, ui-element ids, and scroll_view elements
 - `clipPadding` (`int`, `optional`, default `8`): Logical screen-pixel padding to include around the clip target
 - `outputDirectory` (`string`, `optional`, default `null`)
+- `clipX` (`float?`, `optional`, default `null`): Optional crop left in logical UI coordinates, origin top-left. Relative to clipTargetId when supplied; otherwise relative to the screen. Supply all four clip coordinates together.
+- `clipY` (`float?`, `optional`, default `null`): Optional crop top in logical UI coordinates, relative to clipTargetId or the screen.
+- `clipWidth` (`float?`, `optional`, default `null`): Optional crop width in logical UI coordinates; must be positive.
+- `clipHeight` (`float?`, `optional`, default `null`): Optional crop height in logical UI coordinates; must be positive.
 
 ### `rimworld/list_saves`
 

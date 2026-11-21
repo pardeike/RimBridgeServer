@@ -14,19 +14,8 @@ Use this reference when adding or migrating RimBridgeServer 2.x companion tools 
 
 ## SDK Package
 
-Create the local SDK package from the RimBridgeServer checkout:
-
-```bash
-scripts/pack-sdk.sh
-```
-
-The default output is the sibling NuGet source:
-
-```text
-../.nuget-local/RimBridgeServer.Sdk.2.0.0.nupkg
-```
-
-For a mod project that consumes local packages, enable the local source in the mod's restore/build flow or add the sibling source to `NuGet.config`.
+Use the published `RimBridgeServer.Sdk` 2.0.0 package from NuGet.org.
+Normal host and companion builds need no local SDK feed or package generation.
 
 Recommended SDK package reference in a companion project:
 
@@ -34,13 +23,9 @@ Recommended SDK package reference in a companion project:
 <PackageReference Include="RimBridgeServer.Sdk" Version="2.0.0" PrivateAssets="all" ExcludeAssets="runtime" />
 ```
 
-When the companion project lives next to a RimBridgeServer checkout during early development, a `ProjectReference` is also acceptable:
-
-```xml
-<ProjectReference Include="..\..\..\RimBridgeServer\Source\RimBridgeServer.Sdk\RimBridgeServer.Sdk.csproj" Private="false" />
-```
-
-Keep `Private="false"` or `ExcludeAssets="runtime"` so the companion output does not bundle `RimBridgeServer.Sdk.dll`.
+Keep `ExcludeAssets="runtime"` so the companion output does not bundle `RimBridgeServer.Sdk.dll`.
+The SDK source project remains available for SDK development and its unit tests.
+Ordinary host and companion projects consume the published package.
 
 ## Companion Project Pattern
 

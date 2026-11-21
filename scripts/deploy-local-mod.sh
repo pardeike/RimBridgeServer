@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
+export MSBUILDDISABLENODEREUSE=1
+export DOTNET_CLI_USE_MSBUILD_SERVER=0
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIGURATION="${CONFIGURATION:-Release}"
@@ -14,7 +17,7 @@ usage() {
 	cat >&2 <<'USAGE'
 usage: scripts/deploy-local-mod.sh [options] [-- <dotnet build args>]
 
-Build RimBridgeServer and deploy it through the repo's MSBuild CopyToRimworld/ZipMod targets.
+Build RimBridgeServer and deploy it through the repo's guarded MSBuild deployment target.
 
 Options:
       --mods-dir <dir>        Parent Mods folder. Deploys to <dir>/RimBridgeServer and <dir>/RimBridgeServer.zip
@@ -108,11 +111,23 @@ cancel_workflow() {
 trap 'cancel_workflow 130' INT
 trap 'cancel_workflow 143' TERM
 run_workflow() {
-	"$@" <&0 & WORKFLOW_CHILD=$!
-	local command_status=0
-	wait "$WORKFLOW_CHILD" || command_status=$?
-	WORKFLOW_CHILD=""
-	return "$command_status"
+    python3 -c '
+import os, signal, subprocess, sys
+process = subprocess.Popen(sys.argv[1:], start_new_session=True)
+def cancel(signum, frame):
+    try:
+        os.killpg(process.pid, signum)
+    except ProcessLookupError:
+        pass
+signal.signal(signal.SIGINT, cancel)
+signal.signal(signal.SIGTERM, cancel)
+code = process.wait()
+sys.exit(code if code >= 0 else 128 - code)
+' "$@" <&0 & WORKFLOW_CHILD=$!
+    local command_status=0
+    wait "$WORKFLOW_CHILD" || command_status=$?
+    WORKFLOW_CHILD=""
+    return "$command_status"
 }
 
 BUILD_ARGS=(
@@ -134,7 +149,7 @@ if [[ "$NO_RESTORE" == true ]]; then
 	BUILD_ARGS+=(--no-restore)
 fi
 
-BUILD_COMMAND=(dotnet build "${BUILD_ARGS[@]}")
+BUILD_COMMAND=(dotnet build --disable-build-servers "${BUILD_ARGS[@]}")
 if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
 	BUILD_COMMAND+=("${EXTRA_ARGS[@]}")
 fi
@@ -142,43 +157,13 @@ run_workflow "${BUILD_COMMAND[@]}"
 
 if [[ "$RUN_TESTS" == true ]]; then
 	STEP=tests
-	run_workflow dotnet test "$ROOT/RimBridgeServer.sln" -c "$CONFIGURATION" --no-build
+	run_workflow dotnet test "$ROOT/RimBridgeServer.sln" -c "$CONFIGURATION" --no-build --no-restore
 fi
 
 STEP="deployed artifact verification"
 DEPLOYMENT_DIR="${TARGET_DIR:-$MODS_DIR/RimBridgeServer}"
 COMPANION_MODS_DIR="$MODS_DIR"
 if [[ -n "$TARGET_DIR" ]]; then COMPANION_MODS_DIR=""; fi
-run_workflow python3 - "$ROOT" "$DEPLOYMENT_DIR" "${ZIP_PATH:-$DEPLOYMENT_DIR.zip}" "$COMPANION_MODS_DIR" <<'PY'
-from pathlib import Path
-import sys
-import zipfile
-
-import re
-
-root, deployed, archive = map(Path, sys.argv[1:4])
-mod_file_name = re.search(r'<ModFileName>([^<]+)</ModFileName>', (root/'Directory.Build.props').read_text()).group(1)
-with zipfile.ZipFile(archive) as package:
-    if package.testzip() is not None:
-        raise RuntimeError('Deployed mod ZIP failed its CRC check')
-    if any(not name.startswith(mod_file_name+'/') for name in package.namelist()):
-        raise RuntimeError('Mod ZIP must wrap all content in one '+mod_file_name+'/ directory')
-    if mod_file_name+'/About/About.xml' not in package.namelist():
-        raise RuntimeError('Mod ZIP is missing '+mod_file_name+'/About/About.xml')
-    for source in (root/'1.6/Assemblies').glob('*.dll'):
-        relative = '1.6/Assemblies/'+source.name
-        expected = source.read_bytes()
-        if (deployed/relative).read_bytes() != expected or package.read(mod_file_name+'/'+relative) != expected:
-            raise RuntimeError('Deployed DLL or ZIP differs from the build: '+source.name)
-    if any('BridgeTools' in name for name in package.namelist()):
-        raise RuntimeError('Test companions must not enter the player mod ZIP')
-if not sys.argv[2] or not (deployed/'1.6/Assemblies/RimBridgeServer.dll').is_file():
-    raise RuntimeError('Deployed main mod DLL is missing')
-if sys.argv[4]:
-    bundle = Path(sys.argv[4]).parent/'BridgeTools/Multiplayer'
-    source = root/'artifacts/BridgeTools/Multiplayer/Multiplayer.BridgeTools.dll'
-    if (bundle/source.name).read_bytes() != source.read_bytes():
-        raise RuntimeError('Deployed Multiplayer companion differs from the build')
-    if any(p.suffix == '.dll' and p.name != source.name for p in bundle.iterdir()):
-        raise RuntimeError('Multiplayer companion bundle contains unexpected DLLs')
-PY
+run_workflow python3 "$ROOT/scripts/rimworld_deploy_guard.py" verify \
+    --mods-dir "$COMPANION_MODS_DIR" --target-dir "$DEPLOYMENT_DIR" \
+    --zip-path "${ZIP_PATH:-$DEPLOYMENT_DIR.zip}"

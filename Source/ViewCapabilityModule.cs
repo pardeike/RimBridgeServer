@@ -394,6 +394,7 @@ internal sealed class ViewCapabilityModule
         float rootSize = 0f,
         string outputDirectory = null)
     {
+        if (IsHeadlessLaunch()) return new { success = false, message = ScreenshotUnavailableMessage };
         if (!TryResolveOutputDirectory(outputDirectory, out _, out var outputDirectoryError))
         {
             return new
@@ -638,9 +639,23 @@ internal sealed class ViewCapabilityModule
         };
     }
 
-    public object TakeScreenshot(string fileName = null, bool includeTargets = true, bool suppressMessage = true, string clipTargetId = null, int clipPadding = 8, string outputDirectory = null)
+    private const string ScreenshotUnavailableMessage = "No rendered framebuffer is available. RimWorld 1.7 -Headless cannot capture screenshots; launch with -NoWindow or a visible window.";
+    private static bool IsHeadlessLaunch() => Environment.GetCommandLineArgs().Any(a => string.Equals(a, "-Headless", StringComparison.OrdinalIgnoreCase));
+
+    public object TakeScreenshot(string fileName = null, bool includeTargets = true, bool suppressMessage = true, string clipTargetId = null, int clipPadding = 8, string outputDirectory = null,
+        float? clipX = null, float? clipY = null, float? clipWidth = null, float? clipHeight = null)
     {
-        return CreateScreenshotResponse(CaptureScreenshotInternal(fileName, includeTargets, suppressMessage, clipTargetId, clipPadding, outputDirectory: outputDirectory));
+        UiRectSnapshot area = null;
+        if (clipX.HasValue || clipY.HasValue || clipWidth.HasValue || clipHeight.HasValue)
+        {
+            if (!clipX.HasValue || !clipY.HasValue || !clipWidth.HasValue || !clipHeight.HasValue
+                || !IsFinite(clipX.Value) || !IsFinite(clipY.Value) || !IsFinite(clipWidth.Value) || !IsFinite(clipHeight.Value)
+                || clipWidth.Value <= 0 || clipHeight.Value <= 0)
+                return new { success = false, message = "Supply finite clipX, clipY, clipWidth and clipHeight together, with positive width/height." };
+            area = new UiRectSnapshot { X = clipX.Value, Y = clipY.Value, Width = clipWidth.Value, Height = clipHeight.Value };
+        }
+        return CreateScreenshotResponse(CaptureScreenshotInternal(fileName, includeTargets, suppressMessage, clipTargetId, clipPadding,
+            explicitClipArea: area, explicitClipTargetId: area == null ? null : "screenRect", explicitClipTargetKind: "screenRect", outputDirectory: outputDirectory));
     }
 
     // RimWorld always writes into its own screenshot folder; an output directory lets a caller such as an
@@ -712,6 +727,8 @@ internal sealed class ViewCapabilityModule
 
         var capture = RimBridgeMainThread.Invoke(() =>
         {
+            if (IsHeadlessLaunch() || Screen.width <= 0 || Screen.height <= 0)
+                return new PendingScreenshotCapture { ErrorMessage = ScreenshotUnavailableMessage };
             var screenTargets = includeTargets ? RimWorldTargeting.CreateScreenTargetsPayload() : null;
             RimWorldTargeting.ScreenTargetClipArea clipArea = null;
             var resolvedClipArea = explicitClipArea;
@@ -730,22 +747,25 @@ internal sealed class ViewCapabilityModule
             {
                 resolvedClipArea = new UiRectSnapshot
                 {
-                    X = clipArea.Rect.X,
-                    Y = clipArea.Rect.Y,
-                    Width = clipArea.Rect.Width,
-                    Height = clipArea.Rect.Height
+                    X = clipArea.Rect.X + (explicitClipArea?.X ?? 0),
+                    Y = clipArea.Rect.Y + (explicitClipArea?.Y ?? 0),
+                    Width = explicitClipArea?.Width ?? clipArea.Rect.Width,
+                    Height = explicitClipArea?.Height ?? clipArea.Rect.Height
                 };
                 resolvedClipTargetId = clipTargetId ?? string.Empty;
                 resolvedClipTargetKind = clipArea.TargetKind ?? string.Empty;
                 resolvedClipTargetLabel = clipArea.Label ?? string.Empty;
             }
 
+            var saveDataFolder = GetFullPath(GenFilePaths.SaveDataFolderPath);
+            var screenshotFolder = GetFullPath(GenFilePaths.ScreenshotFolderPath);
+            // A previous file with this name must not satisfy the asynchronous capture wait.
+            var expectedPath = Path.Combine(screenshotFolder, safeName + ".png");
+            if (File.Exists(expectedPath)) File.Delete(expectedPath);
             var restoreSuppressMessage = ScreenshotTaker.suppressMessage;
             if (suppressMessage)
                 ScreenshotTaker.suppressMessage = true;
 
-            var saveDataFolder = GetFullPath(GenFilePaths.SaveDataFolderPath);
-            var screenshotFolder = GetFullPath(GenFilePaths.ScreenshotFolderPath);
             ScreenshotTaker.TakeNonSteamShot(safeName);
             var hasClip = resolvedClipArea != null;
             var outputFileName = hasClip ? safeName + (clipOutputSuffix ?? "__clip") : safeName;

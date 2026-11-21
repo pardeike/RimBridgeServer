@@ -1,6 +1,6 @@
 ---
 name: rimbridge-companion-tools
-description: Use when adding, migrating, reviewing, or testing RimBridgeServer 2.x companion DLL tools for a RimWorld mod. Covers RimBridgeServer.Sdk package references, BridgeTools folder layout, companion csproj wiring, async IRimBridgeContext tool orchestration, local NuGet/package use, build/deploy automation, and GABS validation of mod-owned [Tool] methods.
+description: Use when adding, migrating, reviewing, or testing RimBridgeServer 2.x companion DLL tools for a RimWorld mod. Covers RimBridgeServer.Sdk package references, BridgeTools folder layout, companion csproj wiring, async IRimBridgeContext tool orchestration, published NuGet packages, build/deploy automation, and GABS validation of mod-owned [Tool] methods.
 ---
 
 # RimBridge Companion Tools
@@ -11,7 +11,7 @@ Use this skill for source work in a RimWorld mod that wants to expose tools thro
 
 1. Check the target mod's current build/deploy layout before editing. Preserve its existing publicized RimWorld reference pattern and local deploy scripts.
 2. Move bridge-only `[Tool]` methods into a companion assembly. For normal paired local mod deployments, build to a repo artifact folder and copy the companion to the global sibling `BridgeTools` folder derived from the selected active `Mods` folder, normally `$(RIMWORLD_MOD_DIR)\..\BridgeTools\SomeMod`. Treat that as the standard deploy model, not one option among several equivalent local targets.
-3. Reference `RimBridgeServer.Sdk` for compile-time annotations and runtime interfaces, but do not deploy `RimBridgeServer.Sdk.dll` with the companion. RimBridgeServer resolves it to the host copy.
+3. Reference published `RimBridgeServer.Sdk` 2.0.0 from NuGet.org for compile-time annotations and runtime interfaces. Do not deploy that DLL with the companion. RimBridgeServer resolves it to the host copy. No local SDK feed or package build is required.
 4. Reference the owning mod DLL from the companion assembly so the companion can call mod helpers after RimWorld loads the normal mod assembly.
 5. Wire the main mod build so it builds the companion after the main mod DLL exists and before local deploy/copy/zip steps run. The user should build the main mod project only; it should automatically build the matching companion.
 6. Prefer async SDK orchestration for real in-game test harnesses: `IRimBridgeContext`, `ctx.Tools.List/Get/CallAsync/CallAsync<T>/QueueAsync`, result helpers such as `Succeeded()` and `ReadResult<T>(...)`, `RimBridgeEvidenceManifest`/`RimBridgeEvidence` for stable evidence results, and `ctx.Game.StepTicksAsync/RunForTicksAsync/RunUntilAsync`.
@@ -35,3 +35,7 @@ Use this skill for source work in a RimWorld mod that wants to expose tools thro
 ## Reference
 
 Read `references/companion-dll-guide.md` before editing project files or writing companion tools. It contains the current csproj patterns, SDK API examples, build target wiring, and validation checklist.
+
+## Discovery and RimWorld 1.7 iteration
+
+Use a public nonabstract, nonstatic class for discovered tools, even when its tool methods are static: discovery skips abstract types, including static classes. Ordinary companion replacement requires a restart. For the limited Waylith development-test dispatcher and added test methods, use `$rimworld-17` and its autonomous-development reference; this does not refresh the normal MCP registry or establish arbitrary mod reload.

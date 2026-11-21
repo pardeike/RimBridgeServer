@@ -89,38 +89,12 @@ Your client then connects to:
 - port: the logged bridge port
 - token: the logged bridge token
 
-## Local Package Overrides
+## Published packages
 
-For cross-repo development in a sibling workspace, RimBridgeServer supports an opt-in local NuGet source override without switching the project to `ProjectReference`s.
-
-- default local source path: `../.nuget-local`
-- enable it with `EnableLocalNuGetOverride=true`
-- override package versions with `LibGabPackageVersion` and `RimBridgeServerSdkPackageVersion`
-
-Example:
-
-```bash
-dotnet restore Source/RimBridgeServer.csproj \
-  -p:EnableLocalNuGetOverride=true \
-  -p:LibGabPackageVersion=1.0.6-local.1 \
-  -p:RimBridgeServerSdkPackageVersion=2.3.0-local.1
-```
-
-Populate the local source by packing the sibling library into `../.nuget-local`, for example:
-
-```bash
-dotnet pack ../Lib.GAB/Lib.GAB/Lib.GAB.csproj \
-  -o ../.nuget-local \
-  -p:PackageVersion=1.0.6-local.1
-```
-
-Pack the RimBridgeServer companion SDK into that same local source with:
-
-```bash
-scripts/pack-sdk.sh
-```
-
-Use `scripts/pack-sdk.sh --out <dir>` when a different local NuGet source should receive the package.
+The host and companion projects use the published `RimBridgeServer.Sdk` 2.0.0 package from NuGet.org.
+Lib.GAB remains at public version 1.0.6.
+They need no local SDK feed or package generation.
+The SDK source project and `scripts/pack-sdk.sh` remain available for SDK development and tests.
 
 ## Release Assets
 
@@ -139,7 +113,7 @@ Install or refresh the local Codex skills maintained by this repo with:
 scripts/install-skills.sh
 ```
 
-That command refreshes the generated `rimbridge-server` live bridge skill from `README.md` and `docs/tool-reference.md`, then installs repo-owned skills from `skills/`, including `rimbridge-companion-tools` for adding `RimBridgeServer.Sdk` companion DLLs to RimWorld mods.
+That command refreshes the generated `rimbridge-server` live bridge skill from `README.md` and `docs/tool-reference.md`, then installs repo-owned skills from `skills/`, including `rimbridge-companion-tools` for adding `RimBridgeServer.Sdk` companion DLLs to RimWorld mods and `rimworld-17` for Waylith launch modes, isolated mod lists, engine diagnostics and profiling. The 1.7 skill records its inspected build and evidence limits; read it before choosing hidden-window or headless automation.
 
 ## Local Deploy Targets
 
@@ -471,3 +445,37 @@ Playback default: RimBridgeServer enables RimWorld's private `TickManager.UltraS
 - [docs/lua-frontend-design.md](docs/lua-frontend-design.md) - Lua front-end design and current execution model
 - [docs/semantic-state-design.md](docs/semantic-state-design.md) - rationale for the semantic inspection and notification surfaces
 - [docs/tool-reference.md](docs/tool-reference.md) - generated per-tool reference derived from the `[Tool]` and `[ToolParameter]` annotations in source
+
+### RimWorld 1.7 autonomous development
+
+The optional [Waylith development companion](Companions/Waylith/README.md) and existing live-smoke command provide repeatable proofs for added test methods, hidden/headless execution, native profiling, shader watching and asset packs. See the [tested capabilities and limits](skills/rimworld-17/references/autonomous-development.md). These development tools are excluded from normal builds and player mod ZIPs.
+
+### RimWorld 1.7 build and frozen 1.6 payload
+
+The active gameplay bridge and Multiplayer companion target .NET 10 and AnyCPU.
+Shared contracts and SDK projects retain their existing target frameworks.
+Mod version 2.3.1 adds 1.7 support while retaining the published 1.6 runtime files.
+The host ships the published SDK 2.0.0 DLL independently of the server version.
+Companions reference `RimBridgeServer.Sdk, Version=2.0.0.0` and do not bundle their own SDK copy.
+
+Run `scripts/build-mod.sh --test` to build, create the public ZIP, and run local unit and isolated installer tests.
+This command clears inherited deployment settings.
+The verified public ZIP is `artifacts/package/RimBridgeServer.zip`.
+Run `scripts/deploy-local-mod.sh --mods-dir /path/to/RimWorld/Mods` for the normal guarded build/install/ZIP workflow.
+The existing exact `--target-dir` and `--zip-path` interfaces remain available.
+Ordinary MSBuild builds also use the guarded installer when deployment properties are set.
+
+The public ZIP always contains the pinned published 1.6 payload.
+Local installation preserves all existing 1.6 DLLs in place, even when their bytes differ from that baseline.
+It captures their bytes, inode, and modification time before installation and verifies that they remain unchanged.
+The local installation and public ZIP can therefore differ under 1.6 only.
+Current 1.7 files and metadata must match the new package exactly.
+Missing or extra legacy files, mismatched shared frozen resources, symlinks, a running game, and failed process inspection stop installation.
+A global lock serializes installation. Changed current files and ZIPs use atomic replacement.
+The installer never starts or stops the game.
+
+Normal Mods-folder installation deploys Multiplayer tools beside Mods under `BridgeTools/Multiplayer`.
+The optional existing Waylith build flag also deploys its matching bundle under `BridgeTools/Waylith`.
+Both bundles stay outside the public mod ZIP. Exact-target installation keeps its existing public-mod-only behavior.
+The host supplies its runtime SDK DLL; companion bundles contain only their own DLLs.
+New-game startup and live bridge discovery remain separate runtime checks.

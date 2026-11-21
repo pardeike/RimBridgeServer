@@ -7,6 +7,9 @@ internal static class ProgramEntry
 {
     public static async Task<int> RunAsync(string[] args)
     {
+        if (args.FirstOrDefault() == "--waylith-poc")
+            return await WaylithProof.RunAsync(args.Skip(1).ToArray());
+
         CliOptions options;
 
         try

@@ -1,0 +1,15 @@
+{
+  "1.6/Assemblies/RimBridgeServer.Core.dll": "fb671fcbe2c0c1dd3002d9c55de0f5d662125f6707d487714392ee0e63cad083",
+  "1.6/Assemblies/MoonSharp.Interpreter.dll": "1db76110f21698639f55d28e21bddb536c0c497ceb741dee49fedcca9bcd1588",
+  "1.6/Assemblies/RimBridgeServer.Extensions.Abstractions.dll": "786668c7f53e6878038769d6f259a5f9c755f606148ee8cd432256e77ce46c0f",
+  "1.6/Assemblies/Lib.GAB.dll": "c06a5e04c12a477b8a0f7301178547e3ffad1e481e45ab8c0e840eaec95f70ee",
+  "1.6/Assemblies/Gabp.Runtime.dll": "d548e8665efb033e36b5985738d865bcbaf50f9384674d0340b5c5c834ff7696",
+  "1.6/Assemblies/RimBridgeServer.Contracts.dll": "91852118fdf1ee5c22b14c6a546af22b7cf2e5e1020acd50224a2202d028d69e",
+  "1.6/Assemblies/RimBridgeServer.dll": "bedefc9bf0c4ba30d0e9d4c5ed3fbc8e9a6b5fcd532f480b6b4639cbd7468db2",
+  "1.6/Assemblies/Newtonsoft.Json.dll": "f0c07af0e84d4dd4da4bd7823ba4535bc0481b3bf623ed40b659b68147a6bb75",
+  "1.6/Assemblies/RimBridgeServer.Sdk.dll": "46abe5b6ad8a70bf814e690b0e9299b36223b8747052ed42578774ef4467d662",
+  "LICENSE": "447251991a4ca5255a7cdd1d65f7c7b87add26eea880cf653221a01ec74f8f0c",
+  "About/ModIcon.png": "75afebfb6367e4000edbf774db7860f3bc30d6348200782365b269b1b4c78dfd",
+  "About/Preview.png": "d6b3a3d72cb2a292f430ee1f493df7d5cc88b6e0c512dd8d1c5c2ba8bed2bfcb",
+  "About/PublishedFileId.txt": "bbd6424b6b1c6f077093db773d73256619695b9a8658558a050f5deb2aa201df"
+}

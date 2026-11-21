@@ -8,11 +8,11 @@
 		<AssemblyName>RimBridgeServer.Sdk</AssemblyName>
 		<ProjectGuid>{91DF98D9-995C-4D75-9BB2-E0D1DC01E699}</ProjectGuid>
 		<PackageId>RimBridgeServer.Sdk</PackageId>
-		<Version>$(ModVersion)</Version>
-		<AssemblyVersion>$(ModVersion)</AssemblyVersion>
-		<FileVersion>$(ModVersion)</FileVersion>
-		<PackageVersion>$(ModVersion)</PackageVersion>
-		<InformationalVersion>$(ModVersion)</InformationalVersion>
+		<Version>$(RimBridgeServerSdkVersion)</Version>
+		<AssemblyVersion>$(RimBridgeServerSdkVersion)</AssemblyVersion>
+		<FileVersion>$(RimBridgeServerSdkVersion)</FileVersion>
+		<PackageVersion>$(RimBridgeServerSdkPackageVersion)</PackageVersion>
+		<InformationalVersion>$(RimBridgeServerSdkVersion)</InformationalVersion>
 		<Authors>Andreas Pardeike</Authors>
 		<Company>Brrainz</Company>
 		<PackageProjectUrl>$(Repository)</PackageProjectUrl>

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIGURATION="${CONFIGURATION:-Release}"
-OUT_DIR="${NUGET_OUT_DIR:-$ROOT/../.nuget-local}"
+OUT_DIR="${NUGET_OUT_DIR:-$ROOT/artifacts/sdk-packages}"
 VERSION="${PACKAGE_VERSION:-}"
 NO_RESTORE=false
 EXTRA_ARGS=()
@@ -15,7 +15,7 @@ usage: scripts/pack-sdk.sh [options] [-- <dotnet pack args>]
 Create the RimBridgeServer.Sdk NuGet package for companion-tool projects.
 
 Options:
-  -o, --out <dir>            Package output directory. Default: ../.nuget-local
+  -o, --out <dir>            Package output directory. Default: artifacts/sdk-packages
   -c, --configuration <name> Build configuration. Default: Release
       --version <version>    Override PackageVersion/Version for this pack
       --debug                Shortcut for --configuration Debug

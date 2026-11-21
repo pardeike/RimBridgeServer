@@ -3,10 +3,10 @@
 	<PropertyGroup>
 		<RootNamespace>$(ModFileName)</RootNamespace>
 		<AssemblyName>$(ModFileName)</AssemblyName>
-		<TargetFramework>net472</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 		<LangVersion>latest</LangVersion>
-		<PlatformTarget>x64</PlatformTarget>
-		<OutputPath>..\1.6\Assemblies\</OutputPath>
+		<PlatformTarget>AnyCPU</PlatformTarget>
+		<OutputPath>..\1.7\Assemblies\</OutputPath>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<Version>$(ModVersion)</Version>
@@ -21,6 +21,10 @@
 		<RepositoryUrl>$(Repository)</RepositoryUrl>
 		<Product>$(ModName)</Product>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <GenerateDependencyFile>false</GenerateDependencyFile>
+        <BuildWaylithTools Condition="'$(BuildWaylithTools)' == ''">false</BuildWaylithTools>
+        <PythonCommand Condition="'$(PythonCommand)' == ''">python3</PythonCommand>
+        <GlobalBridgeToolsDir Condition="'$(RIMWORLD_MOD_DIR)' != ''">$([MSBuild]::NormalizeDirectory('$(RIMWORLD_MOD_DIR)\..\BridgeTools'))</GlobalBridgeToolsDir>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -34,7 +38,7 @@
 		<DebugSymbols>true</DebugSymbols>
 		<DefineConstants>TRACE;DEBUG</DefineConstants>
 		<Optimize>false</Optimize>
-		<DebugType>portable</DebugType>
+		<DebugType>embedded</DebugType>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
@@ -57,32 +61,28 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\Companions\Multiplayer\Multiplayer.BridgeTools.csproj" ReferenceOutputAssembly="false" />
+		<ProjectReference Include="..\Companions\Waylith\Waylith.BridgeTools.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" Condition="'$(BuildWaylithTools)' == 'true'" />
 		<ProjectReference Include="RimBridgeServer.Core\RimBridgeServer.Core.csproj" />
 		<ProjectReference Include="RimBridgeServer.Contracts\RimBridgeServer.Contracts.csproj" />
 		<ProjectReference Include="RimBridgeServer.Extensions.Abstractions\RimBridgeServer.Extensions.Abstractions.csproj" />
-		<ProjectReference Include="RimBridgeServer.Sdk\RimBridgeServer.Sdk.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4850" GeneratePathProperty="true" />
+		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.7.4990-unstable" GeneratePathProperty="true" />
 		<PackageReference Include="Lib.GAB" Version="$(LibGabPackageVersion)" />
-		<PackageReference Include="Lib.Harmony.Ref" Version="2.4.2" />
-		<PackageReference Include="Microsoft.NETCore.Platforms" Version="7.0.4" />
-		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3">
-			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-		</PackageReference>
+		<PackageReference Include="RimBridgeServer.Sdk" Version="$(RimBridgeServerSdkVersion)" />
+		<PackageReference Include="Lib.Harmony.Ref" Version="3.0.0-rc.5" ExcludeAssets="runtime" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-		<PackageReference Include="TaskPubliciser" Version="1.0.3" />
+		<PackageReference Include="TaskPubliciser" Version="1.0.3" PrivateAssets="all" ExcludeAssets="runtime" />
 	</ItemGroup>
 
-	<Target Name="MyCode" BeforeTargets="UpdateReferences">
+	<Target Name="MyCode" BeforeTargets="ResolveAssemblyReferences">
 		<PropertyGroup>
-			<AssemblyCSharp>$(PkgKrafs_Rimworld_Ref)\ref\net472\Assembly-CSharp.dll</AssemblyCSharp>
-			<PubliciseOutputPath>$(PkgKrafs_Rimworld_Ref)\ref\net472\</PubliciseOutputPath>
+			<AssemblyCSharp>$(PkgKrafs_Rimworld_Ref)\ref\net10.0\Assembly-CSharp.dll</AssemblyCSharp>
+			<PubliciseOutputPath>$(MSBuildProjectDirectory)/obj/publicised/</PubliciseOutputPath>
 			<AssemblyCSharp_Publicised>$(PubliciseOutputPath)Assembly-CSharp_publicised.dll</AssemblyCSharp_Publicised>
 		</PropertyGroup>
-		<Message Importance="High" Text="Publicising Rimworld Assembly ..." />
+		<MakeDir Directories="$(PubliciseOutputPath)" />
 		<Publicise TargetAssemblyPath="$(AssemblyCSharp)" OutputPath="$(PubliciseOutputPath)" Condition="Exists('$(AssemblyCSharp)')" />
 		<Message Importance="High" Text="Replacing reference to un-publicised assemblies with publicised equivalents ..." />
 		<ItemGroup>
@@ -98,13 +98,8 @@
 	<Target Name="UpdateReferences" AfterTargets="ResolveLockFileReferences">
 		<Message Importance="High" Text="Remove References ..." />
 		<ItemGroup>
-			<Reference Remove="$(PkgKrafs_Rimworld_Ref)\ref\net472\Assembly-CSharp.dll" />
+			<Reference Remove="$(PkgKrafs_Rimworld_Ref)\ref\net10.0\Assembly-CSharp.dll" />
 		</ItemGroup>
-	</Target>
-
-	<Target Name="PostBuildAction" AfterTargets="Build">
-		<XmlPoke XmlInputPath="$(MSBuildProjectDirectory)\..\About\About.xml" Query="//ModMetaData/modVersion" Value="$(ModVersion)" />
-		<XmlPoke XmlInputPath="$(MSBuildProjectDirectory)\..\About\Manifest.xml" Query="//Manifest/version" Value="$(ModVersion)" />
 	</Target>
 
 	<PropertyGroup>
@@ -115,39 +110,24 @@
 		<RimWorldModZipPath Condition="'$(RimWorldModZipPath)' == '' And '$(RIMWORLD_MOD_DIR)' != ''">$(RIMWORLD_MOD_DIR)\$(ModFileName).zip</RimWorldModZipPath>
 	</PropertyGroup>
 
-	<Target Name="CopyToRimworld" AfterTargets="PostBuildAction" Condition="'$(RimWorldModDeployDir)' != ''">
-		<RemoveDir Directories="$(RimWorldModDeployDir)" />
-		<ItemGroup>
-			<Copy_16 Include="..\1.6\**" Exclude="..\1.6\**\.DS_Store;..\1.6\**\Thumbs.db" />
-			<CopyAbout Include="..\About\**" Exclude="..\About\**\.DS_Store;..\About\**\Thumbs.db" />
-			<CopyLoadFolders Include="..\LoadFolders.xml" />
-			<CopyReadme Include="..\README.md" />
-			<CopyLicense Include="..\LICENSE" />
-		</ItemGroup>
-		<Copy SourceFiles="@(Copy_16)" DestinationFolder="$(RimWorldModDeployDir)\1.6\%(RecursiveDir)" />
-		<Copy SourceFiles="@(CopyAbout)" DestinationFolder="$(RimWorldModDeployDir)\About\%(RecursiveDir)" />
-		<Copy SourceFiles="@(CopyLoadFolders)" DestinationFolder="$(RimWorldModDeployDir)" />
-		<Copy SourceFiles="@(CopyReadme)" DestinationFolder="$(RimWorldModDeployDir)" />
-		<Copy SourceFiles="@(CopyLicense)" DestinationFolder="$(RimWorldModDeployDir)" />
-	</Target>
 
-	<!-- Release ZIPs are wrapped in one $(ModFileName)/ directory, matching the established GitHub release layout. -->
-	<Target Name="ZipMod" AfterTargets="CopyToRimworld" Condition="'$(RimWorldModDeployDir)' != '' And '$(RimWorldModZipPath)' != ''">
-		<PropertyGroup>
-			<RimWorldModZipStage>$(BaseIntermediateOutputPath)zip-stage\</RimWorldModZipStage>
-		</PropertyGroup>
-		<RemoveDir Directories="$(RimWorldModZipStage)" />
-		<ItemGroup>
-			<RimWorldModZipFiles Include="$(RimWorldModDeployDir)\**\*" Exclude="$(RimWorldModDeployDir)\**\.DS_Store;$(RimWorldModDeployDir)\**\._*" />
-		</ItemGroup>
-		<Copy SourceFiles="@(RimWorldModZipFiles)" DestinationFiles="@(RimWorldModZipFiles->'$(RimWorldModZipStage)$(ModFileName)\%(RecursiveDir)%(Filename)%(Extension)')" />
-		<ZipDirectory SourceDirectory="$(RimWorldModZipStage)" DestinationFile="$(RimWorldModZipPath)" Overwrite="true" />
-		<RemoveDir Directories="$(RimWorldModZipStage)" />
-	</Target>
-
-	<Target Name="CopyMultiplayerBridgeTools" AfterTargets="CopyToRimworld" Condition="'$(RIMWORLD_MOD_DIR)' != ''">
-		<Copy SourceFiles="..\artifacts\BridgeTools\Multiplayer\Multiplayer.BridgeTools.dll"
-		      DestinationFolder="$(RIMWORLD_MOD_DIR)\..\BridgeTools\Multiplayer" SkipUnchangedFiles="true" />
-	</Target>
-
+  <Target Name="ValidatePortInputs" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ExpectedOutputDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '../1.7/Assemblies/'))</ExpectedOutputDirectory>
+      <CurrentOutputDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutputPath)'))</CurrentOutputDirectory>
+      <CurrentTargetDirectory>$([MSBuild]::NormalizeDirectory('$(TargetDir)'))</CurrentTargetDirectory>
+    </PropertyGroup>
+    <Error Condition="'$(CurrentOutputDirectory)' != '$(ExpectedOutputDirectory)' Or '$(CurrentTargetDirectory)' != '$(ExpectedOutputDirectory)'" Text="Active build output must remain in 1.7/Assemblies. The published 1.6 payload is frozen." />
+    <Error Condition="'$(PlatformTarget)' != 'AnyCPU'" Text="The active RimWorld 1.7 bridge must target AnyCPU." />
+    <Exec Command="&quot;$(PythonCommand)&quot; &quot;$(MSBuildProjectDirectory)/../scripts/rimworld_deploy_guard.py&quot; validate-source" />
+    <Exec Condition="'$(RimWorldModDeployDir)' != ''" Command="&quot;$(PythonCommand)&quot; &quot;$(MSBuildProjectDirectory)/../scripts/rimworld_deploy_guard.py&quot; check --mods-dir &quot;$(RIMWORLD_MOD_DIR)&quot; --target-dir &quot;$(RimWorldModDeployDir)&quot; --zip-path &quot;$(RimWorldModZipPath)&quot; --waylith $(BuildWaylithTools)" />
+  </Target>
+  <Target Name="PostBuildAction" AfterTargets="Build">
+    <XmlPoke XmlInputPath="$(MSBuildProjectDirectory)/../About/About.xml" Query="//ModMetaData/modVersion" Value="$(ModVersion)" />
+    <XmlPoke XmlInputPath="$(MSBuildProjectDirectory)/../About/Manifest.xml" Query="//Manifest/version" Value="$(ModVersion)" />
+    <Exec Command="&quot;$(PythonCommand)&quot; &quot;$(MSBuildProjectDirectory)/../scripts/rimworld_deploy_guard.py&quot; package" />
+  </Target>
+  <Target Name="CopyToRimworld" AfterTargets="PostBuildAction" Condition="'$(RimWorldModDeployDir)' != ''">
+    <Exec Command="&quot;$(PythonCommand)&quot; &quot;$(MSBuildProjectDirectory)/../scripts/rimworld_deploy_guard.py&quot; deploy --mods-dir &quot;$(RIMWORLD_MOD_DIR)&quot; --target-dir &quot;$(RimWorldModDeployDir)&quot; --zip-path &quot;$(RimWorldModZipPath)&quot; --waylith $(BuildWaylithTools)" />
+  </Target>
 </Project>

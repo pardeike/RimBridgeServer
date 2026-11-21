@@ -1125,9 +1125,13 @@ public class RimBridgeTools
         [ToolParameter(Description = "Suppress RimWorld's screenshot-taken message during this automated capture")] bool suppressMessage = true,
         [ToolParameter(Description = "Optional target id from rimworld/get_screen_targets or rimworld/get_ui_layout to crop around, including windows, ui-surface ids, ui-element ids, and scroll_view elements")] string clipTargetId = null,
         [ToolParameter(Description = "Logical screen-pixel padding to include around the clip target")] int clipPadding = 8,
-        [ToolParameter(Description = OutputDirectoryDescription)] string outputDirectory = null)
+        [ToolParameter(Description = OutputDirectoryDescription)] string outputDirectory = null,
+        [ToolParameter(Description = "Optional crop left in logical UI coordinates, origin top-left. Relative to clipTargetId when supplied; otherwise relative to the screen. Supply all four clip coordinates together.")] float? clipX = null,
+        [ToolParameter(Description = "Optional crop top in logical UI coordinates, relative to clipTargetId or the screen.")] float? clipY = null,
+        [ToolParameter(Description = "Optional crop width in logical UI coordinates; must be positive.")] float? clipWidth = null,
+        [ToolParameter(Description = "Optional crop height in logical UI coordinates; must be positive.")] float? clipHeight = null)
     {
-        return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(clipTargetId), clipTargetId), (nameof(clipPadding), clipPadding), (nameof(outputDirectory), outputDirectory)));
+        return InvokeAlias(Arguments((nameof(fileName), fileName), (nameof(includeTargets), includeTargets), (nameof(suppressMessage), suppressMessage), (nameof(clipTargetId), clipTargetId), (nameof(clipPadding), clipPadding), (nameof(outputDirectory), outputDirectory), (nameof(clipX), clipX), (nameof(clipY), clipY), (nameof(clipWidth), clipWidth), (nameof(clipHeight), clipHeight)));
     }
 
     private const string OutputDirectoryDescription = "Optional absolute directory (~/ is expanded) that receives the final PNG instead of RimWorld's screenshot folder, for example the caller's working directory; it is created if missing and an existing file of the same name is replaced";

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Waylith.BridgeTools</AssemblyName>
+    <DebugType>none</DebugType>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <OutputPath>../../artifacts/BridgeTools/Waylith/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <RimWorld17ManagedDir Condition="'$(RimWorld17ManagedDir)' == ''">$(RIMWORLD17_MANAGED_DIR)</RimWorld17ManagedDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="RimBridgeServer.Sdk" Version="$(RimBridgeServerSdkVersion)" PrivateAssets="all" ExcludeAssets="runtime" />
+    <Reference Include="Assembly-CSharp"><HintPath>$(RimWorld17ManagedDir)/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Waylith"><HintPath>$(RimWorld17ManagedDir)/Waylith.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityStubs"><HintPath>$(RimWorld17ManagedDir)/UnityStubs.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="CheckGameReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(RimWorld17ManagedDir)/Waylith.dll')" Text="Pass RimWorld17ManagedDir for the actual 1.7 apphost directory." />
+  </Target>
+</Project>

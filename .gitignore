@@ -38,3 +38,6 @@ Source/*.reloaded
 
 ## Mod assemblies
 1.6/Assemblies/*.pdb
+
+## Python
+__pycache__/

@@ -196,18 +196,18 @@ internal static class RimBridgeStartupTiming
 
     public static void LogCompletedPhase(string name, long startedElapsedMilliseconds)
     {
-        if (!IsDebugTimingEnabled())
+        if (!IsVerboseTimingEnabled())
             return;
 
         var ended = Clock.ElapsedMilliseconds;
         Log.Warning($"[RimBridge] STARTUP_TIMING phase={name} durationMs={ended - startedElapsedMilliseconds} elapsedMs={ended}");
     }
 
-    private static bool IsDebugTimingEnabled()
+    private static bool IsVerboseTimingEnabled()
     {
         try
         {
-            return Prefs.DevMode;
+            return Prefs.LogVerbose;
         }
         catch
         {

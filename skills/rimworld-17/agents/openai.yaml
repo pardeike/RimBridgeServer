@@ -1,0 +1,7 @@
+interface:
+  display_name: "RimWorld 1.7"
+  short_description: "Launch and diagnose RimWorld's Waylith engine"
+  default_prompt: "Use $rimworld-17 to choose RimWorld 1.7 launch modes, isolated mod lists, profiling and engine diagnostics; use $rimbridge-server for live game tools."
+
+policy:
+  allow_implicit_invocation: true
