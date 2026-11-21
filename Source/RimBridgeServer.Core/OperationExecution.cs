@@ -124,7 +124,7 @@ public sealed class OperationRunner
 
         return new OperationError
         {
-            Code = code,
+            Code = TargetLookupException.IsIn(exception) ? TargetLookupException.ErrorCode : code,
             Message = root.Message,
             ExceptionType = root.GetType().FullName ?? root.GetType().Name,
             Details = exception.ToString()

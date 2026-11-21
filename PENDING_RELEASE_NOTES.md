@@ -1,2 +1,3 @@
 - Add support for RimWorld 1.7.
 - Report an unavailable camera from `rimworld/get_camera_state` at the main menu instead of failing.
+- Return missing or ambiguous pawn and thing lookups as ordinary failures that do not block GABS.

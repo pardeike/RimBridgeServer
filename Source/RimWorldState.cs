@@ -190,7 +190,7 @@ internal static class RimWorldState
         if (matches.Count > 1)
             throw new InvalidOperationException($"Ambiguous current-map thing id '{thingId}'.");
 
-        throw new InvalidOperationException($"Could not find current-map thing id '{thingId}'.");
+        throw new TargetLookupException($"Could not find current-map thing id '{thingId}'.");
     }
 
     public static Vector3 CellCenter(IntVec3 cell)
@@ -358,7 +358,7 @@ internal static class RimWorldState
             if (idMatches.Count > 1)
                 throw new InvalidOperationException($"Ambiguous {description} id '{pawnId}'.");
 
-            throw new InvalidOperationException($"Could not find {description} id '{pawnId}'.");
+            throw new TargetLookupException($"Could not find {description} id '{pawnId}'.");
         }
 
         if (string.IsNullOrWhiteSpace(pawnName))
@@ -370,15 +370,15 @@ internal static class RimWorldState
         if (exactMatches.Count == 1)
             return exactMatches[0];
         if (exactMatches.Count > 1)
-            throw new InvalidOperationException($"Ambiguous {description} name '{pawnName}'. Matches: {string.Join(", ", exactMatches.Select(NameForDisplay))}");
+            throw new TargetLookupException($"Ambiguous {description} name '{pawnName}'. Matches: {string.Join(", ", exactMatches.Select(NameForDisplay))}");
 
         var fuzzyMatches = pawns.Where(pawn => MatchesPawnName(pawn, normalized, exact: false)).ToList();
         if (fuzzyMatches.Count == 1)
             return fuzzyMatches[0];
         if (fuzzyMatches.Count > 1)
-            throw new InvalidOperationException($"Ambiguous {description} name '{pawnName}'. Matches: {string.Join(", ", fuzzyMatches.Select(NameForDisplay))}");
+            throw new TargetLookupException($"Ambiguous {description} name '{pawnName}'. Matches: {string.Join(", ", fuzzyMatches.Select(NameForDisplay))}");
 
-        throw new InvalidOperationException($"Could not find {description} '{pawnName}'.");
+        throw new TargetLookupException($"Could not find {description} '{pawnName}'.");
     }
 
     private static bool MatchesPawnName(Pawn pawn, string query, bool exact)

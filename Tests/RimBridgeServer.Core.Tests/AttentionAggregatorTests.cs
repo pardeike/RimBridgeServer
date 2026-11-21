@@ -90,6 +90,25 @@ public class AttentionAggregatorTests
     }
 
     [Fact]
+    public void IgnoresFailuresFromUnresolvedTargetLookups()
+    {
+        var aggregator = new AttentionAggregator();
+
+        var snapshot = aggregator.RecordOperationEvent(new OperationEventRecord
+        {
+            Sequence = 3,
+            EventType = "operation.failed",
+            OperationId = "op_lookup",
+            CapabilityId = "rimbridge.core/view/get-map-target-info",
+            ErrorCode = TargetLookupException.ErrorCode,
+            ErrorMessage = "Could not find current-map thing id 'Thing_1'."
+        });
+
+        Assert.Null(snapshot);
+        Assert.Null(aggregator.GetCurrent());
+    }
+
+    [Fact]
     public void ResetStartsANewAttentionEpoch()
     {
         var aggregator = new AttentionAggregator();

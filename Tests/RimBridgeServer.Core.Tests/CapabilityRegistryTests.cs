@@ -139,6 +139,19 @@ public class CapabilityRegistryTests
     }
 
     [Fact]
+    public void ReportsUnresolvedTargetsWithTheirOwnErrorCode()
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new ThrowingProvider("missing", () => throw new TargetLookupException("Could not find current-map thing id 'Thing_1'.")));
+
+        var envelope = registry.Invoke("rimbridge/missing");
+
+        Assert.Equal(OperationStatus.Failed, envelope.Status);
+        Assert.Equal(TargetLookupException.ErrorCode, envelope.Error.Code);
+        Assert.Equal("Could not find current-map thing id 'Thing_1'.", envelope.Error.Message);
+    }
+
+    [Fact]
     public void ConvertsHandlerCancellationsIntoCancelledOperations()
     {
         var registry = new CapabilityRegistry();

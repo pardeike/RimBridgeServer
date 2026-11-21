@@ -44,6 +44,7 @@ internal static class SmokeScenarioCatalog
     public const string SaveModCompatibilityOverrideScenarioName = "save-mod-compatibility-override";
     public const string ScreenshotCaptureScenarioName = "screenshot-capture";
     public const string CameraStateWithoutMapScenarioName = "camera-state-without-map";
+    public const string MissingMapTargetScenarioName = "missing-map-target";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -211,6 +212,12 @@ internal static class SmokeScenarioCatalog
                 Name = CameraStateWithoutMapScenarioName,
                 Description = "Return to the main menu, verify the camera state reports an unavailable camera without opening blocking attention, then read it again in a playable game.",
                 RunAsync = RunCameraStateWithoutMapAsync
+            },
+            [MissingMapTargetScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = MissingMapTargetScenarioName,
+                Description = "Look up a thing id that is not on the current map, verify an ordinary not-found failure without blocking attention, and verify that pausing still works.",
+                RunAsync = RunMissingMapTargetAsync
             }
         };
 
@@ -5435,6 +5442,25 @@ internal static class SmokeScenarioCatalog
         await context.EnsurePlayableGameAsync(cancellationToken);
         var playable = await context.CallGameToolAsync("camera_without_map.read_playable", "rimworld/get_camera_state", new { }, cancellationToken);
         context.EnsureSucceeded(playable, "Reading the camera state in a playable game");
+    }
+
+    private static async Task RunMissingMapTargetAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("missing_map_target.wait_for_long_event_idle", cancellationToken);
+
+        var lookup = await context.CallGameToolAsync("missing_map_target.lookup", "rimworld/get_map_target_info", new
+        {
+            thingId = "RimBridgeLiveSmokeMissingThing_0"
+        }, cancellationToken);
+        await AssertNoOpenAttentionAsync(context, "missing_map_target.attention", "Looking up a missing current-map thing", cancellationToken);
+        if (lookup.Success)
+            throw new InvalidOperationException("Looking up a missing current-map thing must fail.");
+        if (!lookup.Message.Contains("RimBridgeLiveSmokeMissingThing_0", StringComparison.Ordinal))
+            throw new InvalidOperationException($"The missing-thing failure must name the requested id. {lookup.Message}");
+
+        var pause = await context.CallGameToolAsync("missing_map_target.pause", "rimworld/pause_game", new { pause = true }, cancellationToken);
+        context.EnsureSucceeded(pause, "Pausing after a missing-thing lookup");
     }
 
     private static async Task AssertNoOpenAttentionAsync(SmokeScenarioContext context, string stepName, string actionDescription, CancellationToken cancellationToken)

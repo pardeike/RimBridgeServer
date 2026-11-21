@@ -61,6 +61,22 @@ public class OperationRunnerTests
     }
 
     [Fact]
+    public void ReportsUnresolvedTargetsWithTheirOwnErrorCode()
+    {
+        var runner = new OperationRunner(new FakeDispatcher());
+
+        var envelope = runner.Run(() => throw new TargetLookupException("Could not find current-map thing id 'Thing_1'."), new OperationExecutionOptions
+        {
+            CapabilityId = "rimworld/get_map_target_info",
+            MarshalToMainThread = false,
+            FailureCode = "operation.failed"
+        });
+
+        Assert.Equal(OperationStatus.Failed, envelope.Status);
+        Assert.Equal(TargetLookupException.ErrorCode, envelope.Error.Code);
+    }
+
+    [Fact]
     public void ConvertsSdkAbiExceptionsIntoActionableFailedOperationEnvelopes()
     {
         var dispatcher = new FakeDispatcher();
