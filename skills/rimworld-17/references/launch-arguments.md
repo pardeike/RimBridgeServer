@@ -72,18 +72,19 @@ ownership/readiness checks or a command that terminates the preceding process.
 
 ## Mod-list behavior and config preservation
 
-Build 5014 (1.7.5014 rev1195) accepts only mods from the local Mods folder. After
-resolving an ID, `ApplyCommandLineModList` skips any match whose source is not
-`ContentSource.ModsFolder` and logs
-`-mod: '<id>' is not in the local Mods folder, ignoring`. Workshop Harmony is
-therefore dropped whatever ID is used, RimBridgeServer then fails with a
-`ReflectionTypeLoadException` (`HarmonyLib.CodeInstruction`), and GABS only
-reports a connection timeout. For Workshop dependencies, give the
-`-savedatafolder` profile its own `Config/ModsConfig.xml`, for example:
+Build 5014 (1.7.5014 rev1195) accepts `-mod` entries only from the local Mods
+folder. `ApplyCommandLineModList` resolves each ID and then skips every match
+whose source is not `ContentSource.ModsFolder`. It logs
+`-mod: '<id>' is not in the local Mods folder, ignoring`. This drops Workshop
+Harmony for every ID form. RimWorld then rejects the RimBridgeServer assembly
+with a `ReflectionTypeLoadException` (`HarmonyLib.CodeInstruction`). No bridge
+code runs, so GABS reports only a connection timeout.
+
+For Workshop dependencies, give the `-savedatafolder` profile its own
+`Config/ModsConfig.xml`:
 
 ```xml
 <ModsConfigData>
-  <version>1.7.5014 rev1195</version>
   <activeMods>
     <li>brrainz.harmony</li>
     <li>ludeon.rimworld</li>
@@ -97,15 +98,23 @@ reports a connection timeout. For Workshop dependencies, give the
 </ModsConfigData>
 ```
 
-List the DLCs actually installed. A Windows run on 2026-11-22 with this layout
-loaded Workshop Harmony and the bridge, and left the default data folder's
-`Prefs.xml` and `ModsConfig.xml` byte-identical.
+- The `ModsConfig` static constructor does not sort this list. Put Harmony first
+  and the DLCs after Core in release order.
+- Put every installed DLC in `knownExpansions`. RimWorld treats a missing one as
+  new: it activates that DLC and saves the file. Per the 5014 code, an installed
+  DLC that is listed in `knownExpansions` but not in `activeMods` stays off.
+- Use package IDs. If a local and a Workshop copy of a mod have the same package
+  ID, the Workshop copy gets the suffix `_steam`. For Harmony, `brrainz.harmony`
+  then selects the local copy and `brrainz.harmony_steam` the Workshop copy.
+- Do not list a Workshop folder name such as `2009463077`. On macOS build 5014
+  that entry loaded Harmony but broke Core's XML loading. RimWorld then reset the
+  profile to official mods only, and the already started bridge kept running on
+  that vanilla list. The cause is not known.
+- The `<version>` element is optional. If its major.minor version differs from
+  the game, RimWorld resets the file to official mods only.
 
-Earlier, live build4981 tests selected Workshop Harmony successfully with numeric
-item ID `2009463077`; the suffixed ID `brrainz.harmony_steam` failed lookup and
-Harmony was omitted after a warning. On either build, verify the actual loaded
-root. A `-mod` list is sorted, not an exact-order fixture; use an isolated
-ModsConfig profile for precise order or exclusion of installed DLCs.
+Windows and macOS runs on build 5014 loaded the bridge with this layout. See
+[sources](sources.md#build-5014-mod-list-check). Verify the actual Harmony root.
 
 `TryGetCommandLineModList` accepts either `-mod=...` or `-mod` followed by the
 value, case-insensitively. It takes the **first** occurrence, splits on semicolons
@@ -114,19 +123,21 @@ or commas, trims whitespace and discards empty entries. Use one complete list.
 `ApplyCommandLineModList` clears the runtime list, adds Core, adds official
 non-Core version-compatible installed mods, resolves the supplied IDs, removes
 duplicates and invokes `TrySortMods`. It first tries a lowercased package ID
-with Steam-postfix tolerance, then an exact folder-name fallback; build 5014 then
-skips matches outside the local Mods folder (above). Prefer package
-IDs. Missing mods produce a warning and are skipped; a successful launch alone
-does not prove the requested mod was loaded. Declared load-order constraints can
-change the supplied order. Required third-party dependencies are not explicitly
-added by this method, so include them yourself and inspect the actual result.
+with Steam-postfix tolerance, then an exact folder-name fallback. Then it skips
+matches outside the local Mods folder (above). Prefer package IDs. Missing mods
+produce a warning and are skipped. A successful launch alone does not prove that
+the requested mod was loaded. Declared load-order constraints can change the
+supplied order. This method does not add required third-party dependencies.
+Include them yourself and inspect the actual result.
 
 The user's supplied documentation says no ModsConfig.xml reads or writes occur.
-That differs from the inspected build: `ModsConfig`'s static constructor first
-loads the existing XML, may call `Reset`/`Save` for missing/outdated data or
-maintenance, and only then applies the override. `ModsConfig.Save` writes without
-checking `-mod`. The override method itself does not call `Save`. These facts
-establish an isolation requirement, not that every launch overwrites the file.
+Build 5014 differs. The `ModsConfig` static constructor first loads the existing
+XML. If the file is missing or from another major.minor version, it calls `Reset`,
+which saves. After maintenance changes, it calls `Save`. Only then does it apply
+the `-mod` list. After that, `ModsConfig.Save` logs
+`ModsConfig.xml not saved, the mod list came from the command line` and returns.
+These facts establish an isolation requirement, not that every launch overwrites
+the file.
 
 Use `-savedatafolder` with an isolated profile until a newer build's implementation
 or an actual before/after filesystem check establishes stronger guarantees.
@@ -152,10 +163,10 @@ whose `Config/ModsConfig.xml` lists the mods (see above):
 ]
 ```
 
-Per the build-5014 code, `-mod` still accepts a list whose third-party mods are
-all in the local Mods folder, for example
+If every third-party mod is in the local Mods folder, a `-mod` list also works
+on build 5014, for example
 `"-mod=brrainz.harmony;brrainz.rimbridgeserver;your.package.id"` with a local
-Harmony copy. That variant was not run.
+Harmony copy. macOS runs of the bridge and Multiplayer use this form.
 
 The paths and final package ID above are placeholders, not installed configuration.
 Do not add shell quote characters inside those JSON strings. For a shell launch,

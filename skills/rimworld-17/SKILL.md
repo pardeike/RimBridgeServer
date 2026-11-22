@@ -42,22 +42,23 @@ window. Discover the current tool contracts with `$rimbridge-server`.
    caches and logs in the existing project/test locations. Do not alter the
    player's ordinary active mods, preferences, saves, or Steam launch options
    merely to run a test.
-3. For a minimal bridge setup, pass an absolute `-savedatafolder=...` pointing
-   to the test profile and give that profile its own `Config/ModsConfig.xml`
-   listing `brrainz.harmony`, Core, the DLCs, `brrainz.rimbridgeserver` and
-   your package ID. Verify the resolved list and actual roots.
-   Build 5014 skips every `-mod` entry that is not in the local Mods folder,
-   so Workshop Harmony cannot be passed that way: the bridge then fails to
-   load its Harmony types and never starts. Use `-mod` only when every
-   third-party mod, Harmony included, is in the local Mods folder. Build 4981
-   accepted the numeric Workshop item ID `2009463077`; it skipped
-   `brrainz.harmony_steam` after a lookup warning. With `-mod`, Core and
-   installed compatible official DLCs are added automatically and the engine
-   sorts the list; this is not an exact-order or Core-only profile.
+3. For a minimal bridge setup, pass an absolute `-savedatafolder=...` that
+   points to the test profile. Give that profile its own `Config/ModsConfig.xml`
+   that lists Harmony, Core, the installed DLCs, `brrainz.rimbridgeserver` and
+   your package ID. Verify the resolved list and the actual mod roots.
+   - Build 5014 ignores every `-mod` entry outside the local Mods folder, so
+     `-mod` cannot select Workshop Harmony. Without Harmony, RimWorld rejects
+     the bridge assembly and GABS reports only a connection timeout.
+   - Use `-mod` only when every third-party mod, Harmony included, is in the
+     local Mods folder. RimWorld then adds Core and the installed compatible
+     DLCs and sorts the list. This is not an exact-order or Core-only profile.
+   - In ModsConfig, use package IDs, not Workshop folder names. If a local and a
+     Workshop Harmony both exist, `brrainz.harmony` selects the local copy and
+     `brrainz.harmony_steam` selects the Workshop copy.
 4. **Do not promise that `-mod` leaves ModsConfig.xml unread/unwritten.** The
-   supplied documentation image says this, but build 4981 reads the file before
-   applying the override and its `ModsConfig.Save` has no override guard.
-   Use isolated save data and compare config bytes when preservation matters.
+   supplied documentation image says this. Build 5014 reads the file at startup
+   and can reset or save it before it applies the `-mod` list. It skips later
+   saves. Use isolated save data and compare config bytes when preservation matters.
 5. Use `-WindowSize=1920,1080` when stable window dimensions help. Inspect bridge
    screenshot dimensions and UI scale rather than assuming window coordinates
    equal framebuffer pixels on HiDPI displays.

@@ -93,13 +93,14 @@ internal sealed class WaylithProof
         Directory.CreateDirectory(Path.Combine(userData, "Config"));
         new XDocument(new XElement("PrefsData", new XElement("pauseOnLoad", true), new XElement("devMode", false)))
             .Save(Path.Combine(userData, "Config", "Prefs.xml"));
+        CreateModsConfig(gameRoot).Save(Path.Combine(userData, "Config", "ModsConfig.xml"));
         var configDir = Path.Combine(root, "gabs"); Directory.CreateDirectory(configDir);
         await File.WriteAllTextAsync(Path.Combine(configDir, "config.json"), JsonSerializer.Serialize(new
         {
             version = "1.0", games = new Dictionary<string, object> { [gameId] = new
             {
                 id = gameId, name = "Owned Waylith proof", launchMode = "SteamManaged", target = "294100", stopProcessName = "RimWorld", gabpMode = "local",
-                args = new[] { "-savedatafolder=" + userData, "-mod=2009463077;brrainz.rimbridgeserver;rimbridge.waylithproof", "-WindowSize=960,640", "-WatchShaders" },
+                args = new[] { "-savedatafolder=" + userData, "-WindowSize=960,640", "-WatchShaders" },
                 defaultProfile = "hidden", profiles = new Dictionary<string, object>
                 { ["hidden"] = new { args = new[] { "-NoWindow" } }, ["headless"] = new { args = new[] { "-Headless" } } }
             } }
@@ -282,6 +283,27 @@ internal sealed class WaylithProof
         Require(pack.Entries.Any(e => e.FullName.EndsWith(".dds", StringComparison.Ordinal)), "Baked texture missing from pack.");
         evidence.Add(new { proof = "asset-bake", mode = name, entries = pack.Entries.Select(e => new { e.FullName, e.Length, e.CompressedLength }).ToArray() });
     }
+
+    // Build 5014 ignores -mod entries outside the local Mods folder, so the profile lists its mods. A local Harmony copy
+    // takes the package ID brrainz.harmony and the Workshop item becomes brrainz.harmony_steam. Do not list the Workshop
+    // folder name 2009463077: on 5014 that entry broke Core's XML loading and RimWorld reset the profile to vanilla.
+    internal static XDocument CreateModsConfig(string gameRoot)
+    {
+        string[] releaseOrder = ["ludeon.rimworld.royalty", "ludeon.rimworld.ideology", "ludeon.rimworld.biotech", "ludeon.rimworld.anomaly", "ludeon.rimworld.odyssey"];
+        var expansions = PackageIds(Path.Combine(gameRoot, "Data")).Where(id => id != "ludeon.rimworld")
+            .OrderBy(id => Array.IndexOf(releaseOrder, id) is var index and >= 0 ? index : int.MaxValue).ThenBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        var harmony = PackageIds(Path.Combine(gameRoot, "Mods")).Contains("brrainz.harmony") ? "brrainz.harmony_steam" : "brrainz.harmony";
+        string[] mods = [harmony, "ludeon.rimworld", .. expansions, "brrainz.rimbridgeserver", "rimbridge.waylithproof"];
+        return new XDocument(new XElement("ModsConfigData",
+            new XElement("activeMods", mods.Select(id => new XElement("li", id))),
+            new XElement("knownExpansions", expansions.Select(id => new XElement("li", id)))));
+    }
+
+    private static IEnumerable<string> PackageIds(string modsRoot) => Directory.GetDirectories(modsRoot)
+        .Select(dir => Path.Combine(dir, "About", "About.xml")).Where(File.Exists)
+        .Select(about => { try { return XDocument.Load(about).Root?.Element("packageId")?.Value.Trim().ToLowerInvariant(); } catch (System.Xml.XmlException) { return null; } })
+        .OfType<string>();
 
     private void PrepareShaderMod()
     {

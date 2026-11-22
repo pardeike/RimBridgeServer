@@ -40,16 +40,32 @@ than trusting an alias still points to the current installed file.
 
 ## Build 5014 mod-list check
 
-Checked on Windows on 2026-11-22. `Version.txt` reports **1.7.5014 rev1195**;
-`Assembly-CSharp.dll` SHA-256
-`11d7c9faf52be22933da840d906b1af7b48f7ea574a886c045b1fb12bd366124`. Decompiled
-`Verse.ModsConfig.ApplyCommandLineModList` (ilspycmd): after resolving each ID it
-skips any mod whose `Source` is not `ContentSource.ModsFolder`. A GABS launch with
-`-mod=2009463077;brrainz.rimbridgeserver` logged that warning for `2009463077`,
-ran without Harmony, and RimBridgeServer 2.4.0 failed type loading. The same
-launch with an isolated `Config/ModsConfig.xml` in place of `-mod` loaded
-Workshop Harmony and the bridge. `Logs/Player.log` stayed in the default data
-folder under `-savedatafolder`.
+`Version.txt` reports **1.7.5014 rev1195** on both platforms. Checked on
+2026-11-22.
+
+| Platform | `Assembly-CSharp.dll` SHA-256 | Inspection |
+| --- | --- | --- |
+| Windows | `11d7c9faf52be22933da840d906b1af7b48f7ea574a886c045b1fb12bd366124` | ilspycmd |
+| macOS | `aed36980a0a6a0469432d2cd062e0917102b0019d07afc832b2c959c362273bb` | DecompilerServer MCP |
+
+Inspected code: the `Verse.ModsConfig` static constructor, `ApplyCommandLineModList`,
+`Save` and `Reset`, `Verse.ModAssemblyHandler.AssemblyIsUsable`,
+`Verse.PlayDataLoader.LoadAllPlayData` and `Verse.ModLister.GetModWithIdentifier`.
+
+- Windows: a GABS launch with `-mod=2009463077;brrainz.rimbridgeserver` logged
+  the "not in the local Mods folder" warning and ran without Harmony.
+  RimBridgeServer 2.4.0 then failed type loading. With an isolated
+  `Config/ModsConfig.xml` in place of `-mod`, Workshop Harmony and the bridge
+  loaded, and the default data folder's `Prefs.xml` and `ModsConfig.xml` stayed
+  byte-identical. `Logs/Player.log` stayed in the default data folder.
+- macOS, isolated ModsConfig in an APFS clone: `brrainz.harmony` loaded the local
+  copy, or the Workshop copy when no local copy existed. With both copies,
+  `brrainz.harmony_steam` loaded the Workshop copy. The folder name `2009463077`
+  failed twice: Core's defs were missing, `ColoredText.ResetStaticData` threw,
+  and `LoadAllPlayData` reset the profile to official mods only. A missing
+  `knownExpansions` entry activated that DLC and saved the file without errors.
+- macOS, `-mod=brrainz.harmony;brrainz.rimbridgeserver;rwmt.multiplayer` with a
+  local Harmony copy loaded the bridge and Multiplayer.
 
 ## User-provided evidence
 
