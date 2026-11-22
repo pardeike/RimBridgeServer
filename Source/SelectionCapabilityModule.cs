@@ -77,6 +77,11 @@ internal sealed class SelectionCapabilityModule
         };
     }
 
+    public object GetPawnDetails(string pawnName = null, string pawnId = null)
+    {
+        return RimWorldPawnDetails.GetPawnDetailsResponse(pawnName, pawnId);
+    }
+
     public object GetSelectedPawnInventoryState()
     {
         var selectedPawns = Find.Selector.SelectedPawns

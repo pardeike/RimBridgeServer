@@ -169,6 +169,11 @@ internal static class RimWorldState
         return ResolvePawn(pawnName, pawnId, AllCurrentMapPawns(CurrentMapOrThrow()), "current-map pawn");
     }
 
+    public static Pawn ResolveAnyPawn(string pawnName = null, string pawnId = null)
+    {
+        return ResolvePawn(pawnName, pawnId, PawnsFinder.AllMapsCaravansAndTravellingTransporters_Alive, "pawn");
+    }
+
     public static Pawn ResolveSelectedPawn(string pawnName = null, string pawnId = null)
     {
         return ResolvePawn(pawnName, pawnId, Find.Selector.SelectedPawns, "selected pawn");

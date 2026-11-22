@@ -51,6 +51,7 @@ internal static class SmokeScenarioCatalog
     public const string UltrafastBoostOptInScenarioName = "ultrafast-boost-opt-in";
     public const string WorldMainTabScenarioName = "world-main-tab";
     public const string RepeatedRowClickScenarioName = "repeated-row-click";
+    public const string PawnAndPowerDetailsScenarioName = "pawn-and-power-details";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -260,6 +261,12 @@ internal static class SmokeScenarioCatalog
                 Name = RepeatedRowClickScenarioName,
                 Description = "Add two bills to a crafting spot, click the second bill's delete button, and verify that the first bill remains. Each bill draws its controls at the same local rect, so the click must not land on the first bill.",
                 RunAsync = RunRepeatedRowClickAsync
+            },
+            [PawnAndPowerDetailsScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = PawnAndPowerDetailsScenarioName,
+                Description = "Read every colonist with rimworld/get_pawn_details and check the skill levels against the base level, aptitude and disabled state. Place two adjacent batteries with god mode and verify that rimworld/list_power_nets reports one net with both batteries.",
+                RunAsync = RunPawnAndPowerDetailsAsync
             }
         };
 
@@ -5777,6 +5784,124 @@ internal static class SmokeScenarioCatalog
 
         if (await ReadUltraSpeedBoostAsync(context, "ultrafast_boost.read_after_play", cancellationToken))
             throw new InvalidOperationException("Ultrafast playback must restore the ultrafast speed boost value it found.");
+    }
+
+    private static async Task RunPawnAndPowerDetailsAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("pawn_power.wait_for_long_event_idle", cancellationToken);
+
+        var colonists = await context.CallGameToolAsync("pawn_power.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists");
+        var colonistNodes = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists");
+        if (colonistNodes.Count == 0)
+            throw new InvalidOperationException("The debug game must have at least one colonist.");
+
+        foreach (var colonist in colonistNodes)
+        {
+            var pawnId = ReadRequiredString(colonist, "pawnId");
+            var details = await context.CallGameToolAsync($"pawn_power.details_{pawnId}", "rimworld/get_pawn_details", new { pawnId }, cancellationToken);
+            context.EnsureSucceeded(details, $"Reading the details of pawn '{pawnId}'");
+            var skills = JsonNodeHelpers.ReadArray(details.StructuredContent, "skills");
+            if (skills.Count == 0 || JsonNodeHelpers.ReadArray(details.StructuredContent, "needs").Count == 0)
+                throw new InvalidOperationException($"Colonist '{pawnId}' must report skills and needs.");
+
+            foreach (var skill in skills)
+            {
+                var levelInt = JsonNodeHelpers.ReadInt32(skill, "levelInt") ?? throw new InvalidOperationException($"A skill of '{pawnId}' has no levelInt.");
+                var aptitude = JsonNodeHelpers.ReadInt32(skill, "aptitude") ?? 0;
+                var expected = JsonNodeHelpers.ReadBoolean(skill, "totallyDisabled") == true ? 0 : Math.Clamp(levelInt + aptitude, 0, 20);
+                if (JsonNodeHelpers.ReadInt32(skill, "level") != expected)
+                    throw new InvalidOperationException($"Skill '{JsonNodeHelpers.ReadString(skill, "defName")}' of '{pawnId}' must have level {expected}: {skill?.ToJsonString()}");
+            }
+        }
+
+        var firstId = ReadRequiredString(colonistNodes[0], "pawnId");
+        var byName = await context.CallGameToolAsync("pawn_power.details_by_name", "rimworld/get_pawn_details", new { pawnName = ReadRequiredString(colonistNodes[0], "name") }, cancellationToken);
+        context.EnsureSucceeded(byName, "Reading pawn details by name");
+        if (!string.Equals(JsonNodeHelpers.ReadString(byName.StructuredContent, "pawn", "pawnId"), firstId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Reading pawn details by name must return pawn '{firstId}'.");
+
+        var missing = await context.CallGameToolAsync("pawn_power.details_missing", "rimworld/get_pawn_details", new { pawnId = "RimBridgeLiveSmokeMissingPawn_0" }, cancellationToken);
+        await AssertNoOpenAttentionAsync(context, "pawn_power.attention_missing", "Reading an unknown pawn", cancellationToken);
+        var missingCode = JsonNodeHelpers.ReadString(missing.StructuredContent, "operation", "Error", "Code");
+        if (missing.Success || !string.Equals(missingCode, "capability.target_unresolved", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Reading an unknown pawn must fail with capability.target_unresolved, not '{missingCode}'. {missing.Message}");
+
+        var designatorState = await context.CallGameToolAsync("pawn_power.get_designator_state", "rimworld/get_designator_state", new { }, cancellationToken);
+        context.EnsureSucceeded(designatorState, "Reading the architect state");
+        var originalGodMode = JsonNodeHelpers.ReadBoolean(designatorState.StructuredContent, "godMode") == true;
+        try
+        {
+            var categories = await context.CallGameToolAsync("pawn_power.list_categories", "rimworld/list_architect_categories", new { includeHidden = false, includeEmpty = false }, cancellationToken);
+            context.EnsureSucceeded(categories, "Listing architect categories");
+            var designators = await context.CallGameToolAsync("pawn_power.list_designators", "rimworld/list_architect_designators", new
+            {
+                categoryId = ResolveArchitectCategoryId(JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories"), "Power"),
+                includeHidden = false
+            }, cancellationToken);
+            context.EnsureSucceeded(designators, "Listing power designators");
+            var batteryDesignatorId = ResolveArchitectBuildDesignatorId(JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators"), "Battery");
+
+            await EnsureGodModeAsync(context, "pawn_power.enable_god_mode", true, cancellationToken);
+
+            // The second battery goes east of the first. Adjacent batteries transmit power, so both join one net.
+            async Task<bool> BothBatteriesFitAsync(SmokeScenarioContext probeContext, int x, int z, int width, int height, CancellationToken token)
+            {
+                foreach (var dx in new[] { 0, 1 })
+                {
+                    var dryRun = await probeContext.CallGameToolAsync($"pawn_power.dry_run_{x + dx}_{z}", "rimworld/apply_architect_designator", new
+                    {
+                        designatorId = batteryDesignatorId,
+                        x = x + dx,
+                        z,
+                        dryRun = true,
+                        keepSelected = false
+                    }, token);
+                    if (!dryRun.Success)
+                        return false;
+                }
+
+                return true;
+            }
+
+            var cell = await FindAcceptedArchitectPlacementCellAsync(context, "pawn_power.find_cell", batteryDesignatorId, colonists.StructuredContent,
+                new HashSet<string>(StringComparer.Ordinal), cancellationToken, preflightAsync: BothBatteriesFitAsync);
+            foreach (var dx in new[] { 0, 1 })
+            {
+                var placement = await context.CallGameToolAsync($"pawn_power.place_battery_{dx}", "rimworld/apply_architect_designator", new
+                {
+                    designatorId = batteryDesignatorId,
+                    x = cell.X + dx,
+                    z = cell.Z,
+                    keepSelected = false
+                }, cancellationToken);
+                context.EnsureSucceeded(placement, $"Placing a battery at ({cell.X + dx}, {cell.Z}) with god mode");
+            }
+
+            var allNets = await context.CallGameToolAsync("pawn_power.list_nets", "rimworld/list_power_nets", new { }, cancellationToken);
+            context.EnsureSucceeded(allNets, "Listing power nets");
+            var battery = JsonNodeHelpers.ReadArray(allNets.StructuredContent, "nets")
+                .SelectMany(net => JsonNodeHelpers.ReadArray(net, "buildings"))
+                .FirstOrDefault(building => JsonNodeHelpers.ReadInt32(building, "position", "x") == cell.X
+                    && JsonNodeHelpers.ReadInt32(building, "position", "z") == cell.Z
+                    && string.Equals(JsonNodeHelpers.ReadString(building, "defName"), "Battery", StringComparison.Ordinal))
+                ?? throw new InvalidOperationException($"No power net lists the battery at ({cell.X}, {cell.Z}).");
+
+            var batteryNet = await context.CallGameToolAsync("pawn_power.battery_net", "rimworld/list_power_nets", new { thingId = ReadRequiredString(battery, "thingId") }, cancellationToken);
+            context.EnsureSucceeded(batteryNet, "Listing the battery's power net");
+            var nets = JsonNodeHelpers.ReadArray(batteryNet.StructuredContent, "nets");
+            var batteries = nets.Count == 1
+                ? JsonNodeHelpers.ReadArray(nets[0], "buildings").Count(building => string.Equals(JsonNodeHelpers.ReadString(building, "role"), "battery", StringComparison.Ordinal))
+                : 0;
+            var capacity = nets.Count == 1 ? JsonNodeHelpers.ReadDouble(nets[0], "storedEnergyCapacityWd") : null;
+            if (batteries != 2 || capacity is not > 1199d)
+                throw new InvalidOperationException($"The battery's net must hold both batteries with a capacity of 1200 Wd: {batteryNet.StructuredContent?.ToJsonString()}");
+        }
+        finally
+        {
+            await EnsureGodModeAsync(context, "pawn_power.restore_god_mode", originalGodMode, cancellationToken);
+        }
     }
 
     private static async Task RunRepeatedRowClickAsync(SmokeScenarioContext context, CancellationToken cancellationToken)

@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `128` tools total
+- `130` tools total
 - `18` `rimbridge/*` tools
-- `110` `rimworld/*` tools
+- `112` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -540,6 +540,17 @@ Parameters:
 - `x` (`int`, `required`): Target cell x coordinate
 - `z` (`int`, `required`): Target cell z coordinate
 
+### `rimworld/list_power_nets`
+
+List the current map's power nets with produced and consumed watts, stored energy, battery capacity and connected buildings
+
+Returns:
+- The power nets. producedWatts and consumedWatts count only powered traders. Stored energy and capacity are in watt-days. buildings[].role is producer, consumer, battery or transmitter. powerOutputWatts is the wanted output and is negative for consumers. netIndex is valid only until the nets change.
+
+Parameters:
+- `thingId` (`string`, `optional`, default `null`): Optional stable current-map thing id of a building. Return only the power net that contains it
+- `includeTransmitters` (`bool`, `optional`, default `false`): True to also list plain transmitters such as conduits and power switches
+
 ### `rimworld/get_cells_info`
 
 Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas
@@ -830,6 +841,17 @@ Parameters:
 - `pawnName` (`string`, `optional`, default `null`): Optional colonist name
 - `pawnId` (`string`, `optional`, default `null`): Optional stable colonist pawn id from rimworld/list_colonists
 - `drafted` (`bool`, `optional`, default `true`): True to draft, false to undraft
+
+### `rimworld/get_pawn_details`
+
+Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs and hediffs
+
+Returns:
+- The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. skills, needs and hediffs are null for pawns that do not have them.
+
+Parameters:
+- `pawnName` (`string`, `optional`, default `null`): Optional pawn name, short name, or full name. It matches living pawns of any faction on all maps, in caravans and in travelling transporters
+- `pawnId` (`string`, `optional`, default `null`): Optional stable pawn id, the same value as the pawn's thing id, for example from rimworld/list_colonists
 
 ### `rimworld/get_selected_pawn_inventory_state`
 

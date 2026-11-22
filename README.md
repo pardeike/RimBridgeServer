@@ -352,6 +352,7 @@ Playback default: RimWorld's private `TickManager.UltraSpeedBoost` is left off, 
 - `rimworld/delete_zone` - Delete an existing zone by id
 - `rimworld/list_plans` - List current-map plans (the planning marks players draw to outline intended building areas) with bounds and shape
 - `rimworld/get_cell_info` - Inspect one map cell, including things, blueprints, frames, designations, zones, and areas
+- `rimworld/list_power_nets` - List the current map's power nets with produced and consumed watts, stored energy, battery capacity and connected buildings
 - `rimworld/get_cells_info` - Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas
 - `rimworld/find_random_cell_near` - Use RimWorld's expanding-radius random cell search to find a nearby cell or footprint that satisfies generic map criteria
 - `rimworld/flood_fill_cells` - Analyze a contiguous area from one root cell using RimWorld's generic cell flood-fill algorithm and the same reusable footprint criteria as find_random_cell_near
@@ -389,6 +390,7 @@ Playback default: RimWorld's private `TickManager.UltraSpeedBoost` is left off, 
 - `rimworld/select_pawn` - Select a single colonist by name or stable pawn id
 - `rimworld/deselect_pawn` - Deselect a single selected pawn by name or stable pawn id
 - `rimworld/set_draft` - Draft or undraft a colonist by name or stable pawn id
+- `rimworld/get_pawn_details` - Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs and hediffs
 - `rimworld/get_selected_pawn_inventory_state` - Read the selected pawn's carried thing and inventory contents, including Pick Up And Haul tracked items when available
 
 ### Selection Semantics And Notifications
