@@ -590,7 +590,7 @@ public class RimBridgeTools
 
     [ReadmeTool("Architect And Map State", "List the current map's power nets with produced and consumed watts, stored energy, battery capacity and connected buildings")]
     [Tool("rimworld/list_power_nets", Description = "List the current map's power nets with produced and consumed watts, stored energy, battery capacity and connected buildings",
-        ResultDescription = "The power nets. producedWatts and consumedWatts count only powered traders. Stored energy and capacity are in watt-days. buildings[].role is producer, consumer, battery or transmitter. powerOutputWatts is the wanted output and is negative for consumers. netIndex is valid only until the nets change.")]
+        ResultDescription = "The power nets. producedWatts and consumedWatts count only powered traders. Stored energy and capacity are in watt-days. buildings[].role is producer, consumer, battery or transmitter. powerOutputWatts is the wanted output and is negative for consumers. Fields that do not apply to a building are omitted. netIndex is valid only until the nets change.")]
     public object ListPowerNets(
         [ToolParameter(Description = "Optional stable current-map thing id of a building. Return only the power net that contains it")] string thingId = null,
         [ToolParameter(Description = "True to also list plain transmitters such as conduits and power switches")] bool includeTransmitters = false)
@@ -946,7 +946,7 @@ public class RimBridgeTools
 
     [ReadmeTool("Selection And Colony State", "Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs and hediffs")]
     [Tool("rimworld/get_pawn_details", Description = "Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs and hediffs",
-        ResultDescription = "The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. skills, needs and hediffs are null for pawns that do not have them.")]
+        ResultDescription = "The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. The reply omits job, skills, needs and hediffs when the pawn has none.")]
     public object GetPawnDetails(
         [ToolParameter(Description = "Optional pawn name, short name, or full name. It matches living pawns of any faction on all maps, in caravans and in travelling transporters")] string pawnName = null,
         [ToolParameter(Description = "Optional stable pawn id, the same value as the pawn's thing id, for example from rimworld/list_colonists")] string pawnId = null)

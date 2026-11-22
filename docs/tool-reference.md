@@ -545,7 +545,7 @@ Parameters:
 List the current map's power nets with produced and consumed watts, stored energy, battery capacity and connected buildings
 
 Returns:
-- The power nets. producedWatts and consumedWatts count only powered traders. Stored energy and capacity are in watt-days. buildings[].role is producer, consumer, battery or transmitter. powerOutputWatts is the wanted output and is negative for consumers. netIndex is valid only until the nets change.
+- The power nets. producedWatts and consumedWatts count only powered traders. Stored energy and capacity are in watt-days. buildings[].role is producer, consumer, battery or transmitter. powerOutputWatts is the wanted output and is negative for consumers. Fields that do not apply to a building are omitted. netIndex is valid only until the nets change.
 
 Parameters:
 - `thingId` (`string`, `optional`, default `null`): Optional stable current-map thing id of a building. Return only the power net that contains it
@@ -847,7 +847,7 @@ Parameters:
 Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs and hediffs
 
 Returns:
-- The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. skills, needs and hediffs are null for pawns that do not have them.
+- The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. The reply omits job, skills, needs and hediffs when the pawn has none.
 
 Parameters:
 - `pawnName` (`string`, `optional`, default `null`): Optional pawn name, short name, or full name. It matches living pawns of any faction on all maps, in caravans and in travelling transporters
