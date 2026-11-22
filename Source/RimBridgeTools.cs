@@ -944,9 +944,9 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(pawnName), pawnName), (nameof(pawnId), pawnId), (nameof(drafted), drafted)));
     }
 
-    [ReadmeTool("Selection And Colony State", "Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs and hediffs")]
-    [Tool("rimworld/get_pawn_details", Description = "Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs and hediffs",
-        ResultDescription = "The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. The reply omits job, skills, needs and hediffs when the pawn has none.")]
+    [ReadmeTool("Selection And Colony State", "Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs, hediffs, traits and work priorities")]
+    [Tool("rimworld/get_pawn_details", Description = "Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs, hediffs, traits and work priorities",
+        ResultDescription = "The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. Mood is the Mood entry in needs. traits[].degree is the trait degree and suppressed is true when a gene or another trait suppresses it. workPriorities lists every work type in Work tab order; priority is 1 (highest) to 4, 0 when not assigned, and is 3 for every assigned work type when useWorkPriorities is false. The reply omits job, skills, needs, hediffs, traits and workPriorities when the pawn has none.")]
     public object GetPawnDetails(
         [ToolParameter(Description = "Optional pawn name, short name, or full name. It matches living pawns of any faction on all maps, in caravans and in travelling transporters")] string pawnName = null,
         [ToolParameter(Description = "Optional stable pawn id, the same value as the pawn's thing id, for example from rimworld/list_colonists")] string pawnId = null)

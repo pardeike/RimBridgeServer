@@ -1,0 +1,1 @@
+- Report traits and work priorities in `rimworld/get_pawn_details`. Traits come with degree and suppressed state. Work priorities list every work type in Work tab order with priority and disabled state, plus whether manual priorities are on.

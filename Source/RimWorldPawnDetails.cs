@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using Verse;
@@ -23,8 +24,41 @@ internal static class RimWorldPawnDetails
             job = DescribeJob(pawn.jobs?.curJob, pawn.jobs?.curJob?.GetReport(pawn)),
             jobQueue = pawn.jobs?.jobQueue?.Select(queued => DescribeJob(queued.job, report: null)).ToList(),
             needs = pawn.needs?.AllNeeds?.Select(DescribeNeed).ToList(),
-            hediffs = pawn.health?.hediffSet?.hediffs?.Select(DescribeHediff).ToList()
+            hediffs = pawn.health?.hediffSet?.hediffs?.Select(DescribeHediff).ToList(),
+            traits = pawn.story?.traits?.allTraits?.Select(DescribeTrait).ToList(),
+            useWorkPriorities = pawn.workSettings?.EverWork == true ? Find.PlaySettings?.useWorkPriorities : null,
+            workPriorities = DescribeWorkPriorities(pawn)
         };
+    }
+
+    private static object DescribeTrait(Trait trait)
+    {
+        return new
+        {
+            defName = trait.def?.defName,
+            label = trait.LabelCap,
+            degree = trait.Degree,
+            suppressed = trait.Suppressed
+        };
+    }
+
+    // In the order of the Work tab columns. GetPriority already reports 3 for every active work type when manual
+    // priorities are off, which is what the pawn works with.
+    private static List<object> DescribeWorkPriorities(Pawn pawn)
+    {
+        var settings = pawn.workSettings;
+        if (settings?.EverWork != true)
+            return null;
+
+        return WorkTypeDefsUtility.WorkTypeDefsInPriorityOrder
+            .Select(workType => (object)new
+            {
+                defName = workType.defName,
+                label = workType.labelShort,
+                priority = settings.GetPriority(workType),
+                disabled = pawn.WorkTypeIsDisabled(workType)
+            })
+            .ToList();
     }
 
     private static object DescribeSkill(SkillRecord skill)

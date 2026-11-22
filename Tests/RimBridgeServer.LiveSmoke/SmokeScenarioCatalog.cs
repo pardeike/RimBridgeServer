@@ -5813,6 +5813,7 @@ internal static class SmokeScenarioCatalog
         if (colonistNodes.Count == 0)
             throw new InvalidOperationException("The debug game must have at least one colonist.");
 
+        var traitCount = 0;
         foreach (var colonist in colonistNodes)
         {
             var pawnId = ReadRequiredString(colonist, "pawnId");
@@ -5830,7 +5831,28 @@ internal static class SmokeScenarioCatalog
                 if (JsonNodeHelpers.ReadInt32(skill, "level") != expected)
                     throw new InvalidOperationException($"Skill '{JsonNodeHelpers.ReadString(skill, "defName")}' of '{pawnId}' must have level {expected}: {skill?.ToJsonString()}");
             }
+
+            var workPriorities = JsonNodeHelpers.ReadArray(details.StructuredContent, "workPriorities");
+            if (workPriorities.Count == 0 || JsonNodeHelpers.ReadBoolean(details.StructuredContent, "useWorkPriorities") == null)
+                throw new InvalidOperationException($"Colonist '{pawnId}' must report work priorities and useWorkPriorities.");
+
+            foreach (var work in workPriorities)
+            {
+                var priority = JsonNodeHelpers.ReadInt32(work, "priority") ?? throw new InvalidOperationException($"A work type of '{pawnId}' has no priority.");
+                if (priority is < 0 or > 4 || JsonNodeHelpers.ReadBoolean(work, "disabled") == true && priority != 0)
+                    throw new InvalidOperationException($"Work type '{JsonNodeHelpers.ReadString(work, "defName")}' of '{pawnId}' must have priority 0 to 4, and 0 when disabled: {work?.ToJsonString()}");
+            }
+
+            foreach (var trait in JsonNodeHelpers.ReadArray(details.StructuredContent, "traits"))
+            {
+                if (string.IsNullOrEmpty(JsonNodeHelpers.ReadString(trait, "defName")) || JsonNodeHelpers.ReadInt32(trait, "degree") == null)
+                    throw new InvalidOperationException($"A trait of '{pawnId}' must have defName and degree: {trait?.ToJsonString()}");
+                traitCount++;
+            }
         }
+
+        if (traitCount == 0)
+            throw new InvalidOperationException("At least one colonist of the debug game must report a trait.");
 
         var firstId = ReadRequiredString(colonistNodes[0], "pawnId");
         var byName = await context.CallGameToolAsync("pawn_power.details_by_name", "rimworld/get_pawn_details", new { pawnName = ReadRequiredString(colonistNodes[0], "name") }, cancellationToken);
