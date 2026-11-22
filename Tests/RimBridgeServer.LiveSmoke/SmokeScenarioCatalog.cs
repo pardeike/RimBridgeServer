@@ -1516,13 +1516,29 @@ internal static class SmokeScenarioCatalog
         var detailsMatches = JsonNodeHelpers.ReadArray(detailsSearch.StructuredContent, "matches");
         var logJobDetailsPath = ResolveDebugActionSearchPath(detailsMatches, @"Actions\T: Log Job Details");
 
-        var colonists = await context.CallGameToolAsync("debug_actions_pawn.list_colonists", "rimworld/list_colonists", new
+        // Log Job Details logs nothing for a pawn without a current job, for example in a paused game that an earlier
+        // scenario left behind. Advance the game until a colonist has a job.
+        string? pawnName = null;
+        for (var attempt = 0; attempt < 10 && pawnName == null; attempt++)
         {
-            currentMapOnly = true
-        }, cancellationToken);
-        context.EnsureSucceeded(colonists, "Listing current-map colonists for the pawn-target debug-action scenario");
+            var colonists = await context.CallGameToolAsync($"debug_actions_pawn.list_colonists_{attempt}", "rimworld/list_colonists", new
+            {
+                currentMapOnly = true
+            }, cancellationToken);
+            context.EnsureSucceeded(colonists, "Listing current-map colonists for the pawn-target debug-action scenario");
+            pawnName = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists")
+                .Where(colonist => !string.IsNullOrWhiteSpace(JsonNodeHelpers.ReadString(colonist, "job")))
+                .Select(colonist => JsonNodeHelpers.ReadString(colonist, "name"))
+                .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+            if (pawnName != null)
+                break;
 
-        var pawnName = ResolveFirstColonistName(colonists.StructuredContent);
+            var step = await context.CallGameToolAsync($"debug_actions_pawn.step_{attempt}", "rimworld/step_game_ticks", new { ticks = 60 }, cancellationToken);
+            context.EnsureSucceeded(step, "Advancing the game until a colonist has a current job");
+        }
+
+        if (pawnName == null)
+            throw new InvalidOperationException("No current-map colonist had a current job within 600 ticks.");
 
         var toggleNode = await context.CallGameToolAsync("debug_actions_pawn.get_toggle", "rimworld/get_debug_action", new
         {
