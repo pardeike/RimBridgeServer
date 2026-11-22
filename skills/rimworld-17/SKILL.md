@@ -42,15 +42,18 @@ window. Discover the current tool contracts with `$rimbridge-server`.
    caches and logs in the existing project/test locations. Do not alter the
    player's ordinary active mods, preferences, saves, or Steam launch options
    merely to run a test.
-3. For a minimal bridge setup, use one literal argv element such as
-   `-mod=2009463077;brrainz.rimbridgeserver;your.package.id`, plus an
-   absolute `-savedatafolder=...` pointing to the test profile. Core and installed
-   compatible official DLCs are added automatically. Include required third-party
-   dependencies explicitly, and verify the resolved list and actual roots.
-   The example selects Workshop Harmony by its tested numeric item ID. Do not
-   use `brrainz.harmony_steam`: build 4981 skipped it after a lookup warning.
-   The engine sorts the list; this is not an exact-order or Core-only profile.
-   Use an isolated ModsConfig profile when the test needs exact load order.
+3. For a minimal bridge setup, pass an absolute `-savedatafolder=...` pointing
+   to the test profile and give that profile its own `Config/ModsConfig.xml`
+   listing `brrainz.harmony`, Core, the DLCs, `brrainz.rimbridgeserver` and
+   your package ID. Verify the resolved list and actual roots.
+   Build 5014 skips every `-mod` entry that is not in the local Mods folder,
+   so Workshop Harmony cannot be passed that way: the bridge then fails to
+   load its Harmony types and never starts. Use `-mod` only when every
+   third-party mod, Harmony included, is in the local Mods folder. Build 4981
+   accepted the numeric Workshop item ID `2009463077`; it skipped
+   `brrainz.harmony_steam` after a lookup warning. With `-mod`, Core and
+   installed compatible official DLCs are added automatically and the engine
+   sorts the list; this is not an exact-order or Core-only profile.
 4. **Do not promise that `-mod` leaves ModsConfig.xml unread/unwritten.** The
    supplied documentation image says this, but build 4981 reads the file before
    applying the override and its `ModsConfig.Save` has no override guard.

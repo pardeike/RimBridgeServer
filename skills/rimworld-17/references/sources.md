@@ -38,6 +38,19 @@ Decompiler contexts used: `rw17-launch-4981`, `rw17-entry-4981`, `waylith-4981`,
 `unitystubs-4981`, `unitycompat-4981`. Resolve symbols again after updates rather
 than trusting an alias still points to the current installed file.
 
+## Build 5014 mod-list check
+
+Checked on Windows on 2026-11-22. `Version.txt` reports **1.7.5014 rev1195**;
+`Assembly-CSharp.dll` SHA-256
+`11d7c9faf52be22933da840d906b1af7b48f7ea574a886c045b1fb12bd366124`. Decompiled
+`Verse.ModsConfig.ApplyCommandLineModList` (ilspycmd): after resolving each ID it
+skips any mod whose `Source` is not `ContentSource.ModsFolder`. A GABS launch with
+`-mod=2009463077;brrainz.rimbridgeserver` logged that warning for `2009463077`,
+ran without Harmony, and RimBridgeServer 2.4.0 failed type loading. The same
+launch with an isolated `Config/ModsConfig.xml` in place of `-mod` loaded
+Workshop Harmony and the bridge. `Logs/Player.log` stayed in the default data
+folder under `-savedatafolder`.
+
 ## User-provided evidence
 
 - The user reports that windowless RimWorld 1.7 works with RimBridgeServer's

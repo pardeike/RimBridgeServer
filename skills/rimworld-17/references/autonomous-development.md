@@ -21,6 +21,9 @@ outside the player mod ZIP, launches isolated hidden/headless GABS profiles,
 and cleans up. Logs, JSON results, screenshots, generated deltas and packs remain
 under ignored `artifacts/waylith-proof/<run>/`. It expects the installed bridge and
 Workshop Harmony item 2009463077. Inspect resolved mods, not just launch arguments.
+The proof launches with `-mod=2009463077;...` (`WaylithProof.cs`), which build 5014
+rejects for Workshop items (see launch-arguments); on 5014 its profile needs a
+`Config/ModsConfig.xml` instead.
 First complete run including packed-only texture rendering:
 `artifacts/waylith-proof/20261017-103730-204/results.json`.
 
@@ -70,7 +73,8 @@ not proved. Do not generalize the test assembly result to those cases.
 - Native -mod adds compatible installed DLCs and sorts the list. It is not a
   Core-only or exact-order profile. Workshop suffix package IDs such as
   brrainz.harmony_steam failed lookup and silently omitted Harmony in this build;
-  numeric item2009463077 worked. Verify Harmony's actual loaded root.
+  numeric item2009463077 worked. Build 5014 skips every `-mod` entry outside the
+  local Mods folder, the numeric ID included. Verify Harmony's actual loaded root.
 - Derive BridgeTools from the lexical game Mods parent before resolving symlinks;
   resolving this installation's Mods symlink first selected the wrong sibling.
 

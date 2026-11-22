@@ -14,8 +14,8 @@ parser; it is not a promise that every mod or native dependency has no other fla
 | `-Headless` | Uses the graphics-free update loop. No graphics device or ordinary render loop. Choose only for nonvisual work, and verify the bridge capabilities needed. |
 | `-WindowSize=1920,1080` | Parses two comma-separated integers, sets initial dimensions and locks engine size changes. Default engine dimensions are 1920×1080 before preferences/overrides. |
 | `-WindowPos=0,0` | Parses two comma-separated integers, sets initial position and locks engine position changes. |
-| `-savedatafolder=/absolute/profile` | Overrides Verse save/config data; also supplies the bootstrap's cache-root override. Use an absolute path to avoid working-directory ambiguity. It does not relocate the inspected macOS engine file log. |
-| `-mod=id.one;id.two` | One runtime mod-list override; Core and compatible installed official DLCs precede the supplied mods, followed by sorting. See details below. |
+| `-savedatafolder=/absolute/profile` | Overrides Verse save/config data; also supplies the bootstrap's cache-root override. Use an absolute path to avoid working-directory ambiguity. It does not relocate the inspected macOS engine file log; on Windows build 5014 `Logs/Player.log` also stays in the default data folder. |
+| `-mod=id.one;id.two` | One runtime mod-list override; Core and compatible installed official DLCs precede the supplied mods, followed by sorting. Build 5014 accepts only mods in the local Mods folder. See details below. |
 | `-quicktest` | Existing quick-start mechanism; changes the Entry scene to Play once. Use bridge readiness/state to establish what game/map actually loaded. |
 | `-legacy-xml-deserializer` | Makes `LoadedModManager.ParseAndProcessXML` use `DirectXmlLoader.DefFromNode` instead of the default `DirectXmlToObjectNew.DefFromNodeNew`. Useful for a controlled Def-loading compatibility comparison. |
 
@@ -72,11 +72,40 @@ ownership/readiness checks or a command that terminates the preceding process.
 
 ## Mod-list behavior and config preservation
 
-Live build4981 tests selected Workshop Harmony successfully with numeric item ID
-`2009463077`. The suffixed ID `brrainz.harmony_steam` failed lookup and Harmony
-was omitted after a warning. Use the numeric ID for that Workshop item and verify
-the actual loaded root. The list is sorted, not an exact-order fixture; use an
-isolated ModsConfig profile for precise order or exclusion of installed DLCs.
+Build 5014 (1.7.5014 rev1195) accepts only mods from the local Mods folder. After
+resolving an ID, `ApplyCommandLineModList` skips any match whose source is not
+`ContentSource.ModsFolder` and logs
+`-mod: '<id>' is not in the local Mods folder, ignoring`. Workshop Harmony is
+therefore dropped whatever ID is used, RimBridgeServer then fails with a
+`ReflectionTypeLoadException` (`HarmonyLib.CodeInstruction`), and GABS only
+reports a connection timeout. For Workshop dependencies, give the
+`-savedatafolder` profile its own `Config/ModsConfig.xml`, for example:
+
+```xml
+<ModsConfigData>
+  <version>1.7.5014 rev1195</version>
+  <activeMods>
+    <li>brrainz.harmony</li>
+    <li>ludeon.rimworld</li>
+    <li>ludeon.rimworld.biotech</li>
+    <li>brrainz.rimbridgeserver</li>
+    <li>your.package.id</li>
+  </activeMods>
+  <knownExpansions>
+    <li>ludeon.rimworld.biotech</li>
+  </knownExpansions>
+</ModsConfigData>
+```
+
+List the DLCs actually installed. A Windows run on 2026-11-22 with this layout
+loaded Workshop Harmony and the bridge, and left the default data folder's
+`Prefs.xml` and `ModsConfig.xml` byte-identical.
+
+Earlier, live build4981 tests selected Workshop Harmony successfully with numeric
+item ID `2009463077`; the suffixed ID `brrainz.harmony_steam` failed lookup and
+Harmony was omitted after a warning. On either build, verify the actual loaded
+root. A `-mod` list is sorted, not an exact-order fixture; use an isolated
+ModsConfig profile for precise order or exclusion of installed DLCs.
 
 `TryGetCommandLineModList` accepts either `-mod=...` or `-mod` followed by the
 value, case-insensitively. It takes the **first** occurrence, splits on semicolons
@@ -85,7 +114,8 @@ or commas, trims whitespace and discards empty entries. Use one complete list.
 `ApplyCommandLineModList` clears the runtime list, adds Core, adds official
 non-Core version-compatible installed mods, resolves the supplied IDs, removes
 duplicates and invokes `TrySortMods`. It first tries a lowercased package ID
-with Steam-postfix tolerance, then an exact folder-name fallback. Prefer package
+with Steam-postfix tolerance, then an exact folder-name fallback; build 5014 then
+skips matches outside the local Mods folder (above). Prefer package
 IDs. Missing mods produce a warning and are skipped; a successful launch alone
 does not prove the requested mod was loaded. Declared load-order constraints can
 change the supplied order. Required third-party dependencies are not explicitly
@@ -111,16 +141,21 @@ element. Verse's value parser requires exactly one `=` in the whole argument,
 so avoid `=` inside the values of its flags. Different parsers mean one syntax
 does not imply support for another.
 
-An example GABS `args` fragment, to merge into an appropriate existing profile:
+An example GABS `args` fragment, to merge into an appropriate existing profile
+whose `Config/ModsConfig.xml` lists the mods (see above):
 
 ```json
 [
   "-NoWindow",
   "-WindowSize=1920,1080",
-  "-savedatafolder=/absolute/project/artifacts/rimworld-17-profile",
-  "-mod=2009463077;brrainz.rimbridgeserver;your.package.id"
+  "-savedatafolder=/absolute/project/artifacts/rimworld-17-profile"
 ]
 ```
+
+Per the build-5014 code, `-mod` still accepts a list whose third-party mods are
+all in the local Mods folder, for example
+`"-mod=brrainz.harmony;brrainz.rimbridgeserver;your.package.id"` with a local
+Harmony copy. That variant was not run.
 
 The paths and final package ID above are placeholders, not installed configuration.
 Do not add shell quote characters inside those JSON strings. For a shell launch,
