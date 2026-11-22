@@ -23,8 +23,8 @@ internal sealed class RimBridgeAttentionPolicy
         if (eventRecord == null)
             return false;
 
-        // A lookup that names a missing or ambiguous target is an ordinary answer, not a fault in the game.
-        if (string.Equals(eventRecord.ErrorCode, TargetLookupException.ErrorCode, StringComparison.Ordinal))
+        // A lookup without a current map or with a missing or ambiguous target is an ordinary answer, not a fault in the game.
+        if (TargetLookupException.IsLookupCode(eventRecord.ErrorCode))
             return false;
 
         return string.Equals(eventRecord.EventType, "operation.failed", StringComparison.Ordinal)

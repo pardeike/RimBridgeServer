@@ -152,6 +152,18 @@ public class CapabilityRegistryTests
     }
 
     [Fact]
+    public void ReportsAMissingCurrentMapWithItsOwnErrorCode()
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new ThrowingProvider("no-map", () => throw new TargetLookupException("No current map is active.", TargetLookupException.NoCurrentMapCode)));
+
+        var envelope = registry.Invoke("rimbridge/no-map");
+
+        Assert.Equal(OperationStatus.Failed, envelope.Status);
+        Assert.Equal(TargetLookupException.NoCurrentMapCode, envelope.Error.Code);
+    }
+
+    [Fact]
     public void ConvertsHandlerCancellationsIntoCancelledOperations()
     {
         var registry = new CapabilityRegistry();

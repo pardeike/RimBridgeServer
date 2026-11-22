@@ -89,8 +89,10 @@ public class AttentionAggregatorTests
         Assert.Equal(11, snapshot.Sample[0].LatestSequence);
     }
 
-    [Fact]
-    public void IgnoresFailuresFromUnresolvedTargetLookups()
+    [Theory]
+    [InlineData(TargetLookupException.ErrorCode, "Could not find current-map thing id 'Thing_1'.")]
+    [InlineData(TargetLookupException.NoCurrentMapCode, "No current map is active.")]
+    public void IgnoresFailuresFromUnresolvedTargetLookups(string errorCode, string errorMessage)
     {
         var aggregator = new AttentionAggregator();
 
@@ -100,8 +102,8 @@ public class AttentionAggregatorTests
             EventType = "operation.failed",
             OperationId = "op_lookup",
             CapabilityId = "rimbridge.core/view/get-map-target-info",
-            ErrorCode = TargetLookupException.ErrorCode,
-            ErrorMessage = "Could not find current-map thing id 'Thing_1'."
+            ErrorCode = errorCode,
+            ErrorMessage = errorMessage
         });
 
         Assert.Null(snapshot);

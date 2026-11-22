@@ -1,0 +1,1 @@
+- Return `capability.no_current_map` from tools that need a current map when none is active. The failure no longer opens blocking GABS attention, for example on a Multiplayer spectator.

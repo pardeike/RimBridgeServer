@@ -122,7 +122,7 @@ internal static class RimWorldState
     {
         var map = Find.CurrentMap;
         if (map == null)
-            throw new InvalidOperationException("No current map is active.");
+            throw new TargetLookupException("No current map is active.", TargetLookupException.NoCurrentMapCode);
 
         return map;
     }

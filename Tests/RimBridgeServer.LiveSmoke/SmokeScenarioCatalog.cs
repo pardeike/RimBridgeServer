@@ -221,7 +221,7 @@ internal static class SmokeScenarioCatalog
             [MissingMapTargetScenarioName] = new SmokeScenarioDefinition
             {
                 Name = MissingMapTargetScenarioName,
-                Description = "Look up a thing id that is not on the current map, verify an ordinary not-found failure without blocking attention, and verify that pausing still works.",
+                Description = "Look up a thing id at the main menu and then one that is not on the current map, verify ordinary failures without blocking attention, and verify that pausing still works.",
                 RunAsync = RunMissingMapTargetAsync
             },
             [ArchitectSingleCellZoneScenarioName] = new SmokeScenarioDefinition
@@ -5481,6 +5481,19 @@ internal static class SmokeScenarioCatalog
 
     private static async Task RunMissingMapTargetAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
     {
+        await EnsureDebugGameEntrySceneAsync(context, "missing_map_target.entry", cancellationToken);
+
+        var withoutMap = await context.CallGameToolAsync("missing_map_target.lookup_without_map", "rimworld/get_map_target_info", new
+        {
+            thingId = "RimBridgeLiveSmokeMissingThing_0"
+        }, cancellationToken);
+        await AssertNoOpenAttentionAsync(context, "missing_map_target.attention_without_map", "Looking up a thing without a current map", cancellationToken);
+        if (withoutMap.Success)
+            throw new InvalidOperationException("Looking up a thing without a current map must fail.");
+        var withoutMapCode = JsonNodeHelpers.ReadString(withoutMap.StructuredContent, "operation", "Error", "Code");
+        if (!string.Equals(withoutMapCode, "capability.no_current_map", StringComparison.Ordinal))
+            throw new InvalidOperationException($"The lookup without a current map must fail with capability.no_current_map, not '{withoutMapCode}'. {withoutMap.Message}");
+
         await context.EnsurePlayableGameAsync(cancellationToken);
         await context.WaitForLongEventIdleAsync("missing_map_target.wait_for_long_event_idle", cancellationToken);
 

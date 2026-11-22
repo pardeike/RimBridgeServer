@@ -196,7 +196,7 @@ public sealed class CapabilityRegistry
         }
         catch (Exception ex)
         {
-            var code = TargetLookupException.IsIn(ex) ? TargetLookupException.ErrorCode : "capability.failed";
+            var code = TargetLookupException.CodeIn(ex) ?? "capability.failed";
             var failed = OperationEnvelope.Failed(operationId, descriptor.Id, requestedAtUtc, CreateError(code, ex));
 
             _journal?.RecordCompleted(failed);
