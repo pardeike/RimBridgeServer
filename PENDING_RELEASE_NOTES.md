@@ -1,6 +1,0 @@
-- Return `capability.no_current_map` from tools that need a current map when none is active. The failure no longer opens blocking GABS attention, for example on a Multiplayer spectator.
-- Click the captured control in lists that repeat the same controls in every row, such as trade rows and bills. A click could land on the same button in an earlier row.
-- Declare Harmony as a required mod. The in-game mod list now flags a missing Harmony.
-- Update the RimWorld 1.7 skill for game build 5014. That build ignores `-mod` entries outside the local Mods folder, Workshop Harmony included. The skill now shows an isolated ModsConfig profile instead.
-- Add `rimworld/get_pawn_details`. It reads one pawn of any faction: skills with base level, aptitude and disabled state, the current job and job queue, needs and hediffs.
-- Add `rimworld/list_power_nets`. It lists the current map's power nets with produced and consumed watts, stored energy, battery capacity and the connected buildings.
