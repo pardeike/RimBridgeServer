@@ -9,6 +9,17 @@
   <packageId>brrainz.rimbridgeserver</packageId>
   <modVersion>2.4.0</modVersion>
   <url>https://github.com/pardeike/RimBridgeServer</url>
+  <modDependencies>
+    <li>
+      <packageId>brrainz.harmony</packageId>
+      <displayName>Harmony</displayName>
+      <steamWorkshopUrl>steam://url/CommunityFilePage/2009463077</steamWorkshopUrl>
+      <downloadUrl>https://github.com/pardeike/HarmonyRimWorld/releases/latest</downloadUrl>
+    </li>
+  </modDependencies>
+  <loadAfter>
+    <li>brrainz.harmony</li>
+  </loadAfter>
   <description>Turn a running RimWorld session into a live automation bridge.
 
 RimBridgeServer is a developer-facing mod for external tools, test harnesses, and AI agents. It exposes a stable tool surface from the real game so mods can be debugged, driven, and validated against actual RimWorld state instead of a simulation.
