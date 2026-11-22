@@ -1,1 +1,2 @@
 - Return `capability.no_current_map` from tools that need a current map when none is active. The failure no longer opens blocking GABS attention, for example on a Multiplayer spectator.
+- Click the captured control in lists that repeat the same controls in every row, such as trade rows and bills. A click could land on the same button in an earlier row.

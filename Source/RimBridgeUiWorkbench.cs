@@ -149,7 +149,7 @@ internal static class RimBridgeUiWorkbench
 
         public string Label { get; set; } = string.Empty;
 
-        public UiRectSnapshot Rect { get; set; } = new();
+        public UiRectSnapshot ScreenRect { get; set; } = new();
 
         public int Depth { get; set; }
 
@@ -180,7 +180,7 @@ internal static class RimBridgeUiWorkbench
 
         public string Label { get; set; } = string.Empty;
 
-        public UiRectSnapshot Rect { get; set; } = new();
+        public UiRectSnapshot ScreenRect { get; set; } = new();
 
         public int Depth { get; set; }
 
@@ -227,7 +227,7 @@ internal static class RimBridgeUiWorkbench
 
         public string Source { get; set; } = string.Empty;
 
-        public UiRectSnapshot Rect { get; set; } = new();
+        public UiRectSnapshot ScreenRect { get; set; } = new();
 
         public int Depth { get; set; }
 
@@ -297,7 +297,7 @@ internal static class RimBridgeUiWorkbench
 
         public string Label { get; set; } = string.Empty;
 
-        public UiRectSnapshot Rect { get; set; } = new();
+        public UiRectSnapshot ScreenRect { get; set; } = new();
 
         public int Depth { get; set; }
 
@@ -615,7 +615,7 @@ internal static class RimBridgeUiWorkbench
                 ElementIndex = element.ElementIndex,
                 Kind = element.Kind,
                 Source = element.Source,
-                Rect = element.Rect,
+                ScreenRect = element.ScreenRect,
                 Depth = element.Depth,
                 Text = text,
                 ControlName = string.IsNullOrWhiteSpace(controlName) ? null : controlName.Trim(),
@@ -656,8 +656,7 @@ internal static class RimBridgeUiWorkbench
         if (_pendingText.ElementIndex == surface.ElementIndex)
             return true;
 
-        return _pendingText.Depth == surface.ContainerTargetIds.Count
-            && RectApproximatelyEquals(_pendingText.Rect, rect, 1f);
+        return MatchesShiftedElement(surface, _pendingText.Depth, _pendingText.ScreenRect, rect);
     }
 
     public static TextFieldPatchState BeginTextField(string source, Rect rect, string label, ref string text)
@@ -1706,8 +1705,7 @@ internal static class RimBridgeUiWorkbench
         if (_pendingClick.ElementIndex == surface.ElementIndex)
             return true;
 
-        return _pendingClick.Depth == surface.ContainerTargetIds.Count
-            && RectApproximatelyEquals(_pendingClick.Rect, rect, 1f);
+        return MatchesShiftedElement(surface, _pendingClick.Depth, _pendingClick.ScreenRect, rect);
     }
 
     private static bool ShouldHoverCurrentElement(LiveSurfaceState surface, string kind, string source, Rect rect, string label)
@@ -1729,8 +1727,7 @@ internal static class RimBridgeUiWorkbench
         if (_hoveredElement.ElementIndex == surface.ElementIndex)
             return true;
 
-        return _hoveredElement.Depth == surface.ContainerTargetIds.Count
-            && RectApproximatelyEquals(_hoveredElement.Rect, rect, 1f);
+        return MatchesShiftedElement(surface, _hoveredElement.Depth, _hoveredElement.ScreenRect, rect);
     }
 
     private static bool ShouldScrollCurrentElement(LiveSurfaceState surface, Rect rect)
@@ -1747,8 +1744,7 @@ internal static class RimBridgeUiWorkbench
         if (_pendingScroll.ElementIndex == surface.ElementIndex)
             return true;
 
-        return _pendingScroll.Depth == surface.ContainerTargetIds.Count
-            && RectApproximatelyEquals(_pendingScroll.Rect, rect, 1f);
+        return MatchesShiftedElement(surface, _pendingScroll.Depth, _pendingScroll.ScreenRect, rect);
     }
 
     private static void TryApplyPendingScroll(
@@ -1847,7 +1843,7 @@ internal static class RimBridgeUiWorkbench
                 Kind = element.Kind,
                 Source = element.Source,
                 Label = element.Label ?? string.Empty,
-                Rect = element.Rect,
+                ScreenRect = element.ScreenRect,
                 Depth = element.Depth,
                 Message = BuildClickMessage(surface, element)
             };
@@ -1885,7 +1881,7 @@ internal static class RimBridgeUiWorkbench
                 Kind = element.Kind,
                 Source = element.Source,
                 Label = element.Label ?? string.Empty,
-                Rect = element.Rect,
+                ScreenRect = element.ScreenRect,
                 Depth = element.Depth,
                 DeltaX = deltaX,
                 DeltaY = deltaY,
@@ -1918,7 +1914,7 @@ internal static class RimBridgeUiWorkbench
                 Kind = element.Kind,
                 Source = element.Source,
                 Label = element.Label ?? string.Empty,
-                Rect = element.Rect,
+                ScreenRect = element.ScreenRect,
                 Depth = element.Depth,
                 Anchor = string.IsNullOrWhiteSpace(anchor) ? "center" : anchor,
                 OffsetX = offsetX,
@@ -2077,6 +2073,15 @@ internal static class RimBridgeUiWorkbench
             && previous.Checked == checkedState
             && previous.Disabled == disabled
             && RectApproximatelyEquals(previous.Rect, rect, 0.5f);
+    }
+
+    // A control whose element index shifted since the capture still matches at the captured screen rect. This check
+    // runs for every same-labelled control drawn before the target, so it must not use local rects: every row of a
+    // list draws its controls at the same rect inside its own group, and the first row would win.
+    private static bool MatchesShiftedElement(LiveSurfaceState surface, int depth, UiRectSnapshot screenRect, Rect rect)
+    {
+        return depth == surface.ContainerTargetIds.Count
+            && RectApproximatelyEquals(screenRect, ToScreenSnapshot(rect), 1f);
     }
 
     private static bool RectApproximatelyEquals(UiRectSnapshot snapshot, Rect rect, float tolerance)

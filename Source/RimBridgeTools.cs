@@ -726,7 +726,7 @@ public class RimBridgeTools
     }
 
     [ReadmeTool("UI And Input", "Activate an actionable UI control target returned by rimworld/get_ui_layout on the next real draw frame")]
-    [Tool("rimworld/click_ui_target", Description = "Activate an actionable UI control target returned by rimworld/get_ui_layout on the next real draw frame")]
+    [Tool("rimworld/click_ui_target", Description = "Activate an actionable UI control target returned by rimworld/get_ui_layout on the next real draw frame", ResultDescription = "The click result. changed reports only window and main-tab changes. A control that changes a value in place, such as a quantity arrow, reports changed=false; read a fresh layout to see the new value.")]
     public object ClickUiTarget(
         [ToolParameter(Description = "Actionable ui-element target id returned by rimworld/get_ui_layout")] string targetId,
         [ToolParameter(Description = "Maximum time to wait for the target control to be redrawn so the click can be injected")] int timeoutMs = 2000)

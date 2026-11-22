@@ -650,6 +650,9 @@ Parameters:
 
 Activate an actionable UI control target returned by rimworld/get_ui_layout on the next real draw frame
 
+Returns:
+- The click result. changed reports only window and main-tab changes. A control that changes a value in place, such as a quantity arrow, reports changed=false; read a fresh layout to see the new value.
+
 Parameters:
 - `targetId` (`string`, `required`): Actionable ui-element target id returned by rimworld/get_ui_layout
 - `timeoutMs` (`int`, `optional`, default `2000`): Maximum time to wait for the target control to be redrawn so the click can be injected

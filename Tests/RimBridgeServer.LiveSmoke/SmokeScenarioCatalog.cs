@@ -50,6 +50,7 @@ internal static class SmokeScenarioCatalog
     public const string MapShiftRightClickQueueScenarioName = "map-shift-right-click-queue";
     public const string UltrafastBoostOptInScenarioName = "ultrafast-boost-opt-in";
     public const string WorldMainTabScenarioName = "world-main-tab";
+    public const string RepeatedRowClickScenarioName = "repeated-row-click";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -253,6 +254,12 @@ internal static class SmokeScenarioCatalog
                 Name = WorldMainTabScenarioName,
                 Description = "Open the World main button through rimworld/open_main_tab, verify the world view opens without blocking attention, and close it again.",
                 RunAsync = RunWorldMainTabAsync
+            },
+            [RepeatedRowClickScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = RepeatedRowClickScenarioName,
+                Description = "Add two bills to a crafting spot, click the second bill's delete button, and verify that the first bill remains. Each bill draws its controls at the same local rect, so the click must not land on the first bill.",
+                RunAsync = RunRepeatedRowClickAsync
             }
         };
 
@@ -5725,6 +5732,200 @@ internal static class SmokeScenarioCatalog
 
         if (await ReadUltraSpeedBoostAsync(context, "ultrafast_boost.read_after_play", cancellationToken))
             throw new InvalidOperationException("Ultrafast playback must restore the ultrafast speed boost value it found.");
+    }
+
+    private static async Task RunRepeatedRowClickAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("repeated_row.wait_for_long_event_idle", cancellationToken);
+
+        var designatorState = await context.CallGameToolAsync("repeated_row.get_designator_state", "rimworld/get_designator_state", new { }, cancellationToken);
+        context.EnsureSucceeded(designatorState, "Reading the architect state");
+        var originalGodMode = JsonNodeHelpers.ReadBoolean(designatorState.StructuredContent, "godMode") == true;
+
+        Exception? scenarioError = null;
+        try
+        {
+            var categories = await context.CallGameToolAsync("repeated_row.list_categories", "rimworld/list_architect_categories", new
+            {
+                includeHidden = false,
+                includeEmpty = false
+            }, cancellationToken);
+            context.EnsureSucceeded(categories, "Listing architect categories");
+            var productionCategoryId = ResolveArchitectCategoryId(JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories"), "Production");
+
+            var designators = await context.CallGameToolAsync("repeated_row.list_designators", "rimworld/list_architect_designators", new
+            {
+                categoryId = productionCategoryId,
+                includeHidden = false
+            }, cancellationToken);
+            context.EnsureSucceeded(designators, "Listing production designators");
+            var spotDesignatorId = ResolveArchitectBuildDesignatorId(JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators"), "CraftingSpot");
+
+            var colonists = await context.CallGameToolAsync("repeated_row.list_colonists", "rimworld/list_colonists", new
+            {
+                currentMapOnly = true
+            }, cancellationToken);
+            context.EnsureSucceeded(colonists, "Listing current-map colonists for the crafting spot placement");
+
+            await EnsureGodModeAsync(context, "repeated_row.enable_god_mode", true, cancellationToken);
+            var cell = await FindAcceptedArchitectPlacementCellAsync(
+                context,
+                "repeated_row.find_cell",
+                spotDesignatorId,
+                colonists.StructuredContent,
+                new HashSet<string>(StringComparer.Ordinal),
+                cancellationToken);
+            var placement = await context.CallGameToolAsync("repeated_row.place_spot", "rimworld/apply_architect_designator", new
+            {
+                designatorId = spotDesignatorId,
+                x = cell.X,
+                z = cell.Z,
+                keepSelected = false
+            }, cancellationToken);
+            context.EnsureSucceeded(placement, "Placing a crafting spot with god mode");
+
+            // Repeated clicks on a cell cycle through its things, as for a player. An item can share the cell.
+            var spotSelected = false;
+            for (var attempt = 1; attempt <= 4 && !spotSelected; attempt++)
+            {
+                var select = await context.CallGameToolAsync($"repeated_row.select_spot_{attempt}", "rimworld/click_cell", new { x = cell.X, z = cell.Z, button = "left" }, cancellationToken);
+                context.EnsureSucceeded(select, "Selecting the crafting spot");
+                spotSelected = JsonNodeHelpers.ReadArray(select.StructuredContent, "selectionAfter", "selectedObjects")
+                    .Any(selected => string.Equals(JsonNodeHelpers.ReadString(selected, "details", "defName"), "CraftingSpot", StringComparison.Ordinal));
+            }
+
+            if (!spotSelected)
+                throw new InvalidOperationException($"Clicking cell ({cell.X}, {cell.Z}) did not select the crafting spot.");
+            var openBills = await context.CallGameToolAsync("repeated_row.open_bills", "rimworld/open_inspect_tab", new { inspectTabId = "Bills" }, cancellationToken);
+            context.EnsureSucceeded(openBills, "Opening the crafting spot's Bills tab");
+
+            for (var bill = 0; bill < 2; bill++)
+            {
+                var layout = await CaptureBillsLayoutAsync(context, $"repeated_row.layout_before_bill_{bill + 1}", cancellationToken);
+                var addBill = await context.CallGameToolAsync($"repeated_row.click_add_bill_{bill + 1}", "rimworld/click_ui_target", new
+                {
+                    targetId = ReadRequiredString(FindUiElementByLabel(layout.Surface, "Add bill"), "targetId")
+                }, cancellationToken);
+                context.EnsureSucceeded(addBill, "Opening the Add bill menu");
+
+                var menu = await context.CallGameToolAsync($"repeated_row.read_bill_menu_{bill + 1}", "rimworld/get_context_menu_options", new { }, cancellationToken);
+                context.EnsureSucceeded(menu, "Reading the Add bill menu");
+                var recipes = JsonNodeHelpers.ReadArray(menu.StructuredContent, "options")
+                    .Where(option => JsonNodeHelpers.ReadBoolean(option, "disabled") != true)
+                    .ToList();
+                if (recipes.Count < 2)
+                    throw new InvalidOperationException("The crafting spot must offer at least two enabled recipes.");
+
+                var execute = await context.CallGameToolAsync($"repeated_row.add_bill_{bill + 1}", "rimworld/execute_context_menu_option", new
+                {
+                    optionIndex = JsonNodeHelpers.ReadInt32(recipes[bill], "index")
+                }, cancellationToken);
+                context.EnsureSucceeded(execute, "Adding a bill from the Add bill menu");
+            }
+
+            var withTwoBills = await CaptureBillsLayoutAsync(context, "repeated_row.layout_two_bills", cancellationToken);
+            if (withTwoBills.Rows.Count != 2)
+                throw new InvalidOperationException($"The Bills tab must show two bills, but it shows {withTwoBills.Rows.Count}.");
+            var first = withTwoBills.Rows[0];
+            var second = withTwoBills.Rows[1];
+            if (string.Equals(first.Label, second.Label, StringComparison.Ordinal))
+                throw new InvalidOperationException($"The two bills must have different labels, but both are '{first.Label}'.");
+
+            var deleteSecond = await context.CallGameToolAsync("repeated_row.delete_second_bill", "rimworld/click_ui_target", new
+            {
+                targetId = second.DeleteTargetId
+            }, cancellationToken);
+            context.EnsureSucceeded(deleteSecond, $"Clicking the delete button of bill '{second.Label}'");
+
+            var afterDelete = await CaptureBillsLayoutAsync(context, "repeated_row.layout_after_delete", cancellationToken);
+            var remaining = afterDelete.Rows.Select(row => row.Label).ToList();
+            if (remaining.Count != 1 || !string.Equals(remaining[0], first.Label, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    $"Deleting bill '{second.Label}' must leave only '{first.Label}', but the Bills tab shows [{string.Join(", ", remaining)}].");
+
+            var deleteFirst = await context.CallGameToolAsync("repeated_row.delete_first_bill", "rimworld/click_ui_target", new
+            {
+                targetId = afterDelete.Rows[0].DeleteTargetId
+            }, cancellationToken);
+            context.EnsureSucceeded(deleteFirst, $"Deleting the remaining bill '{first.Label}'");
+
+            context.SetSummaryValue("craftingSpotCell", $"{cell.X},{cell.Z}");
+            context.SetSummaryValue("bills", $"{first.Label}; {second.Label}");
+        }
+        catch (Exception ex)
+        {
+            scenarioError = ex;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                var clear = await context.CallGameToolAsync("repeated_row.clear_selection", "rimworld/clear_selection", new { }, cancellationToken);
+                context.EnsureSucceeded(clear, "Clearing the selection after the repeated-row check");
+                await EnsureGodModeAsync(context, "repeated_row.restore_god_mode", originalGodMode, cancellationToken);
+            }
+            catch (Exception restoreError)
+            {
+                if (scenarioError is null)
+                    throw;
+
+                context.Note($"Failed to clean up after the repeated-row scenario: {restoreError.Message}");
+            }
+        }
+    }
+
+    private sealed record BillRow(string Label, string DeleteTargetId);
+
+    private sealed record BillsLayout(JsonNode? Surface, List<BillRow> Rows);
+
+    // Reads the open Bills tab: the surface that holds the Add bill button, and one row per bill group with the bill
+    // label and its delete button, the rightmost icon button on the group's top line.
+    private static async Task<BillsLayout> CaptureBillsLayoutAsync(SmokeScenarioContext context, string stepName, CancellationToken cancellationToken)
+    {
+        var layout = await context.CallGameToolAsync(stepName, "rimworld/get_ui_layout", new { timeoutMs = 3000 }, cancellationToken);
+        context.EnsureSucceeded(layout, "Capturing the Bills tab layout");
+
+        var surface = JsonNodeHelpers.ReadArray(layout.StructuredContent, "surfaces")
+            .FirstOrDefault(candidate => JsonNodeHelpers.ReadArray(candidate, "elements")
+                .Any(element => string.Equals(JsonNodeHelpers.ReadString(element, "label"), "Add bill", StringComparison.Ordinal)))
+            ?? throw new InvalidOperationException("No UI surface shows the Add bill button.");
+
+        var rows = new List<BillRow>();
+        var elements = JsonNodeHelpers.ReadArray(surface, "elements");
+        var scrollIndex = elements.FindIndex(element => string.Equals(JsonNodeHelpers.ReadString(element, "kind"), "scroll_view", StringComparison.Ordinal));
+        if (scrollIndex < 0)
+            throw new InvalidOperationException("The Bills tab layout has no bill list scroll view.");
+
+        for (var i = scrollIndex + 1; i < elements.Count; i++)
+        {
+            if (!string.Equals(JsonNodeHelpers.ReadString(elements[i], "kind"), "group", StringComparison.Ordinal))
+                continue;
+
+            var top = JsonNodeHelpers.ReadDouble(elements[i], "screenRect", "y");
+            var end = elements.FindIndex(i + 1, element => string.Equals(JsonNodeHelpers.ReadString(element, "kind"), "group", StringComparison.Ordinal));
+            var members = elements.Skip(i + 1).Take((end < 0 ? elements.Count : end) - i - 1).ToList();
+            var label = members.FirstOrDefault(element => string.Equals(JsonNodeHelpers.ReadString(element, "kind"), "label", StringComparison.Ordinal));
+            var delete = members
+                .Where(element => string.Equals(JsonNodeHelpers.ReadString(element, "kind"), "icon_button", StringComparison.Ordinal)
+                    && Math.Abs((JsonNodeHelpers.ReadDouble(element, "screenRect", "y") ?? double.NaN) - (top ?? double.NaN)) < 0.5)
+                .OrderByDescending(element => JsonNodeHelpers.ReadDouble(element, "screenRect", "x"))
+                .FirstOrDefault();
+            if (label == null || delete == null)
+                throw new InvalidOperationException("A bill row in the Bills tab layout has no label or no delete button.");
+
+            rows.Add(new BillRow(ReadRequiredString(label, "label"), ReadRequiredString(delete, "targetId")));
+        }
+
+        return new BillsLayout(surface, rows);
+    }
+
+    private static JsonNode? FindUiElementByLabel(JsonNode? surface, string label)
+    {
+        return JsonNodeHelpers.ReadArray(surface, "elements")
+            .FirstOrDefault(element => string.Equals(JsonNodeHelpers.ReadString(element, "label"), label, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException($"Could not find a UI layout element labelled '{label}'.");
     }
 
     private static async Task RunWorldMainTabAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
