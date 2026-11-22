@@ -2139,15 +2139,27 @@ internal static class SmokeScenarioCatalog
             throw new InvalidOperationException("Opening the choice letter did not visibly change the RimWorld window stack.");
         }
 
-        var openedLetterWindowType = JsonNodeHelpers.ReadString(openLetter.StructuredContent, "stateAfter", "uiState", "FocusedWindowType");
-        if (!string.IsNullOrWhiteSpace(openedLetterWindowType))
+        // Answer the letter with Reject. Closing only its window keeps the letter, which then opens itself again, and
+        // its dialog ignores cancel input, so every later UI scenario would find it in the way.
+        var letterLayout = await context.CallGameToolAsync("semantic.choice_letter_layout", "rimworld/get_ui_layout", new { timeoutMs = 3000 }, cancellationToken);
+        context.EnsureSucceeded(letterLayout, $"Capturing the layout of choice letter '{choiceLetterLabel}'");
+        var rejectTargetId = JsonNodeHelpers.ReadArray(letterLayout.StructuredContent, "surfaces")
+            .SelectMany(surface => JsonNodeHelpers.ReadArray(surface, "elements"))
+            .Where(element => JsonNodeHelpers.ReadBoolean(element, "actionable") == true
+                && string.Equals(JsonNodeHelpers.ReadString(element, "label"), "Reject", StringComparison.Ordinal))
+            .Select(element => JsonNodeHelpers.ReadString(element, "targetId"))
+            .FirstOrDefault(targetId => !string.IsNullOrWhiteSpace(targetId))
+            ?? throw new InvalidOperationException($"Choice letter '{choiceLetterLabel}' shows no Reject option.");
+        var rejectLetter = await context.CallGameToolAsync("semantic.reject_choice_letter", "rimworld/click_ui_target", new
         {
-            var closeLetterWindow = await context.CallGameToolAsync("semantic.close_choice_letter_window", "rimworld/close_window", new
-            {
-                windowType = openedLetterWindowType
-            }, cancellationToken);
-            context.EnsureSucceeded(closeLetterWindow, $"Closing the opened choice letter window '{openedLetterWindowType}'");
-        }
+            targetId = rejectTargetId
+        }, cancellationToken);
+        context.EnsureSucceeded(rejectLetter, $"Rejecting choice letter '{choiceLetterLabel}'");
+
+        var lettersAfterReject = await context.CallGameToolAsync("semantic.list_letters_after_reject", "rimworld/list_letters", new { limit = 40 }, cancellationToken);
+        context.EnsureSucceeded(lettersAfterReject, "Listing letters after rejecting the choice letter");
+        if (ReadIdSet(lettersAfterReject, "letters").Contains(choiceLetterId))
+            throw new InvalidOperationException($"Rejecting choice letter '{choiceLetterLabel}' did not remove it from the letter stack.");
 
         await EnsureNoDialogWindowsAsync(context, "semantic.after_open_letter", cancellationToken);
 
@@ -5346,23 +5358,56 @@ internal static class SmokeScenarioCatalog
         bool requireDirectExecutableOption = false)
     {
         var attempt = 0;
-        foreach (var candidateCell in BuildNearbyCells(pawnPosition.X, pawnPosition.Z))
+        async Task<(ToolInvocationResult Result, int DirectOptionIndex)?> TryOpenAsync((int X, int Z) cell)
         {
             attempt++;
             var result = await context.CallGameToolAsync($"{stepPrefix}.open_context_menu_{attempt}", "rimworld/open_context_menu", new
             {
-                x = candidateCell.X,
-                z = candidateCell.Z,
+                x = cell.X,
+                z = cell.Z,
                 mode = "vanilla"
             }, cancellationToken);
             context.EnsureSucceeded(result, $"Opening a vanilla context menu near colonist '{pawnName}'");
 
             if (JsonNodeHelpers.ReadInt32(result.StructuredContent, "optionCount").GetValueOrDefault() <= 0)
-                continue;
+                return null;
 
             var directOptionIndex = ResolveDirectExecutableOptionIndex(result.StructuredContent);
-            if (!requireDirectExecutableOption || directOptionIndex > 0)
-                return (result, candidateCell, directOptionIndex);
+            return !requireDirectExecutableOption || directOptionIndex > 0 ? (result, directOptionIndex) : null;
+        }
+
+        foreach (var candidateCell in BuildNearbyCells(pawnPosition.X, pawnPosition.Z))
+        {
+            if (await TryOpenAsync(candidateCell) is { } opened)
+                return (opened.Result, candidateCell, opened.DirectOptionIndex);
+        }
+
+        // A colonist gets a context menu only where something lies next to it, which depends on the colony and on where
+        // the colonist has wandered. A packaged survival meal on a walkable cell always offers Consume.
+        foreach (var candidateCell in BuildNearbyCells(pawnPosition.X, pawnPosition.Z))
+        {
+            var cellInfo = await context.CallGameToolAsync($"{stepPrefix}.meal_cell_info_{candidateCell.X}_{candidateCell.Z}", "rimworld/get_cell_info", new
+            {
+                x = candidateCell.X,
+                z = candidateCell.Z
+            }, cancellationToken);
+            context.EnsureSucceeded(cellInfo, $"Reading cell ({candidateCell.X}, {candidateCell.Z}) for a context-menu meal");
+            if (JsonNodeHelpers.ReadBoolean(cellInfo.StructuredContent, "cell", "walkable") != true)
+                continue;
+
+            var spawnMeal = await context.CallGameToolAsync($"{stepPrefix}.spawn_meal", "rimworld/spawn_thing", new
+            {
+                defName = "MealSurvivalPack",
+                x = candidateCell.X,
+                z = candidateCell.Z,
+                stackCount = 1
+            }, cancellationToken);
+            context.EnsureSucceeded(spawnMeal, $"Spawning a packaged survival meal at ({candidateCell.X}, {candidateCell.Z}) for a context menu");
+            context.Note($"No cell next to colonist '{pawnName}' offered a context menu, so the harness placed a packaged survival meal at ({candidateCell.X}, {candidateCell.Z}).");
+
+            if (await TryOpenAsync(candidateCell) is { } opened)
+                return (opened.Result, candidateCell, opened.DirectOptionIndex);
+            break;
         }
 
         if (requireDirectExecutableOption)
