@@ -52,6 +52,7 @@ internal static class SmokeScenarioCatalog
     public const string WorldMainTabScenarioName = "world-main-tab";
     public const string RepeatedRowClickScenarioName = "repeated-row-click";
     public const string PawnAndPowerDetailsScenarioName = "pawn-and-power-details";
+    public const string SpawnPawnScenarioName = "spawn-pawn";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -267,6 +268,12 @@ internal static class SmokeScenarioCatalog
                 Name = PawnAndPowerDetailsScenarioName,
                 Description = "Read every colonist with rimworld/get_pawn_details and check the skill levels against the base level, aptitude and disabled state. Place two adjacent batteries with god mode and verify that rimworld/list_power_nets reports one net with both batteries.",
                 RunAsync = RunPawnAndPowerDetailsAsync
+            },
+            [SpawnPawnScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = SpawnPawnScenarioName,
+                Description = "Spawn a Muffalo by its race ThingDef and a colonist by its PawnKindDef with rimworld/spawn_thing, and verify that both are generated pawns. Verify that the ambiguous Human race fails with a clear message instead of an exception.",
+                RunAsync = RunSpawnPawnAsync
             }
         };
 
@@ -5918,6 +5925,60 @@ internal static class SmokeScenarioCatalog
         {
             await EnsureGodModeAsync(context, "pawn_power.restore_god_mode", originalGodMode, cancellationToken);
         }
+    }
+
+    private static async Task RunSpawnPawnAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("spawn_pawn.wait_for_long_event_idle", cancellationToken);
+
+        var colonists = await context.CallGameToolAsync("spawn_pawn.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists");
+        var origin = ResolveColonistSearchOrigin(colonists.StructuredContent);
+
+        async Task<(int X, int Z)> FindStandableCellAsync(string step)
+        {
+            var found = await context.CallGameToolAsync(step, "rimworld/find_random_cell_near", new
+            {
+                x = origin.X,
+                z = origin.Z,
+                startingSearchRadius = 3,
+                maxSearchRadius = 15,
+                requireStandable = true,
+                requireNoImpassableThings = true
+            }, cancellationToken);
+            context.EnsureSucceeded(found, "Finding a standable cell near the colonists");
+            return (JsonNodeHelpers.ReadInt32(found.StructuredContent, "cell", "x") ?? throw new InvalidOperationException("No cell x."),
+                JsonNodeHelpers.ReadInt32(found.StructuredContent, "cell", "z") ?? throw new InvalidOperationException("No cell z."));
+        }
+
+        async Task<JsonNode?> SpawnPawnAsync(string defName, bool expectedAnimal, bool expectedPlayerFaction)
+        {
+            var cell = await FindStandableCellAsync($"spawn_pawn.find_cell_{defName}");
+            var spawn = await context.CallGameToolAsync($"spawn_pawn.spawn_{defName}", "rimworld/spawn_thing", new { defName, x = cell.X, z = cell.Z }, cancellationToken);
+            context.EnsureSucceeded(spawn, $"Spawning '{defName}' with rimworld/spawn_thing");
+            var thingId = ReadRequiredString(spawn.StructuredContent, "thingId");
+            var details = await context.CallGameToolAsync($"spawn_pawn.details_{defName}", "rimworld/get_pawn_details", new { pawnId = thingId }, cancellationToken);
+            context.EnsureSucceeded(details, $"Reading the spawned '{defName}' as a pawn");
+            if (JsonNodeHelpers.ReadBoolean(details.StructuredContent, "pawn", "animal") != expectedAnimal
+                || JsonNodeHelpers.ReadBoolean(details.StructuredContent, "pawn", "factionIsPlayer") != expectedPlayerFaction
+                || JsonNodeHelpers.ReadBoolean(details.StructuredContent, "pawn", "spawned") != true)
+                throw new InvalidOperationException($"The spawned '{defName}' must be a spawned pawn with animal={expectedAnimal} and factionIsPlayer={expectedPlayerFaction}: {details.StructuredContent?["pawn"]?.ToJsonString()}");
+            return spawn.StructuredContent;
+        }
+
+        await SpawnPawnAsync("Muffalo", expectedAnimal: true, expectedPlayerFaction: false);
+        await SpawnPawnAsync("Colonist", expectedAnimal: false, expectedPlayerFaction: true);
+
+        var humanCell = await FindStandableCellAsync("spawn_pawn.find_cell_Human");
+        var human = await context.CallGameToolAsync("spawn_pawn.spawn_Human", "rimworld/spawn_thing", new { defName = "Human", x = humanCell.X, z = humanCell.Z }, cancellationToken);
+        await AssertNoOpenAttentionAsync(context, "spawn_pawn.attention_Human", "Spawning the ambiguous Human race", cancellationToken);
+        var kinds = JsonNodeHelpers.ReadArray(human.StructuredContent, "pawnKinds");
+        // The operation completes. The reply's own success field reports that nothing was spawned.
+        if (JsonNodeHelpers.ReadBoolean(human.StructuredContent, "success") != false
+            || !string.IsNullOrEmpty(JsonNodeHelpers.ReadString(human.StructuredContent, "exception"))
+            || !kinds.Any(kind => kind?.GetValue<string>() == "Colonist"))
+            throw new InvalidOperationException($"Spawning the Human race must fail without an exception and list its pawn kinds, including Colonist: {human.StructuredContent?.ToJsonString()}");
     }
 
     private static async Task RunRepeatedRowClickAsync(SmokeScenarioContext context, CancellationToken cancellationToken)

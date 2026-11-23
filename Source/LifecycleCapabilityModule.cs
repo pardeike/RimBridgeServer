@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using HarmonyLib;
 using RimBridgeServer.Core;
 using RimWorld;
 using UnityEngine;
@@ -772,13 +773,18 @@ internal sealed class LifecycleCapabilityModule
 
         // GetNamedSilentFail avoids RimWorld's error log entry (which opens the debug log window and raises a GABS
         // attention item) and lets the bridge answer with close matches instead of a NullReferenceException later.
-        var thingDef = string.IsNullOrWhiteSpace(defName) ? null : DefDatabase<ThingDef>.GetNamedSilentFail(defName.Trim());
+        var name = defName?.Trim();
+        var thingDef = string.IsNullOrWhiteSpace(name) ? null : DefDatabase<ThingDef>.GetNamedSilentFail(name);
+        var kindDef = string.IsNullOrWhiteSpace(name) ? null : DefDatabase<PawnKindDef>.GetNamedSilentFail(name);
+        if (thingDef?.race != null || (thingDef == null && kindDef != null))
+            return SpawnPawn(name, thingDef, kindDef, cell, map);
+
         if (thingDef == null)
         {
             return new
             {
                 success = false,
-                message = $"No ThingDef named '{defName}'.",
+                message = $"No ThingDef or PawnKindDef named '{defName}'.",
                 suggestions = SuggestThingDefNames(defName)
             };
         }
@@ -799,19 +805,66 @@ internal sealed class LifecycleCapabilityModule
         };
     }
 
+    // ThingMaker.MakeThing makes an ungenerated Pawn for a race ThingDef, and spawning it throws. Generate the pawn the
+    // way RimWorld's "Spawn pawn" debug action does: the kind's default faction, then the debug spawner's lord setup.
+    private static readonly MethodInfo DebugPostPawnSpawn = AccessTools.Method("Verse.DebugToolsSpawning:PostPawnSpawn", [typeof(Pawn)]);
+
+    private static object SpawnPawn(string name, ThingDef race, PawnKindDef kind, IntVec3 cell, Map map)
+    {
+        if (race != null && kind?.race != race)
+        {
+            var kinds = DefDatabase<PawnKindDef>.AllDefs
+                .Where(candidate => candidate.race == race)
+                .Select(candidate => candidate.defName)
+                .OrderBy(candidate => candidate, StringComparer.Ordinal)
+                .ToList();
+            if (kinds.Count != 1)
+            {
+                return new
+                {
+                    success = false,
+                    message = kinds.Count == 0
+                        ? $"ThingDef '{name}' is a pawn race without a PawnKindDef, so it cannot be spawned."
+                        : $"ThingDef '{name}' is a pawn race with {kinds.Count} pawn kinds. Pass one of the pawnKinds as defName.",
+                    pawnKinds = kinds
+                };
+            }
+
+            kind = DefDatabase<PawnKindDef>.GetNamed(kinds[0]);
+        }
+
+        var pawn = PawnGenerator.GeneratePawn(kind, FactionUtility.DefaultFactionFrom(kind.defaultFactionDef), map.Tile);
+        GenSpawn.Spawn(pawn, cell, map);
+        DebugPostPawnSpawn?.Invoke(null, [pawn]);
+        return new
+        {
+            success = true,
+            thingId = RimWorldState.GetThingId(pawn),
+            defName = pawn.def.defName,
+            pawnKindDef = kind.defName,
+            label = pawn.LabelCap,
+            faction = pawn.Faction?.Name,
+            factionIsPlayer = pawn.Faction?.IsPlayer ?? false,
+            stackCount = 1,
+            cell = new { x = cell.x, z = cell.z }
+        };
+    }
+
     private static List<string> SuggestThingDefNames(string query)
     {
         var needle = (query ?? string.Empty).Trim();
         if (needle.Length == 0)
             return [];
 
-        return DefDatabase<ThingDef>.AllDefsListForReading
+        return DefDatabase<ThingDef>.AllDefsListForReading.Cast<Def>()
+            .Concat(DefDatabase<PawnKindDef>.AllDefsListForReading)
             .Where(def => def.defName.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0
                 || needle.IndexOf(def.defName, StringComparison.OrdinalIgnoreCase) >= 0
                 || (def.label != null && def.label.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0))
-            .OrderBy(def => Math.Abs(def.defName.Length - needle.Length))
-            .ThenBy(def => def.defName, StringComparer.Ordinal)
             .Select(def => def.defName)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => Math.Abs(name.Length - needle.Length))
+            .ThenBy(name => name, StringComparer.Ordinal)
             .Take(8)
             .ToList();
     }

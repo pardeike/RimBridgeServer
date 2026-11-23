@@ -424,7 +424,7 @@ Playback default: RimWorld's private `TickManager.UltraSpeedBoost` is left off, 
 ### Save/Load And Spawning
 
 - `rimworld/list_saves` - List saved RimWorld games and optionally return only saves whose recorded mods are all currently active
-- `rimworld/spawn_thing` - Spawn a thing on the current map at a target cell
+- `rimworld/spawn_thing` - Spawn a thing or a generated pawn on the current map at a target cell
 - `rimworld/save_game` - Save the current game to a named save
 - `rimworld/load_game` - Load a named RimWorld save after verifying every recorded mod is active, with an explicit compatibility-check override
 - `rimworld/load_game_ready` - Load a named RimWorld save with an explicit compatibility-check override, then wait until the requested readiness level

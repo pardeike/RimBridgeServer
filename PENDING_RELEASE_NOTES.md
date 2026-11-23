@@ -1,0 +1,1 @@
+- Let `rimworld/spawn_thing` spawn pawns. A pawn race such as `Muffalo` or a pawn kind such as `Colonist` now gives a generated pawn with the kind's default faction. Before, a pawn race failed with an error.
