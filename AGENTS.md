@@ -21,6 +21,7 @@ Start here before making non-trivial changes:
 - `Directory.Build.props` is the source of truth for `ModVersion`, `ModFileName`, repository metadata, and RimBridge package version pins.
 - `RimBridgeServerSdkVersion` stays at published version 2.0.0 independently of server releases. The host and bundled companions restore it from NuGet.org. Keep SDK project references only for SDK development/tests; normal builds require no local SDK feed or package generation.
 - Public tool docs are generated from `[Tool]`, `[ReadmeTool]`, and `[ToolParameter]` annotations in `Source/RimBridgeTools.cs`. After changing public tools, run `scripts/generate-tool-reference.sh` and then `scripts/install-skills.sh` so the generated live-bridge skill and repo-owned companion-tool skill are both refreshed locally.
+- Write tool descriptions in ASD-STE100 Simplified Technical English. Use one idea per sentence. Do not use semicolons or parenthetical asides.
 - Do not use the live `rimbridge-server` Codex skill just because you are editing this repository. Use it only when the task requires a running RimWorld session or live bridge interaction.
 - Keep old public tool names out of the annotated surface unless compatibility is explicitly required. Agents discover tools dynamically through the bridge.
 - For UI or visible in-game validation on macOS, use the home-directory Computer Use/BrrainzTools instructions and prefer bridge-owned semantic tools for gameplay.
