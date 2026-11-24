@@ -42,8 +42,9 @@ internal static class RimWorldPawnDetails
         };
     }
 
-    // In the order of the Work tab columns. GetPriority already reports 3 for every active work type when manual
-    // priorities are off, which is what the pawn works with.
+    // The Work tab shows the visible work types in this order. For a humanlike pawn, GetPriority reports 3 for every
+    // active work type when manual priorities are off, which is what the pawn works with. Other pawns, such as worker
+    // mechs, report the stored value.
     private static List<object> DescribeWorkPriorities(Pawn pawn)
     {
         var settings = pawn.workSettings;
@@ -56,7 +57,9 @@ internal static class RimWorldPawnDetails
                 defName = workType.defName,
                 label = workType.labelShort,
                 priority = settings.GetPriority(workType),
-                disabled = pawn.WorkTypeIsDisabled(workType)
+                disabled = pawn.WorkTypeIsDisabled(workType),
+                // The Work tab column reads VisibleCurrently, which also covers visibleOnlyWithChildrenInColony.
+                visible = workType.VisibleCurrently
             })
             .ToList();
     }
