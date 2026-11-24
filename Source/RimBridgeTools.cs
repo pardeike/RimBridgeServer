@@ -1165,10 +1165,11 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(compatibleOnly), compatibleOnly), (nameof(offset), offset)));
     }
 
-    [ReadmeTool("Save/Load And Spawning", "Spawn a thing on the current map at a target cell")]
-    [Tool("rimworld/spawn_thing", Description = "Spawn a thing on the current map at a target cell")]
+    [ReadmeTool("Save/Load And Spawning", "Spawn a thing or a generated pawn on the current map at a target cell")]
+    [Tool("rimworld/spawn_thing", Description = "Spawn a thing or a generated pawn on the current map at a target cell",
+        ResultDescription = "The spawned thing. A pawn also reports pawnKindDef, faction and factionIsPlayer. If a pawn race does not have exactly one pawn kind, the call fails. pawnKinds then lists the kinds of that race.")]
     public object SpawnThing(
-        [ToolParameter(Description = "ThingDef defName to spawn")] string defName,
+        [ToolParameter(Description = "ThingDef defName to spawn. A pawn race ThingDef or a PawnKindDef defName spawns a generated pawn with the kind's default faction.")] string defName,
         [ToolParameter(Description = "Target cell x coordinate")] int x,
         [ToolParameter(Description = "Target cell z coordinate")] int z,
         [ToolParameter(Description = "Optional stack count. Clamped to the thing's stack limit.")] int stackCount = 1)

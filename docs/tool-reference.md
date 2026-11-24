@@ -1052,10 +1052,13 @@ Parameters:
 
 ### `rimworld/spawn_thing`
 
-Spawn a thing on the current map at a target cell
+Spawn a thing or a generated pawn on the current map at a target cell
+
+Returns:
+- The spawned thing. A pawn also reports pawnKindDef, faction and factionIsPlayer. If a pawn race does not have exactly one pawn kind, the call fails. pawnKinds then lists the kinds of that race.
 
 Parameters:
-- `defName` (`string`, `required`): ThingDef defName to spawn
+- `defName` (`string`, `required`): ThingDef defName to spawn. A pawn race ThingDef or a PawnKindDef defName spawns a generated pawn with the kind's default faction.
 - `x` (`int`, `required`): Target cell x coordinate
 - `z` (`int`, `required`): Target cell z coordinate
 - `stackCount` (`int`, `optional`, default `1`): Optional stack count. Clamped to the thing's stack limit.
