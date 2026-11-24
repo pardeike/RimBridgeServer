@@ -5853,6 +5853,9 @@ internal static class SmokeScenarioCatalog
                     throw new InvalidOperationException($"Work type '{JsonNodeHelpers.ReadString(work, "defName")}' of '{pawnId}' must have priority 0 or higher, and 0 when disabled: {work?.ToJsonString()}");
                 if (JsonNodeHelpers.ReadBoolean(work, "visible") == null)
                     throw new InvalidOperationException($"Work type '{JsonNodeHelpers.ReadString(work, "defName")}' of '{pawnId}' must report visible: {work?.ToJsonString()}");
+                var permanentlyDisabled = JsonNodeHelpers.ReadBoolean(work, "permanentlyDisabled");
+                if (permanentlyDisabled == null || permanentlyDisabled == true && JsonNodeHelpers.ReadBoolean(work, "disabled") != true)
+                    throw new InvalidOperationException($"Work type '{JsonNodeHelpers.ReadString(work, "defName")}' of '{pawnId}' must report permanentlyDisabled, and be disabled when it is permanently disabled: {work?.ToJsonString()}");
             }
 
             foreach (var trait in JsonNodeHelpers.ReadArray(details.StructuredContent, "traits"))

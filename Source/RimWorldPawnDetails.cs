@@ -51,6 +51,8 @@ internal static class RimWorldPawnDetails
         if (settings?.EverWork != true)
             return null;
 
+        // The game's permanent list. skills[].permanentlyDisabled adds the pawn's disabled work tags to it.
+        var permanentlyDisabled = pawn.GetDisabledWorkTypes(permanentOnly: true);
         return WorkTypeDefsUtility.WorkTypeDefsInPriorityOrder
             .Select(workType => (object)new
             {
@@ -58,6 +60,7 @@ internal static class RimWorldPawnDetails
                 label = workType.labelShort,
                 priority = settings.GetPriority(workType),
                 disabled = pawn.WorkTypeIsDisabled(workType),
+                permanentlyDisabled = permanentlyDisabled.Contains(workType),
                 // The Work tab column reads VisibleCurrently, which also covers visibleOnlyWithChildrenInColony.
                 visible = workType.VisibleCurrently
             })
