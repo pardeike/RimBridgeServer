@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using Verse;
@@ -23,8 +24,44 @@ internal static class RimWorldPawnDetails
             job = DescribeJob(pawn.jobs?.curJob, pawn.jobs?.curJob?.GetReport(pawn)),
             jobQueue = pawn.jobs?.jobQueue?.Select(queued => DescribeJob(queued.job, report: null)).ToList(),
             needs = pawn.needs?.AllNeeds?.Select(DescribeNeed).ToList(),
-            hediffs = pawn.health?.hediffSet?.hediffs?.Select(DescribeHediff).ToList()
+            hediffs = pawn.health?.hediffSet?.hediffs?.Select(DescribeHediff).ToList(),
+            traits = pawn.story?.traits?.allTraits?.Select(DescribeTrait).ToList(),
+            useWorkPriorities = pawn.workSettings?.EverWork == true ? Find.PlaySettings?.useWorkPriorities : null,
+            workPriorities = DescribeWorkPriorities(pawn)
         };
+    }
+
+    private static object DescribeTrait(Trait trait)
+    {
+        return new
+        {
+            defName = trait.def?.defName,
+            label = trait.LabelCap,
+            degree = trait.Degree,
+            suppressed = trait.Suppressed
+        };
+    }
+
+    // The Work tab shows the visible work types in this order. For a humanlike pawn, GetPriority reports 3 for every
+    // active work type when manual priorities are off, which is what the pawn works with. Other pawns, such as worker
+    // mechs, report the stored value.
+    private static List<object> DescribeWorkPriorities(Pawn pawn)
+    {
+        var settings = pawn.workSettings;
+        if (settings?.EverWork != true)
+            return null;
+
+        return WorkTypeDefsUtility.WorkTypeDefsInPriorityOrder
+            .Select(workType => (object)new
+            {
+                defName = workType.defName,
+                label = workType.labelShort,
+                priority = settings.GetPriority(workType),
+                disabled = pawn.WorkTypeIsDisabled(workType),
+                // The Work tab column reads VisibleCurrently, which also covers visibleOnlyWithChildrenInColony.
+                visible = workType.VisibleCurrently
+            })
+            .ToList();
     }
 
     private static object DescribeSkill(SkillRecord skill)

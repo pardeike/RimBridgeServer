@@ -390,7 +390,7 @@ Playback default: RimWorld's private `TickManager.UltraSpeedBoost` is left off, 
 - `rimworld/select_pawn` - Select a single colonist by name or stable pawn id
 - `rimworld/deselect_pawn` - Deselect a single selected pawn by name or stable pawn id
 - `rimworld/set_draft` - Draft or undraft a colonist by name or stable pawn id
-- `rimworld/get_pawn_details` - Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs and hediffs
+- `rimworld/get_pawn_details` - Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs, hediffs, traits and work priorities
 - `rimworld/get_selected_pawn_inventory_state` - Read the selected pawn's carried thing and inventory contents, including Pick Up And Haul tracked items when available
 
 ### Selection Semantics And Notifications

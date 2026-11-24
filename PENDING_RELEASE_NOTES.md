@@ -1,1 +1,2 @@
 - Let `rimworld/spawn_thing` spawn pawns. A pawn race such as `Muffalo` or a pawn kind such as `Colonist` now gives a generated pawn with the kind's default faction. Before, a pawn race failed with an error.
+- Report traits and work priorities in `rimworld/get_pawn_details`. Traits come with degree and suppressed state. Work priorities list all work types, highest natural priority first, with priority, disabled state and whether the Work tab shows them. The reply also says whether manual priorities are on.
