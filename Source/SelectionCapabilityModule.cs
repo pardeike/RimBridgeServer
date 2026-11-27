@@ -24,6 +24,11 @@ internal sealed class SelectionCapabilityModule
         };
     }
 
+    public object ListPawns(string role = null, int offset = 0)
+    {
+        return RimWorldPawns.ListPawnsResponse(role, offset);
+    }
+
     public object ClearSelection()
     {
         Find.Selector.ClearSelection();
