@@ -351,6 +351,7 @@ Playback default: RimWorld's private `TickManager.UltraSpeedBoost` is left off, 
 - `rimworld/delete_area` - Delete a mutable area such as a custom allowed area
 - `rimworld/delete_zone` - Delete an existing zone by id
 - `rimworld/list_plans` - List current-map plans (the planning marks players draw to outline intended building areas) with bounds and shape
+- `rimworld/get_map_summary` - Read the current map in one call: date, weather, temperature, active game conditions, wealth and pawn counts
 - `rimworld/get_cell_info` - Inspect one map cell, including things, blueprints, frames, designations, zones, and areas
 - `rimworld/list_power_nets` - List the current map's power nets with produced and consumed watts, stored energy, battery capacity and connected buildings
 - `rimworld/get_cells_info` - Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas
