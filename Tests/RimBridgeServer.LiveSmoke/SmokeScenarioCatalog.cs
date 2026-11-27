@@ -53,6 +53,7 @@ internal static class SmokeScenarioCatalog
     public const string RepeatedRowClickScenarioName = "repeated-row-click";
     public const string PawnAndPowerDetailsScenarioName = "pawn-and-power-details";
     public const string SpawnPawnScenarioName = "spawn-pawn";
+    public const string ListBuildingsScenarioName = "list-buildings";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -274,6 +275,12 @@ internal static class SmokeScenarioCatalog
                 Name = SpawnPawnScenarioName,
                 Description = "Spawn a Muffalo by its race ThingDef and a colonist by its PawnKindDef with rimworld/spawn_thing, and verify that both are generated pawns. Verify that the ambiguous Human race fails with a clear message instead of an exception.",
                 RunAsync = RunSpawnPawnAsync
+            },
+            [ListBuildingsScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ListBuildingsScenarioName,
+                Description = "Place a wall blueprint with god mode off and a finished wall with god mode on, then check that rimworld/list_buildings lists the wall and not the blueprint, that the defName, category and playerOnly filters hold, and that an offset past the end returns an empty page.",
+                RunAsync = RunListBuildingsAsync
             }
         };
 
@@ -6011,6 +6018,111 @@ internal static class SmokeScenarioCatalog
             || !string.IsNullOrEmpty(JsonNodeHelpers.ReadString(human.StructuredContent, "exception"))
             || !kinds.Any(kind => kind?.GetValue<string>() == "Colonist"))
             throw new InvalidOperationException($"Spawning the Human race must fail without an exception and list its pawn kinds, including Colonist: {human.StructuredContent?.ToJsonString()}");
+    }
+
+    private static async Task RunListBuildingsAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("list_buildings.wait_for_long_event_idle", cancellationToken);
+
+        var designatorState = await context.CallGameToolAsync("list_buildings.get_designator_state", "rimworld/get_designator_state", new { }, cancellationToken);
+        context.EnsureSucceeded(designatorState, "Reading the architect state");
+        var originalGodMode = JsonNodeHelpers.ReadBoolean(designatorState.StructuredContent, "godMode") == true;
+        try
+        {
+            var categories = await context.CallGameToolAsync("list_buildings.list_categories", "rimworld/list_architect_categories", new { includeHidden = false, includeEmpty = false }, cancellationToken);
+            context.EnsureSucceeded(categories, "Listing architect categories");
+            var structureCategoryId = ResolveArchitectCategoryId(JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories"), "Structure");
+            var designators = await context.CallGameToolAsync("list_buildings.list_designators", "rimworld/list_architect_designators", new { categoryId = structureCategoryId, includeHidden = false }, cancellationToken);
+            context.EnsureSucceeded(designators, "Listing structure designators");
+            var wallDesignatorId = ResolveArchitectBuildDesignatorId(JsonNodeHelpers.ReadArray(designators.StructuredContent, "designators"), "Wall");
+            var colonists = await context.CallGameToolAsync("list_buildings.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
+            context.EnsureSucceeded(colonists, "Listing current-map colonists");
+
+            async Task<int> CountBuildingsAsync(string step, object arguments)
+            {
+                var reply = await context.CallGameToolAsync(step, "rimworld/list_buildings", arguments, cancellationToken);
+                context.EnsureSucceeded(reply, $"Listing buildings for step {step}");
+                return JsonNodeHelpers.ReadInt32(reply.StructuredContent, "page", "total") ?? throw new InvalidOperationException($"list_buildings must report page.total: {reply.StructuredContent?.ToJsonString()}");
+            }
+
+            async Task<JsonNode?> FindWallRowAsync(string step, int x, int z)
+            {
+                int? offset = 0;
+                while (offset.HasValue)
+                {
+                    var reply = await context.CallGameToolAsync($"{step}_{offset.Value}", "rimworld/list_buildings", new { defName = "Wall", offset = offset.Value }, cancellationToken);
+                    context.EnsureSucceeded(reply, $"Listing walls from offset {offset.Value}");
+                    var row = JsonNodeHelpers.ReadArray(reply.StructuredContent, "buildings").FirstOrDefault(candidate => IsBuildingAt(candidate, x, z));
+                    if (row != null)
+                        return row;
+                    offset = JsonNodeHelpers.ReadInt32(reply.StructuredContent, "page", "nextOffset");
+                }
+
+                return null;
+            }
+
+            var blockedCells = new HashSet<string>(StringComparer.Ordinal);
+            await EnsureGodModeAsync(context, "list_buildings.disable_god_mode", false, cancellationToken);
+            var blueprintCell = await FindAcceptedArchitectPlacementCellAsync(context, "list_buildings.find_blueprint_cell", wallDesignatorId, colonists.StructuredContent, blockedCells, cancellationToken);
+            blockedCells.Add(CellKey(blueprintCell.X, blueprintCell.Z));
+            var blueprint = await context.CallGameToolAsync("list_buildings.place_blueprint", "rimworld/apply_architect_designator", new { designatorId = wallDesignatorId, x = blueprintCell.X, z = blueprintCell.Z, keepSelected = false }, cancellationToken);
+            context.EnsureSucceeded(blueprint, "Placing a wall blueprint with god mode off");
+
+            // A wall blueprint is the Blueprint_Wall thing. It is not a building, so the list must not have it.
+            if (await CountBuildingsAsync("list_buildings.blueprints", new { defName = "Blueprint_Wall" }) != 0)
+                throw new InvalidOperationException("A wall blueprint must not be listed as a building.");
+            var before = await CountBuildingsAsync("list_buildings.walls_before", new { defName = "Wall" });
+
+            await EnsureGodModeAsync(context, "list_buildings.enable_god_mode", true, cancellationToken);
+            var wallCell = await FindAcceptedArchitectPlacementCellAsync(context, "list_buildings.find_wall_cell", wallDesignatorId, colonists.StructuredContent, blockedCells, cancellationToken);
+            var wall = await context.CallGameToolAsync("list_buildings.place_wall", "rimworld/apply_architect_designator", new { designatorId = wallDesignatorId, x = wallCell.X, z = wallCell.Z, keepSelected = false }, cancellationToken);
+            context.EnsureSucceeded(wall, "Placing a wall with god mode");
+
+            var after = await CountBuildingsAsync("list_buildings.walls_after", new { defName = "Wall" });
+            if (after != before + 1)
+                throw new InvalidOperationException($"The wall count must grow from {before} to {before + 1}: {after}");
+            var row = await FindWallRowAsync("list_buildings.find_wall_row", wallCell.X, wallCell.Z)
+                ?? throw new InvalidOperationException($"list_buildings must list the wall at ({wallCell.X}, {wallCell.Z}).");
+            var hitPoints = JsonNodeHelpers.ReadInt32(row, "hitPoints") ?? 0;
+            if (JsonNodeHelpers.ReadString(row, "defName") != "Wall"
+                || JsonNodeHelpers.ReadBoolean(row, "factionIsPlayer") != true
+                || hitPoints <= 0
+                || (JsonNodeHelpers.ReadInt32(row, "maxHitPoints") ?? 0) < hitPoints
+                || JsonNodeHelpers.ReadInt32(row, "size", "x") != 1)
+                throw new InvalidOperationException($"The wall row must have defName Wall, factionIsPlayer true, hit points and size 1: {row.ToJsonString()}");
+
+            var structureCount = await CountBuildingsAsync("list_buildings.category_structure", new { category = "Structure" });
+            var structureIdCount = await CountBuildingsAsync("list_buildings.category_structure_id", new { category = structureCategoryId });
+            if (structureCount < after || structureCount != structureIdCount)
+                throw new InvalidOperationException($"The Structure category must hold at least the {after} walls and accept the category id: {structureCount} and {structureIdCount}.");
+
+            var total = await CountBuildingsAsync("list_buildings.all", new { });
+            var playerOnly = await context.CallGameToolAsync("list_buildings.player_only", "rimworld/list_buildings", new { playerOnly = true }, cancellationToken);
+            context.EnsureSucceeded(playerOnly, "Listing the player's buildings");
+            if ((JsonNodeHelpers.ReadInt32(playerOnly.StructuredContent, "page", "total") ?? -1) > total
+                || JsonNodeHelpers.ReadArray(playerOnly.StructuredContent, "buildings").Any(candidate => JsonNodeHelpers.ReadBoolean(candidate, "factionIsPlayer") != true))
+                throw new InvalidOperationException("playerOnly must list only the player's buildings and no more than every building.");
+
+            var pastEnd = await context.CallGameToolAsync("list_buildings.offset_past_end", "rimworld/list_buildings", new { offset = 100000 }, cancellationToken);
+            context.EnsureSucceeded(pastEnd, "Listing buildings with an offset past the end");
+            if (JsonNodeHelpers.ReadInt32(pastEnd.StructuredContent, "page", "returned") != 0
+                || JsonNodeHelpers.ReadInt32(pastEnd.StructuredContent, "page", "total") != total
+                || JsonNodeHelpers.ReadInt32(pastEnd.StructuredContent, "page", "nextOffset") != null)
+                throw new InvalidOperationException($"An offset past the end must return no rows, the total and no nextOffset: {pastEnd.StructuredContent?["page"]?.ToJsonString()}");
+
+            if (await CountBuildingsAsync("list_buildings.unknown_category", new { category = "NoSuchCategory" }) != 0)
+                throw new InvalidOperationException("An unknown category must list no buildings.");
+        }
+        finally
+        {
+            await EnsureGodModeAsync(context, "list_buildings.restore_god_mode", originalGodMode, cancellationToken);
+        }
+    }
+
+    private static bool IsBuildingAt(JsonNode? row, int x, int z)
+    {
+        return JsonNodeHelpers.ReadInt32(row, "position", "x") == x && JsonNodeHelpers.ReadInt32(row, "position", "z") == z;
     }
 
     private static async Task RunRepeatedRowClickAsync(SmokeScenarioContext context, CancellationToken cancellationToken)

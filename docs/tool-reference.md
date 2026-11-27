@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `130` tools total
+- `131` tools total
 - `18` `rimbridge/*` tools
-- `112` `rimworld/*` tools
+- `113` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -550,6 +550,19 @@ Returns:
 Parameters:
 - `thingId` (`string`, `optional`, default `null`): Optional stable current-map thing id of a building. Return only the power net that contains it
 - `includeTransmitters` (`bool`, `optional`, default `false`): True to also list plain transmitters such as conduits and power switches
+
+### `rimworld/list_buildings`
+
+List the current map's buildings with position, rotation, size, faction, hit points and power state, filtered by def, architect category or player ownership
+
+Returns:
+- The buildings, paged. Frames of buildings under construction are included. Blueprints, natural rock and plants are not. The def name of a frame starts with Frame_, and frameBuildDefName is the def that the frame builds. A frame has no architect category, so a category filter does not list it. rotation is north, east, south or west and is omitted when the def does not rotate. hitPoints and maxHitPoints are omitted when the def has no hit points. powerOn is omitted when the building has no power trader. Use rimworld/list_power_nets for watts and stored energy. page.total is the number of buildings after the filters. The reply includes page.nextOffset when more buildings remain.
+
+Parameters:
+- `defName` (`string`, `optional`, default `null`): Optional def name such as Wall or Battery. The filter ignores case
+- `category` (`string`, `optional`, default `null`): Optional architect category. Give the architect-category id from rimworld/list_architect_categories or the DesignationCategoryDef name, for example Structure
+- `playerOnly` (`bool`, `optional`, default `false`): True to list only the player's buildings
+- `offset` (`int`, `optional`, default `0`): Zero-based building offset for paging. The reply includes page.nextOffset when more buildings remain
 
 ### `rimworld/get_cells_info`
 

@@ -429,7 +429,7 @@ internal static class RimWorldArchitect
         return true;
     }
 
-    private static string DescribeRotation(Rot4 rotation)
+    internal static string DescribeRotation(Rot4 rotation)
     {
         return rotation.AsInt switch { 0 => "north", 1 => "east", 2 => "south", _ => "west" };
     }
