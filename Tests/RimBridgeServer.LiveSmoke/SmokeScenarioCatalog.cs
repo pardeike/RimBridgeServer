@@ -1338,6 +1338,7 @@ internal static class SmokeScenarioCatalog
         context.EnsureSucceeded(initialLayout, "Capturing the initial Work main-tab layout");
 
         var surface = ResolveUiLayoutSurface(initialLayout.StructuredContent, "main-tab:Work");
+        AssertNoDuplicateLabels(surface);
         var checkbox = ResolveUiLayoutElement(surface, "checkbox");
         var initialTargetId = ReadRequiredString(checkbox, "targetId");
         var initialChecked = JsonNodeHelpers.ReadBoolean(checkbox, "isChecked");
@@ -6242,5 +6243,22 @@ internal static class SmokeScenarioCatalog
 
         await context.CallServerToolAsync($"{stepName}.ack", "games.ack_attention", new { gameId = context.GameId, attentionId }, cancellationToken);
         throw new InvalidOperationException($"{actionDescription} opened blocking attention: {JsonNodeHelpers.ReadString(item, "summary")}");
+    }
+
+    // Widgets.Label(Rect, TaggedString) calls the string overload, so one draw registers one label.
+    private static void AssertNoDuplicateLabels(JsonNode? surface)
+    {
+        var duplicate = JsonNodeHelpers.ReadArray(surface, "elements")
+            .Where(element => string.Equals(JsonNodeHelpers.ReadString(element, "kind"), "label", StringComparison.Ordinal))
+            .Where(element => string.IsNullOrEmpty(JsonNodeHelpers.ReadString(element, "label")) == false)
+            .GroupBy(element => string.Join("|",
+                JsonNodeHelpers.ReadString(element, "label"),
+                JsonNodeHelpers.ReadDouble(element, "screenRect", "x"),
+                JsonNodeHelpers.ReadDouble(element, "screenRect", "y"),
+                JsonNodeHelpers.ReadDouble(element, "screenRect", "width"),
+                JsonNodeHelpers.ReadDouble(element, "screenRect", "height")))
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicate != null)
+            throw new InvalidOperationException($"The layout lists the label '{JsonNodeHelpers.ReadString(duplicate.First(), "label")}' {duplicate.Count()} times at the same screen rectangle.");
     }
 }

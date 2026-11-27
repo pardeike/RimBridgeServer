@@ -2733,21 +2733,13 @@ internal static class Listing_GapLine_UiWorkbench_Patch
     }
 }
 
+// The TaggedString overload resolves the text and calls this one. A patch on it registers each tagged label twice.
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.Label), new[] { typeof(Rect), typeof(string) })]
 internal static class Widgets_Label_String_UiWorkbench_Patch
 {
     public static void Prefix(Rect rect, string label)
     {
         RimBridgeUiWorkbench.RegisterPassiveElement("label", "widgets.label", rect, label);
-    }
-}
-
-[HarmonyPatch(typeof(Widgets), nameof(Widgets.Label), new[] { typeof(Rect), typeof(TaggedString) })]
-internal static class Widgets_Label_TaggedString_UiWorkbench_Patch
-{
-    public static void Prefix(Rect rect, TaggedString label)
-    {
-        RimBridgeUiWorkbench.RegisterPassiveElement("label", "widgets.label", rect, label.ToString());
     }
 }
 
@@ -3263,6 +3255,7 @@ internal static class Widgets_ButtonImageHoverColored_UiWorkbench_Patch
     }
 }
 
+// The TaggedString overload resolves the text and calls this one. A patch on it registers each tagged label again.
 [HarmonyPatch(typeof(Listing_Standard), nameof(Listing_Standard.Label), new[] { typeof(string), typeof(float), typeof(Nullable<TipSignal>) })]
 internal static class ListingStandard_Label_String_UiWorkbench_Patch
 {
@@ -3270,16 +3263,6 @@ internal static class ListingStandard_Label_String_UiWorkbench_Patch
     {
         var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         RimBridgeUiWorkbench.RegisterPassiveElement("label", "listing_standard.label", rect, label);
-    }
-}
-
-[HarmonyPatch(typeof(Listing_Standard), nameof(Listing_Standard.Label), new[] { typeof(TaggedString), typeof(float), typeof(string) })]
-internal static class ListingStandard_Label_TaggedString_UiWorkbench_Patch
-{
-    public static void Prefix(Listing_Standard __instance, TaggedString label)
-    {
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
-        RimBridgeUiWorkbench.RegisterPassiveElement("label", "listing_standard.label", rect, label.ToString());
     }
 }
 
