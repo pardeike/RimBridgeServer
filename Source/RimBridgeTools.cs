@@ -598,6 +598,18 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(thingId), thingId), (nameof(includeTransmitters), includeTransmitters)));
     }
 
+    [ReadmeTool("Architect And Map State", "List the current map's buildings with position, rotation, size, faction, hit points and power state, filtered by def, architect category or player ownership")]
+    [Tool("rimworld/list_buildings", Description = "List the current map's buildings with position, rotation, size, faction, hit points and power state, filtered by def, architect category or player ownership",
+        ResultDescription = "The buildings, paged. Frames of buildings under construction are included. Blueprints, natural rock and plants are not. The def name of a frame starts with Frame_, and frameBuildDefName is the def that the frame builds. A frame has no architect category, so a category filter does not list it. rotation is north, east, south or west and is omitted when the def does not rotate. hitPoints and maxHitPoints are omitted when the def has no hit points. powerOn is omitted when the building has no power trader. Use rimworld/list_power_nets for watts and stored energy. page.total is the number of buildings after the filters. The reply includes page.nextOffset when more buildings remain.")]
+    public object ListBuildings(
+        [ToolParameter(Description = "Optional def name such as Wall or Battery. The filter ignores case")] string defName = null,
+        [ToolParameter(Description = "Optional architect category. Give the architect-category id from rimworld/list_architect_categories or the DesignationCategoryDef name, for example Structure")] string category = null,
+        [ToolParameter(Description = "True to list only the player's buildings")] bool playerOnly = false,
+        [ToolParameter(Description = "Zero-based building offset for paging. The reply includes page.nextOffset when more buildings remain")] int offset = 0)
+    {
+        return InvokeAlias(Arguments((nameof(defName), defName), (nameof(category), category), (nameof(playerOnly), playerOnly), (nameof(offset), offset)));
+    }
+
     [ReadmeTool("Architect And Map State", "Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas")]
     [Tool("rimworld/get_cells_info", Description = "Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas")]
     public object GetCellsInfo(

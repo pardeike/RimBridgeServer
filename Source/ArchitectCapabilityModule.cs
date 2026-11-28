@@ -87,6 +87,11 @@ internal sealed class ArchitectCapabilityModule
         return RimWorldPowerNets.ListPowerNetsResponse(thingId, includeTransmitters);
     }
 
+    public object ListBuildings(string defName = null, string category = null, bool playerOnly = false, int offset = 0)
+    {
+        return RimWorldBuildings.ListBuildingsResponse(defName, category, playerOnly, offset);
+    }
+
     public object GetCellsInfo(int x, int z, int width = 1, int height = 1, int offset = 0)
     {
         return RimWorldArchitect.GetCellsInfoResponse(x, z, width, height, offset);
