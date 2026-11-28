@@ -908,6 +908,16 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(currentMapOnly), currentMapOnly)));
     }
 
+    [ReadmeTool("Selection And Colony State", "List every spawned pawn on the current map with its role, faction, position and job")]
+    [Tool("rimworld/list_pawns", Description = "List every spawned pawn on the current map with its role, faction, position and job",
+        ResultDescription = "The pawns, paged. role is colonist, prisoner, slave, animal, mech, hostile or other. A prisoner or a slave of the colony has that role. rimworld/list_colonists also lists slaves. A pawn that is hostile to the player has role hostile, so a manhunter animal is hostile. A colony mech has role mech. other includes visitors and traders. factionIsPlayer is true for the player's pawns, including colony animals and mechs. Use pawnId with rimworld/get_pawn_details for skills, needs, hediffs, traits and work priorities. page.total is the number of pawns after the role filter. The reply includes page.nextOffset when more pawns remain.")]
+    public object ListPawns(
+        [ToolParameter(Description = "Optional role filter: colonist, prisoner, slave, animal, mech, hostile or other. Leave it empty to list every pawn")] string role = null,
+        [ToolParameter(Description = "Zero-based pawn offset for paging. The reply includes page.nextOffset when more pawns remain")] int offset = 0)
+    {
+        return InvokeAlias(Arguments((nameof(role), role), (nameof(offset), offset)));
+    }
+
     [ReadmeTool("Selection And Colony State", "Clear the current map selection")]
     [Tool("rimworld/clear_selection", Description = "Clear the current map selection")]
     public object ClearSelection()

@@ -386,6 +386,7 @@ Playback default: RimWorld's private `TickManager.UltraSpeedBoost` is left off, 
 ### Selection And Colony State
 
 - `rimworld/list_colonists` - List player-controlled colonists available for selection and drafting, including stable pawn ids
+- `rimworld/list_pawns` - List every spawned pawn on the current map with its role, faction, position and job
 - `rimworld/clear_selection` - Clear the current map selection
 - `rimworld/select_pawn` - Select a single colonist by name or stable pawn id
 - `rimworld/deselect_pawn` - Deselect a single selected pawn by name or stable pawn id

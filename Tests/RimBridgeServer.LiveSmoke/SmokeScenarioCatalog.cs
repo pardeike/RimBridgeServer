@@ -53,6 +53,7 @@ internal static class SmokeScenarioCatalog
     public const string RepeatedRowClickScenarioName = "repeated-row-click";
     public const string PawnAndPowerDetailsScenarioName = "pawn-and-power-details";
     public const string SpawnPawnScenarioName = "spawn-pawn";
+    public const string ListPawnsScenarioName = "list-pawns";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -274,6 +275,12 @@ internal static class SmokeScenarioCatalog
                 Name = SpawnPawnScenarioName,
                 Description = "Spawn a Muffalo by its race ThingDef and a colonist by its PawnKindDef with rimworld/spawn_thing, and verify that both are generated pawns. Verify that the ambiguous Human race fails with a clear message instead of an exception.",
                 RunAsync = RunSpawnPawnAsync
+            },
+            [ListPawnsScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = ListPawnsScenarioName,
+                Description = "List every current-map pawn with rimworld/list_pawns, check that the colonists from rimworld/list_colonists come back as colonist or slave, spawn a Muffalo and find it with role animal, and verify that the role filter ignores case and rejects an unknown value without opening attention.",
+                RunAsync = RunListPawnsAsync
             }
         };
 
@@ -6012,6 +6019,95 @@ internal static class SmokeScenarioCatalog
             || !string.IsNullOrEmpty(JsonNodeHelpers.ReadString(human.StructuredContent, "exception"))
             || !kinds.Any(kind => kind?.GetValue<string>() == "Colonist"))
             throw new InvalidOperationException($"Spawning the Human race must fail without an exception and list its pawn kinds, including Colonist: {human.StructuredContent?.ToJsonString()}");
+    }
+
+    private static async Task RunListPawnsAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("list_pawns.wait_for_long_event_idle", cancellationToken);
+
+        var colonists = await context.CallGameToolAsync("list_pawns.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists");
+        var colonistNodes = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists");
+        if (colonistNodes.Count == 0)
+            throw new InvalidOperationException("The debug game must have at least one colonist.");
+
+        async Task<(List<JsonNode?> Rows, int Total)> ListRoleAsync(string step, string role)
+        {
+            var rows = new List<JsonNode?>();
+            int? offset = 0;
+            var total = 0;
+            while (offset.HasValue)
+            {
+                var reply = await context.CallGameToolAsync($"{step}_{offset.Value}", "rimworld/list_pawns", new { role, offset = offset.Value }, cancellationToken);
+                context.EnsureSucceeded(reply, $"Listing pawns with role '{role}' from offset {offset.Value}");
+                rows.AddRange(JsonNodeHelpers.ReadArray(reply.StructuredContent, "pawns"));
+                total = JsonNodeHelpers.ReadInt32(reply.StructuredContent, "page", "total") ?? throw new InvalidOperationException("list_pawns must report page.total.");
+                offset = JsonNodeHelpers.ReadInt32(reply.StructuredContent, "page", "nextOffset");
+            }
+
+            if (rows.Count != total || rows.Any(row => JsonNodeHelpers.ReadString(row, "role") != role))
+                throw new InvalidOperationException($"The role filter '{role}' must return only that role and page.total rows: {rows.Count} of {total}.");
+            return (rows, total);
+        }
+
+        var all = await context.CallGameToolAsync("list_pawns.all", "rimworld/list_pawns", new { }, cancellationToken);
+        context.EnsureSucceeded(all, "Listing every current-map pawn");
+        if ((JsonNodeHelpers.ReadInt32(all.StructuredContent, "page", "total") ?? 0) < colonistNodes.Count)
+            throw new InvalidOperationException($"list_pawns must list at least the {colonistNodes.Count} colonists: {all.StructuredContent?["page"]?.ToJsonString()}");
+
+        // list_colonists lists colony slaves too, and list_pawns reports those as slave.
+        var (colonistRows, colonistTotal) = await ListRoleAsync("list_pawns.role_colonist", "colonist");
+        var (slaveRows, slaveTotal) = await ListRoleAsync("list_pawns.role_slave", "slave");
+        if (colonistTotal + slaveTotal != colonistNodes.Count)
+            throw new InvalidOperationException($"Colonists plus slaves must equal the list_colonists count {colonistNodes.Count}: {colonistTotal} and {slaveTotal}.");
+        foreach (var colonist in colonistNodes)
+        {
+            var pawnId = ReadRequiredString(colonist, "pawnId");
+            var row = colonistRows.Concat(slaveRows).FirstOrDefault(candidate => string.Equals(JsonNodeHelpers.ReadString(candidate, "pawnId"), pawnId, StringComparison.Ordinal))
+                ?? throw new InvalidOperationException($"list_pawns must list colonist '{pawnId}' as colonist or slave.");
+            if (JsonNodeHelpers.ReadBoolean(row, "factionIsPlayer") != true || JsonNodeHelpers.ReadInt32(row, "position", "x") == null)
+                throw new InvalidOperationException($"Colonist '{pawnId}' must have factionIsPlayer true and a position: {row?.ToJsonString()}");
+        }
+
+        var mixedCase = await context.CallGameToolAsync("list_pawns.role_colonist_mixed_case", "rimworld/list_pawns", new { role = "Colonist" }, cancellationToken);
+        context.EnsureSucceeded(mixedCase, "Listing pawns with role Colonist");
+        if (JsonNodeHelpers.ReadInt32(mixedCase.StructuredContent, "page", "total") != colonistTotal)
+            throw new InvalidOperationException($"The role filter must ignore case: {mixedCase.StructuredContent?["page"]?.ToJsonString()}");
+
+        await ListRoleAsync("list_pawns.role_prisoner", "prisoner");
+
+        var origin = ResolveColonistSearchOrigin(colonists.StructuredContent);
+        var cell = await context.CallGameToolAsync("list_pawns.find_cell", "rimworld/find_random_cell_near", new
+        {
+            x = origin.X,
+            z = origin.Z,
+            startingSearchRadius = 3,
+            maxSearchRadius = 15,
+            requireStandable = true,
+            requireNoImpassableThings = true
+        }, cancellationToken);
+        context.EnsureSucceeded(cell, "Finding a standable cell near the colonists");
+        var spawn = await context.CallGameToolAsync("list_pawns.spawn_muffalo", "rimworld/spawn_thing", new
+        {
+            defName = "Muffalo",
+            x = JsonNodeHelpers.ReadInt32(cell.StructuredContent, "cell", "x") ?? throw new InvalidOperationException("No cell x."),
+            z = JsonNodeHelpers.ReadInt32(cell.StructuredContent, "cell", "z") ?? throw new InvalidOperationException("No cell z.")
+        }, cancellationToken);
+        context.EnsureSucceeded(spawn, "Spawning a Muffalo with rimworld/spawn_thing");
+        var muffaloId = ReadRequiredString(spawn.StructuredContent, "thingId");
+
+        var (animalRows, _) = await ListRoleAsync("list_pawns.role_animal", "animal");
+        var muffalo = animalRows.FirstOrDefault(row => string.Equals(JsonNodeHelpers.ReadString(row, "pawnId"), muffaloId, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException($"The animal filter must list the spawned Muffalo '{muffaloId}'.");
+        if (string.IsNullOrEmpty(JsonNodeHelpers.ReadString(muffalo, "name")) || JsonNodeHelpers.ReadString(muffalo, "kindDef") != "Muffalo")
+            throw new InvalidOperationException($"The Muffalo row must have a name and kindDef Muffalo: {muffalo.ToJsonString()}");
+
+        var unknown = await context.CallGameToolAsync("list_pawns.role_unknown", "rimworld/list_pawns", new { role = "wizard" }, cancellationToken);
+        await AssertNoOpenAttentionAsync(context, "list_pawns.attention_role_unknown", "Listing pawns with an unknown role", cancellationToken);
+        if (JsonNodeHelpers.ReadBoolean(unknown.StructuredContent, "success") != false
+            || (JsonNodeHelpers.ReadString(unknown.StructuredContent, "message") ?? string.Empty).Contains("colonist, prisoner, slave, animal, mech, hostile or other", StringComparison.Ordinal) == false)
+            throw new InvalidOperationException($"An unknown role must fail and name the valid roles: {unknown.StructuredContent?.ToJsonString()}");
     }
 
     private static async Task RunRepeatedRowClickAsync(SmokeScenarioContext context, CancellationToken cancellationToken)

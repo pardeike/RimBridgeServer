@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `130` tools total
+- `131` tools total
 - `18` `rimbridge/*` tools
-- `112` `rimworld/*` tools
+- `113` `rimworld/*` tools
 
 ## `rimbridge/*`
 
@@ -809,6 +809,17 @@ List player-controlled colonists available for selection and drafting, including
 
 Parameters:
 - `currentMapOnly` (`bool`, `optional`, default `false`): True to only include the current map
+
+### `rimworld/list_pawns`
+
+List every spawned pawn on the current map with its role, faction, position and job
+
+Returns:
+- The pawns, paged. role is colonist, prisoner, slave, animal, mech, hostile or other. A prisoner or a slave of the colony has that role. rimworld/list_colonists also lists slaves. A pawn that is hostile to the player has role hostile, so a manhunter animal is hostile. A colony mech has role mech. other includes visitors and traders. factionIsPlayer is true for the player's pawns, including colony animals and mechs. Use pawnId with rimworld/get_pawn_details for skills, needs, hediffs, traits and work priorities. page.total is the number of pawns after the role filter. The reply includes page.nextOffset when more pawns remain.
+
+Parameters:
+- `role` (`string`, `optional`, default `null`): Optional role filter: colonist, prisoner, slave, animal, mech, hostile or other. Leave it empty to list every pawn
+- `offset` (`int`, `optional`, default `0`): Zero-based pawn offset for paging. The reply includes page.nextOffset when more pawns remain
 
 ### `rimworld/clear_selection`
 
