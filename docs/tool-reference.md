@@ -6,9 +6,9 @@ This is the full annotation-driven tool reference. The main README stays beginne
 
 ## Summary
 
-- `131` tools total
+- `133` tools total
 - `18` `rimbridge/*` tools
-- `113` `rimworld/*` tools
+- `115` `rimworld/*` tools
 
 ## `rimbridge/*`
 
