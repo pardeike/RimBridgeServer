@@ -55,6 +55,7 @@ internal static class SmokeScenarioCatalog
     public const string SpawnPawnScenarioName = "spawn-pawn";
     public const string ListPawnsScenarioName = "list-pawns";
     public const string ListBuildingsScenarioName = "list-buildings";
+    public const string MapSummaryScenarioName = "map-summary";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -288,6 +289,12 @@ internal static class SmokeScenarioCatalog
                 Name = ListBuildingsScenarioName,
                 Description = "Place a wall blueprint with god mode off and a finished wall with god mode on, then check that rimworld/list_buildings lists the wall and not the blueprint, that the defName, category and playerOnly filters hold, and that an offset past the end returns an empty page.",
                 RunAsync = RunListBuildingsAsync
+            },
+            [MapSummaryScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = MapSummaryScenarioName,
+                Description = "Read rimworld/get_map_summary with the game paused, check the tick against rimworld/get_game_info and the colonist count against rimworld/list_colonists, and check the ranges of the date, weather and wealth fields.",
+                RunAsync = RunMapSummaryAsync
             }
         };
 
@@ -6220,6 +6227,59 @@ internal static class SmokeScenarioCatalog
     private static bool IsBuildingAt(JsonNode? row, int x, int z)
     {
         return JsonNodeHelpers.ReadInt32(row, "position", "x") == x && JsonNodeHelpers.ReadInt32(row, "position", "z") == z;
+    }
+
+    private static async Task RunMapSummaryAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("map_summary.wait_for_long_event_idle", cancellationToken);
+        var pause = await context.CallGameToolAsync("map_summary.pause", "rimworld/pause_game", new { pause = true }, cancellationToken);
+        context.EnsureSucceeded(pause, "Pausing the game so the tick does not move between reads");
+
+        var summary = await context.CallGameToolAsync("map_summary.read", "rimworld/get_map_summary", new { }, cancellationToken);
+        context.EnsureSucceeded(summary, "Reading the map summary");
+        var payload = summary.StructuredContent;
+        var gameInfo = await context.CallGameToolAsync("map_summary.game_info", "rimworld/get_game_info", new { }, cancellationToken);
+        context.EnsureSucceeded(gameInfo, "Reading the game info");
+        var colonists = await context.CallGameToolAsync("map_summary.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists");
+
+        if (JsonNodeHelpers.ReadInt64(payload, "tick") != JsonNodeHelpers.ReadInt64(gameInfo.StructuredContent, "ticksGame"))
+            throw new InvalidOperationException($"tick must equal get_game_info.ticksGame while the game is paused: {payload?["tick"]} and {gameInfo.StructuredContent?["ticksGame"]}.");
+        if ((JsonNodeHelpers.ReadInt32(payload, "size", "x") ?? 0) <= 0 || (JsonNodeHelpers.ReadInt32(payload, "size", "z") ?? 0) <= 0)
+            throw new InvalidOperationException($"size must be positive: {payload?["size"]?.ToJsonString()}");
+        if (string.IsNullOrEmpty(JsonNodeHelpers.ReadString(payload, "biome")) || string.IsNullOrEmpty(JsonNodeHelpers.ReadString(payload, "weather")))
+            throw new InvalidOperationException($"biome and weather must be present: {payload?.ToJsonString()}");
+        if (JsonNodeHelpers.ReadBoolean(payload, "isPlayerHome") != true)
+            throw new InvalidOperationException("The debug colony map must be the player home.");
+
+        var day = JsonNodeHelpers.ReadInt32(payload, "date", "dayOfQuadrum") ?? -1;
+        var hour = JsonNodeHelpers.ReadInt32(payload, "date", "hour") ?? -1;
+        var quadrum = JsonNodeHelpers.ReadString(payload, "date", "quadrum");
+        if (day < 1 || day > 15 || hour < 0 || hour > 23
+            || new[] { "Aprimay", "Jugust", "Septober", "Decembary" }.Contains(quadrum) == false
+            || string.IsNullOrEmpty(JsonNodeHelpers.ReadString(payload, "date", "season"))
+            || (JsonNodeHelpers.ReadInt32(payload, "date", "year") ?? 0) < 5500)
+            throw new InvalidOperationException($"date must have dayOfQuadrum 1 to 15, hour 0 to 23, a quadrum, a season and a year: {payload?["date"]?.ToJsonString()}");
+        if (JsonNodeHelpers.ReadDouble(payload, "outdoorTemperatureC") == null)
+            throw new InvalidOperationException("outdoorTemperatureC must be a number.");
+
+        var total = JsonNodeHelpers.ReadDouble(payload, "wealth", "total") ?? -1;
+        var items = JsonNodeHelpers.ReadDouble(payload, "wealth", "items") ?? -1;
+        var buildings = JsonNodeHelpers.ReadDouble(payload, "wealth", "buildings") ?? -1;
+        var pawns = JsonNodeHelpers.ReadDouble(payload, "wealth", "pawns") ?? -1;
+        if (items < 0 || buildings < 0 || pawns < 0 || Math.Abs(total - (items + buildings + pawns)) > 1)
+            throw new InvalidOperationException($"wealth.total must equal items plus buildings plus pawns: {payload?["wealth"]?.ToJsonString()}");
+
+        var counts = JsonNodeHelpers.GetPath(payload, "pawnCounts");
+        var colonistCount = JsonNodeHelpers.ReadInt32(counts, "colonists") ?? -1;
+        var slaveCount = JsonNodeHelpers.ReadInt32(counts, "slaves") ?? -1;
+        // list_colonists counts the colony's slaves too.
+        if (colonistCount + slaveCount != JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count"))
+            throw new InvalidOperationException($"pawnCounts.colonists plus pawnCounts.slaves must equal the list_colonists count: {colonistCount}, {slaveCount} and {colonists.StructuredContent?["count"]}.");
+        var grouped = colonistCount + (JsonNodeHelpers.ReadInt32(counts, "prisoners") ?? 0) + (JsonNodeHelpers.ReadInt32(counts, "slaves") ?? 0) + (JsonNodeHelpers.ReadInt32(counts, "colonyAnimals") ?? 0);
+        if ((JsonNodeHelpers.ReadInt32(counts, "total") ?? -1) < grouped || (JsonNodeHelpers.ReadInt32(counts, "hostiles") ?? -1) < 0)
+            throw new InvalidOperationException($"pawnCounts.total must be at least the sum of the colony groups: {counts?.ToJsonString()}");
     }
 
     private static async Task RunRepeatedRowClickAsync(SmokeScenarioContext context, CancellationToken cancellationToken)

@@ -77,6 +77,11 @@ internal sealed class ArchitectCapabilityModule
         return RimWorldArchitect.ListPlansResponse(includeCells);
     }
 
+    public object GetMapSummary()
+    {
+        return RimWorldMapSummary.GetMapSummaryResponse();
+    }
+
     public object GetCellInfo(int x, int z)
     {
         return RimWorldArchitect.GetCellInfoResponse(x, z);

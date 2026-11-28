@@ -4,3 +4,4 @@
 - List a label that `Widgets.Label` draws from a TaggedString once in `rimworld/get_ui_layout`. Before, the layout had two entries with the same rectangle for every such label. The matching patch on `Listing_Standard.Label` is dropped too.
 - Add `rimworld/list_pawns`. It lists every spawned pawn on the current map with its role, faction, position and job, so an agent can find prisoners, animals and raiders for `rimworld/get_pawn_details`. The reply is paged.
 - Add `rimworld/list_buildings`. It lists the current map's buildings with position, rotation, size, faction, hit points and power state, filtered by def, architect category or player ownership. The reply is paged.
+- Add `rimworld/get_map_summary`. It reads the current map in one call: date, weather, temperature, active game conditions, wealth and pawn counts.

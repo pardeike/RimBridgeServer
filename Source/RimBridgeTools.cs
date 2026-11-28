@@ -579,6 +579,14 @@ public class RimBridgeTools
         return InvokeAlias(Arguments((nameof(includeCells), includeCells)));
     }
 
+    [ReadmeTool("Architect And Map State", "Read the current map in one call: date, weather, temperature, active game conditions, wealth and pawn counts")]
+    [Tool("rimworld/get_map_summary", Description = "Read the current map in one call: date, weather, temperature, active game conditions, wealth and pawn counts",
+        ResultDescription = "The map summary. date.dayOfQuadrum is 1 to 15, as the game shows it. date.hour is 0 to 23 in local map time. outdoorTemperatureC is the current outdoor temperature in degrees Celsius. activeConditions lists the game conditions that affect the map, world conditions included, and is omitted when none is active. The tool recounts wealth for this call. pawnCounts counts spawned pawns only. pawnCounts.colonists are the free colonists without the colony's slaves. pawnCounts.slaves counts those slaves. rimworld/list_colonists counts both. pawnCounts.colonyAnimals are the player's animals. pawnCounts.hostiles are the pawns that are hostile to the player, dormant and fogged ones included. pawnCounts.total counts every spawned pawn.")]
+    public object GetMapSummary()
+    {
+        return InvokeAlias();
+    }
+
     [ReadmeTool("Architect And Map State", "Inspect one map cell, including things, blueprints, frames, designations, zones, and areas")]
     [Tool("rimworld/get_cell_info", Description = "Inspect one map cell, including things, blueprints, frames, designations, zones, and areas")]
     public object GetCellInfo(

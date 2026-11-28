@@ -532,6 +532,15 @@ List current-map plans (the planning marks players draw to outline intended buil
 Parameters:
 - `includeCells` (`bool`, `optional`, default `false`): Include every plan cell; bounds and shape are usually enough
 
+### `rimworld/get_map_summary`
+
+Read the current map in one call: date, weather, temperature, active game conditions, wealth and pawn counts
+
+Returns:
+- The map summary. date.dayOfQuadrum is 1 to 15, as the game shows it. date.hour is 0 to 23 in local map time. outdoorTemperatureC is the current outdoor temperature in degrees Celsius. activeConditions lists the game conditions that affect the map, world conditions included, and is omitted when none is active. The tool recounts wealth for this call. pawnCounts counts spawned pawns only. pawnCounts.colonists are the free colonists without the colony's slaves. pawnCounts.slaves counts those slaves. rimworld/list_colonists counts both. pawnCounts.colonyAnimals are the player's animals. pawnCounts.hostiles are the pawns that are hostile to the player, dormant and fogged ones included. pawnCounts.total counts every spawned pawn.
+
+Parameters: none.
+
 ### `rimworld/get_cell_info`
 
 Inspect one map cell, including things, blueprints, frames, designations, zones, and areas
