@@ -789,9 +789,13 @@ internal sealed class LifecycleCapabilityModule
             };
         }
 
-        var thing = ThingMaker.MakeThing(thingDef);
+        // As the game's own debug spawner does, a thing made from stuff gets a material and a building gets the
+        // player's faction. Without a material, MakeThing logs an error. Without a faction, colonists do not use the building.
+        var thing = ThingMaker.MakeThing(thingDef, thingDef.MadeFromStuff ? GenStuff.DefaultStuffFor(thingDef) : null);
         if (thing.def.stackLimit > 1)
             thing.stackCount = Mathf.Clamp(stackCount, 1, thing.def.stackLimit);
+        if (thing.def.CanHaveFaction)
+            thing.SetFaction(thing.def.building?.isInsectCocoon == true ? Faction.OfInsects : Faction.OfPlayerSilentFail);
 
         var spawned = GenSpawn.Spawn(thing, cell, map, WipeMode.Vanish);
         return new
@@ -800,6 +804,8 @@ internal sealed class LifecycleCapabilityModule
             thingId = RimWorldState.GetThingId(spawned),
             defName = spawned.def.defName,
             label = spawned.LabelCap,
+            stuff = spawned.Stuff?.defName,
+            factionIsPlayer = spawned.Faction?.IsPlayer ?? false,
             stackCount = spawned.stackCount,
             cell = new { x = cell.x, z = cell.z }
         };

@@ -280,6 +280,7 @@ List direct children of a RimWorld debug action path. Naming a generated submenu
 Parameters:
 - `path` (`string`, `required`): Stable debug action path returned by the discovery tools
 - `includeHidden` (`bool`, `optional`, default `false`): Include child nodes that are currently hidden in the active game state
+- `offset` (`int`, `optional`, default `0`): Zero-based child offset for paging. The reply includes page.nextOffset when more children remain
 
 ### `rimworld/search_debug_actions`
 
@@ -301,6 +302,7 @@ Parameters:
 - `path` (`string`, `required`): Stable debug action path returned by the discovery tools
 - `includeChildren` (`bool`, `optional`, default `true`): Include immediate child nodes in the response
 - `includeHiddenChildren` (`bool`, `optional`, default `false`): Include hidden child nodes when includeChildren is true
+- `offset` (`int`, `optional`, default `0`): Zero-based child offset for paging when includeChildren is true. The reply includes page.nextOffset when more children remain
 
 ### `rimworld/execute_debug_action`
 
@@ -880,7 +882,7 @@ Parameters:
 Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs, hediffs, traits and work priorities
 
 Returns:
-- The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. traits[].degree is the trait degree. traits[].suppressed is true when a gene or another trait suppresses the trait, or when another gene overrides the gene that gives it. workPriorities lists all work types with the highest natural priority first. The Work tab shows the visible work types in this order. visible is true for the work types that the Work tab shows. disabled is true when the game disables the work type for the pawn now. permanentlyDisabled uses the game's permanent list. It is true when a backstory or a trait disables the work type, or when a colony mech or a turned mutant cannot do it. Other causes, such as genes, health, a role, a royal title, a quest, slavery or age, set only disabled. A slave's backstory and traits do not disable its work types, but its skills can still be permanently disabled. skills[].permanentlyDisabled also counts disabled work tags, for example from genes, health or a role. So a skill can be permanently disabled while its work types are not. priority 1 is the highest. Vanilla uses priorities 1 to 4, and mods can add more. priority 0 means that the work type is not assigned. If a mod sets priorities by the hour or for each work giver, priority is the value that the game reports at the time of the call. For a humanlike pawn, priority is 3 for each assigned work type when useWorkPriorities is false. useWorkPriorities is the game-wide manual priorities setting. The reply omits useWorkPriorities and workPriorities when the pawn has no work settings. A prisoner has work settings but does not work. The reply omits job when the pawn has no current job. The reply omits skills, needs, hediffs and traits when they do not apply to the pawn. An empty list means that the pawn has none.
+- The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. traits[].degree is the trait degree. traits[].suppressed is true when a gene or another trait suppresses the trait, or when another gene overrides the gene that gives it. workPriorities lists all work types with the highest natural priority first. The Work tab shows the visible work types in this order. visible is true for the work types that the Work tab shows. disabled is true when the game disables the work type for the pawn now. permanentlyDisabled uses the game's permanent list. It is true when a backstory or a trait disables the work type, or when a colony mech or a turned mutant cannot do it. Other causes, such as genes, health, a role, a royal title, a quest, slavery or age, set only disabled. A slave's backstory and traits do not disable its work types, but its skills can still be permanently disabled. skills[].permanentlyDisabled is also true when a disabled work tag is a disabling work tag of the skill. In the base game and the DLCs, only Shooting and Melee have such a tag, which is Violent. So a disabled Violent tag, for example from a pacifist gene or the medical specialist role, permanently disables these two skills, but not their work types. Other skills are disabled only when all of their work types are disabled. If a role or a health condition disables those work types, totallyDisabled is true and permanentlyDisabled is false. priority 1 is the highest. Vanilla uses priorities 1 to 4, and mods can add more. priority 0 means that the work type is not assigned. If a mod sets priorities by the hour or for each work giver, priority is the value that the game reports at the time of the call. For a humanlike pawn, priority is 3 for each assigned work type when useWorkPriorities is false. useWorkPriorities is the game-wide manual priorities setting. The reply omits useWorkPriorities and workPriorities when the pawn has no work settings. A prisoner has work settings but does not work. The reply omits job when the pawn has no current job. The reply omits skills, needs, hediffs and traits when they do not apply to the pawn. An empty list means that the pawn has none.
 
 Parameters:
 - `pawnName` (`string`, `optional`, default `null`): Optional pawn name, short name, or full name. It matches living pawns of any faction on all maps, in caravans and in travelling transporters
@@ -1088,7 +1090,7 @@ Parameters:
 Spawn a thing or a generated pawn on the current map at a target cell
 
 Returns:
-- The spawned thing. A pawn also reports pawnKindDef, faction and factionIsPlayer. If a pawn race does not have exactly one pawn kind, the call fails. pawnKinds then lists the kinds of that race.
+- The spawned thing. A thing made from stuff uses the default stuff of its def, and stuff reports it. A thing that can have a faction, such as a building, belongs to the player, as with the game's own debug spawner. An insect cocoon belongs to the insects. A pawn also reports pawnKindDef, faction and factionIsPlayer. If a pawn race does not have exactly one pawn kind, the call fails. pawnKinds then lists the kinds of that race.
 
 Parameters:
 - `defName` (`string`, `required`): ThingDef defName to spawn. A pawn race ThingDef or a PawnKindDef defName spawns a generated pawn with the kind's default faction.

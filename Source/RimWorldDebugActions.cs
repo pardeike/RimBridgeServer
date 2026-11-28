@@ -59,19 +59,22 @@ internal static class RimWorldDebugActions
         };
     }
 
-    public static object ListDebugActionChildrenResponse(string path, bool includeHidden = false)
+    public static object ListDebugActionChildrenResponse(string path, bool includeHidden = false, int offset = 0)
     {
         if (!TryResolveNode(path, out var node, out var normalizedPath, out var error))
             return Failure(error);
 
+        // A generated submenu such as Spawn thing... can hold thousands of children, so the list is paged.
         var children = GetChildren(node, includeHidden);
+        var page = ResponseBudget.TakePage(children, offset, child => DescribeNode(child), out var pageInfo);
         return new
         {
             success = true,
             devModeEnabled = Prefs.DevMode,
             path = normalizedPath,
             childCount = children.Count,
-            children = children.Select(child => DescribeNode(child)).ToList()
+            children = page,
+            page = pageInfo
         };
     }
 
@@ -139,12 +142,14 @@ internal static class RimWorldDebugActions
         };
     }
 
-    public static object GetDebugActionResponse(string path, bool includeChildren = true, bool includeHiddenChildren = false)
+    public static object GetDebugActionResponse(string path, bool includeChildren = true, bool includeHiddenChildren = false, int offset = 0)
     {
         if (!TryResolveNode(path, out var node, out var normalizedPath, out var error))
             return Failure(error);
 
         var children = includeChildren ? GetChildren(node, includeHiddenChildren) : null;
+        object pageInfo = null;
+        var page = children == null ? null : ResponseBudget.TakePage(children, offset, child => DescribeNode(child), out pageInfo);
         return new
         {
             success = true,
@@ -152,7 +157,8 @@ internal static class RimWorldDebugActions
             path = normalizedPath,
             node = DescribeNode(node),
             childCount = children?.Count ?? 0,
-            children = children?.Select(child => DescribeNode(child)).ToList()
+            children = page,
+            page = pageInfo
         };
     }
 

@@ -7,9 +7,9 @@ internal sealed class DebugActionsCapabilityModule
         return RimWorldDebugActions.ListDebugActionRootsResponse(includeHidden);
     }
 
-    public object ListDebugActionChildren(string path, bool includeHidden = false)
+    public object ListDebugActionChildren(string path, bool includeHidden = false, int offset = 0)
     {
-        return RimWorldDebugActions.ListDebugActionChildrenResponse(path, includeHidden);
+        return RimWorldDebugActions.ListDebugActionChildrenResponse(path, includeHidden, offset);
     }
 
     public object SearchDebugActions(string query, int limit = 50, bool includeHidden = false, bool supportedOnly = false, string requiredTargetKind = null, int offset = 0)
@@ -17,9 +17,9 @@ internal sealed class DebugActionsCapabilityModule
         return RimWorldDebugActions.SearchDebugActionsResponse(query, limit, includeHidden, supportedOnly, requiredTargetKind, offset);
     }
 
-    public object GetDebugAction(string path, bool includeChildren = true, bool includeHiddenChildren = false)
+    public object GetDebugAction(string path, bool includeChildren = true, bool includeHiddenChildren = false, int offset = 0)
     {
-        return RimWorldDebugActions.GetDebugActionResponse(path, includeChildren, includeHiddenChildren);
+        return RimWorldDebugActions.GetDebugActionResponse(path, includeChildren, includeHiddenChildren, offset);
     }
 
     public object ExecuteDebugAction(
