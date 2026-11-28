@@ -354,7 +354,7 @@ Playback default: RimWorld's private `TickManager.UltraSpeedBoost` is left off, 
 - `rimworld/get_map_summary` - Read the current map in one call: date, weather, temperature, active game conditions, wealth and pawn counts
 - `rimworld/get_cell_info` - Inspect one map cell, including things, blueprints, frames, designations, zones, and areas
 - `rimworld/list_power_nets` - List the current map's power nets with produced and consumed watts, stored energy, battery capacity and connected buildings
-- `rimworld/list_buildings` - List the current map's buildings with position, rotation, size, faction, hit points and power state, filtered by def, architect category or player ownership
+- `rimworld/list_buildings` - List the current map's buildings with position, covered cells, rotation, faction, hit points and power state, filtered by def, architect category or player ownership
 - `rimworld/get_cells_info` - Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas
 - `rimworld/find_random_cell_near` - Use RimWorld's expanding-radius random cell search to find a nearby cell or footprint that satisfies generic map criteria
 - `rimworld/flood_fill_cells` - Analyze a contiguous area from one root cell using RimWorld's generic cell flood-fill algorithm and the same reusable footprint criteria as find_random_cell_near

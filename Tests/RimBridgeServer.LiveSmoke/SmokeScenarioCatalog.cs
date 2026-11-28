@@ -56,6 +56,7 @@ internal static class SmokeScenarioCatalog
     public const string ListPawnsScenarioName = "list-pawns";
     public const string ListBuildingsScenarioName = "list-buildings";
     public const string MapSummaryScenarioName = "map-summary";
+    public const string UiLayoutListingScenarioName = "ui-layout-listing";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -295,6 +296,12 @@ internal static class SmokeScenarioCatalog
                 Name = MapSummaryScenarioName,
                 Description = "Read rimworld/get_map_summary with the game paused, check the tick against rimworld/get_game_info and the colonist count against rimworld/list_colonists, and check the ranges of the date, weather and wealth fields.",
                 RunAsync = RunMapSummaryAsync
+            },
+            [UiLayoutListingScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = UiLayoutListingScenarioName,
+                Description = "Open Dialog_AddPreferredName and Dialog_Options, and verify with rimworld/get_ui_layout that a Listing_Standard label is listed once and that the listing controls of the options dialog lie inside the window.",
+                RunAsync = RunUiLayoutListingAsync
             }
         };
 
@@ -6082,7 +6089,13 @@ internal static class SmokeScenarioCatalog
                 ?? throw new InvalidOperationException($"list_pawns must list colonist '{pawnId}' as colonist or slave.");
             if (JsonNodeHelpers.ReadBoolean(row, "factionIsPlayer") != true || JsonNodeHelpers.ReadInt32(row, "position", "x") == null)
                 throw new InvalidOperationException($"Colonist '{pawnId}' must have factionIsPlayer true and a position: {row?.ToJsonString()}");
+            if (JsonNodeHelpers.ReadBoolean(row, "hostileToPlayer") != false)
+                throw new InvalidOperationException($"Colonist '{pawnId}' must report hostileToPlayer false: {row?.ToJsonString()}");
         }
+
+        var rowWithoutHostility = JsonNodeHelpers.ReadArray(all.StructuredContent, "pawns").FirstOrDefault(row => JsonNodeHelpers.ReadBoolean(row, "hostileToPlayer") == null);
+        if (rowWithoutHostility != null)
+            throw new InvalidOperationException($"Every list_pawns row must report hostileToPlayer: {rowWithoutHostility.ToJsonString()}");
 
         var mixedCase = await context.CallGameToolAsync("list_pawns.role_colonist_mixed_case", "rimworld/list_pawns", new { role = "Colonist" }, cancellationToken);
         context.EnsureSucceeded(mixedCase, "Listing pawns with role Colonist");
@@ -6150,13 +6163,13 @@ internal static class SmokeScenarioCatalog
                 return JsonNodeHelpers.ReadInt32(reply.StructuredContent, "page", "total") ?? throw new InvalidOperationException($"list_buildings must report page.total: {reply.StructuredContent?.ToJsonString()}");
             }
 
-            async Task<JsonNode?> FindWallRowAsync(string step, int x, int z)
+            async Task<JsonNode?> FindBuildingRowAsync(string step, string defName, int x, int z)
             {
                 int? offset = 0;
                 while (offset.HasValue)
                 {
-                    var reply = await context.CallGameToolAsync($"{step}_{offset.Value}", "rimworld/list_buildings", new { defName = "Wall", offset = offset.Value }, cancellationToken);
-                    context.EnsureSucceeded(reply, $"Listing walls from offset {offset.Value}");
+                    var reply = await context.CallGameToolAsync($"{step}_{offset.Value}", "rimworld/list_buildings", new { defName, offset = offset.Value }, cancellationToken);
+                    context.EnsureSucceeded(reply, $"Listing {defName} buildings from offset {offset.Value}");
                     var row = JsonNodeHelpers.ReadArray(reply.StructuredContent, "buildings").FirstOrDefault(candidate => IsBuildingAt(candidate, x, z));
                     if (row != null)
                         return row;
@@ -6186,15 +6199,36 @@ internal static class SmokeScenarioCatalog
             var after = await CountBuildingsAsync("list_buildings.walls_after", new { defName = "Wall" });
             if (after != before + 1)
                 throw new InvalidOperationException($"The wall count must grow from {before} to {before + 1}: {after}");
-            var row = await FindWallRowAsync("list_buildings.find_wall_row", wallCell.X, wallCell.Z)
+            var row = await FindBuildingRowAsync("list_buildings.find_wall_row", "Wall", wallCell.X, wallCell.Z)
                 ?? throw new InvalidOperationException($"list_buildings must list the wall at ({wallCell.X}, {wallCell.Z}).");
             var hitPoints = JsonNodeHelpers.ReadInt32(row, "hitPoints") ?? 0;
             if (JsonNodeHelpers.ReadString(row, "defName") != "Wall"
                 || JsonNodeHelpers.ReadBoolean(row, "factionIsPlayer") != true
                 || hitPoints <= 0
                 || (JsonNodeHelpers.ReadInt32(row, "maxHitPoints") ?? 0) < hitPoints
-                || JsonNodeHelpers.ReadInt32(row, "size", "x") != 1)
-                throw new InvalidOperationException($"The wall row must have defName Wall, factionIsPlayer true, hit points and size 1: {row.ToJsonString()}");
+                || JsonNodeHelpers.ReadInt32(row, "occupiedRect", "x") != wallCell.X
+                || JsonNodeHelpers.ReadInt32(row, "occupiedRect", "z") != wallCell.Z
+                || JsonNodeHelpers.ReadInt32(row, "occupiedRect", "width") != 1
+                || JsonNodeHelpers.ReadInt32(row, "occupiedRect", "height") != 1)
+                throw new InvalidOperationException($"The wall row must have defName Wall, factionIsPlayer true, hit points and a 1x1 occupiedRect at its cell: {row.ToJsonString()}");
+
+            // A bed is 1x2. Rotated east, it covers two cells along x, so occupiedRect must follow the rotation.
+            var furniture = await context.CallGameToolAsync("list_buildings.list_furniture", "rimworld/list_architect_designators", new { categoryId = ResolveArchitectCategoryId(JsonNodeHelpers.ReadArray(categories.StructuredContent, "categories"), "Furniture"), includeHidden = false }, cancellationToken);
+            context.EnsureSucceeded(furniture, "Listing furniture designators");
+            var bedDesignatorId = ResolveArchitectBuildDesignatorId(JsonNodeHelpers.ReadArray(furniture.StructuredContent, "designators"), "Bed");
+            var bedArea = await FindAcceptedArchitectPlacementCellAsync(context, "list_buildings.find_bed_area", bedDesignatorId, colonists.StructuredContent, blockedCells, cancellationToken, width: 3, height: 3);
+            var bedCell = (X: bedArea.X + 1, Z: bedArea.Z + 1);
+            var bed = await context.CallGameToolAsync("list_buildings.place_bed", "rimworld/apply_architect_designator", new { designatorId = bedDesignatorId, x = bedCell.X, z = bedCell.Z, rotation = "east", keepSelected = false }, cancellationToken);
+            context.EnsureSucceeded(bed, "Placing a bed rotated east with god mode");
+            var bedRow = await FindBuildingRowAsync("list_buildings.find_bed_row", "Bed", bedCell.X, bedCell.Z)
+                ?? throw new InvalidOperationException($"list_buildings must list the bed at ({bedCell.X}, {bedCell.Z}).");
+            var bedRectX = JsonNodeHelpers.ReadInt32(bedRow, "occupiedRect", "x") ?? int.MinValue;
+            var bedRectZ = JsonNodeHelpers.ReadInt32(bedRow, "occupiedRect", "z") ?? int.MinValue;
+            if (JsonNodeHelpers.ReadString(bedRow, "rotation") != "east"
+                || JsonNodeHelpers.ReadInt32(bedRow, "occupiedRect", "width") != 2
+                || JsonNodeHelpers.ReadInt32(bedRow, "occupiedRect", "height") != 1
+                || bedCell.X < bedRectX || bedCell.X > bedRectX + 1 || bedCell.Z != bedRectZ)
+                throw new InvalidOperationException($"The bed rotated east must have a 2x1 occupiedRect that holds its position: {bedRow.ToJsonString()}");
 
             var structureCount = await CountBuildingsAsync("list_buildings.category_structure", new { category = "Structure" });
             var structureIdCount = await CountBuildingsAsync("list_buildings.category_structure_id", new { category = structureCategoryId });
@@ -6215,8 +6249,14 @@ internal static class SmokeScenarioCatalog
                 || JsonNodeHelpers.ReadInt32(pastEnd.StructuredContent, "page", "nextOffset") != null)
                 throw new InvalidOperationException($"An offset past the end must return no rows, the total and no nextOffset: {pastEnd.StructuredContent?["page"]?.ToJsonString()}");
 
-            if (await CountBuildingsAsync("list_buildings.unknown_category", new { category = "NoSuchCategory" }) != 0)
-                throw new InvalidOperationException("An unknown category must list no buildings.");
+            // A typo must not look like an empty map.
+            foreach (var (step, arguments) in new (string, object)[] { ("unknown_category", new { category = "NoSuchCategory" }), ("unknown_def", new { defName = "NoSuchThingDef" }) })
+            {
+                var unknown = await context.CallGameToolAsync($"list_buildings.{step}", "rimworld/list_buildings", arguments, cancellationToken);
+                await AssertNoOpenAttentionAsync(context, $"list_buildings.attention_{step}", $"Listing buildings for {step}", cancellationToken);
+                if (JsonNodeHelpers.ReadBoolean(unknown.StructuredContent, "success") != false || string.IsNullOrEmpty(JsonNodeHelpers.ReadString(unknown.StructuredContent, "message")))
+                    throw new InvalidOperationException($"list_buildings must fail with a message for {step}: {unknown.StructuredContent?.ToJsonString()}");
+            }
         }
         finally
         {
@@ -6277,9 +6317,19 @@ internal static class SmokeScenarioCatalog
         // list_colonists counts the colony's slaves too.
         if (colonistCount + slaveCount != JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count"))
             throw new InvalidOperationException($"pawnCounts.colonists plus pawnCounts.slaves must equal the list_colonists count: {colonistCount}, {slaveCount} and {colonists.StructuredContent?["count"]}.");
-        var grouped = colonistCount + (JsonNodeHelpers.ReadInt32(counts, "prisoners") ?? 0) + (JsonNodeHelpers.ReadInt32(counts, "slaves") ?? 0) + (JsonNodeHelpers.ReadInt32(counts, "colonyAnimals") ?? 0);
-        if ((JsonNodeHelpers.ReadInt32(counts, "total") ?? -1) < grouped || (JsonNodeHelpers.ReadInt32(counts, "hostiles") ?? -1) < 0)
-            throw new InvalidOperationException($"pawnCounts.total must be at least the sum of the colony groups: {counts?.ToJsonString()}");
+        var sum = 0;
+        foreach (var (role, field) in new[] { ("colonist", "colonists"), ("prisoner", "prisoners"), ("slave", "slaves"), ("animal", "animals"), ("mech", "mechs"), ("hostile", "hostiles"), ("other", "others") })
+        {
+            var count = JsonNodeHelpers.ReadInt32(counts, field) ?? throw new InvalidOperationException($"pawnCounts.{field} must be present: {counts?.ToJsonString()}");
+            var listed = await context.CallGameToolAsync($"map_summary.list_pawns_{role}", "rimworld/list_pawns", new { role }, cancellationToken);
+            context.EnsureSucceeded(listed, $"Listing pawns with role {role}");
+            if (JsonNodeHelpers.ReadInt32(listed.StructuredContent, "page", "total") != count)
+                throw new InvalidOperationException($"pawnCounts.{field} must equal the list_pawns total for role {role}: {count} and {listed.StructuredContent?["page"]?.ToJsonString()}");
+            sum += count;
+        }
+
+        if (sum != JsonNodeHelpers.ReadInt32(counts, "total") || (JsonNodeHelpers.ReadInt32(counts, "colonyAnimals") ?? -1) < 0)
+            throw new InvalidOperationException($"The role counts must add up to pawnCounts.total, and colonyAnimals must be present: {counts?.ToJsonString()}");
     }
 
     private static async Task RunRepeatedRowClickAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
@@ -6528,5 +6578,63 @@ internal static class SmokeScenarioCatalog
             .FirstOrDefault(group => group.Count() > 1);
         if (duplicate != null)
             throw new InvalidOperationException($"The layout lists the label '{JsonNodeHelpers.ReadString(duplicate.First(), "label")}' {duplicate.Count()} times at the same screen rectangle.");
+    }
+
+    // A listing draws inside a group at its own rect, so a control rect that adds the listing origin again lies to the
+    // right of the window.
+    private static void AssertElementsInsideSurface(JsonNode? surface)
+    {
+        var left = JsonNodeHelpers.ReadDouble(surface, "screenRect", "x") ?? throw new InvalidOperationException("The surface has no screen rectangle.");
+        var right = left + (JsonNodeHelpers.ReadDouble(surface, "screenRect", "width") ?? 0);
+        var outside = JsonNodeHelpers.ReadArray(surface, "elements").FirstOrDefault(element =>
+        {
+            var x = JsonNodeHelpers.ReadDouble(element, "screenRect", "x");
+            var width = JsonNodeHelpers.ReadDouble(element, "screenRect", "width");
+            return x == null || width == null || x < left - 1 || x + width > right + 1;
+        });
+        if (outside != null)
+            throw new InvalidOperationException($"The element must lie inside its window from x {left} to {right}: {outside.ToJsonString()}");
+    }
+
+    private static async Task RunUiLayoutListingAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("ui_listing.wait_for_long_event_idle", cancellationToken);
+        const string NameDialog = "RimWorld.Dialog_AddPreferredName";
+        const string OptionsDialog = "RimWorld.Dialog_Options";
+
+        async Task<JsonNode?> OpenAndCaptureAsync(string step, string windowType)
+        {
+            var open = await context.CallGameToolAsync($"{step}.open", "rimworld/open_window_by_type", new { windowType }, cancellationToken);
+            context.EnsureSucceeded(open, $"Opening {windowType}");
+            var layout = await context.CallGameToolAsync($"{step}.layout", "rimworld/get_ui_layout", new { }, cancellationToken);
+            context.EnsureSucceeded(layout, $"Capturing the layout of {windowType}");
+            return JsonNodeHelpers.ReadArray(layout.StructuredContent, "surfaces")
+                .FirstOrDefault(surface => string.Equals(JsonNodeHelpers.ReadString(surface, "type"), windowType, StringComparison.Ordinal))
+                ?? throw new InvalidOperationException($"The layout must have a surface for {windowType}.");
+        }
+
+        try
+        {
+            // The dialog draws its only label with Listing_Standard.Label, which calls Widgets.Label.
+            var nameSurface = await OpenAndCaptureAsync("ui_listing.name_dialog", NameDialog);
+            var labels = JsonNodeHelpers.ReadArray(nameSurface, "elements")
+                .Where(element => string.Equals(JsonNodeHelpers.ReadString(element, "kind"), "label", StringComparison.Ordinal))
+                .Where(element => string.IsNullOrEmpty(JsonNodeHelpers.ReadString(element, "label")) == false)
+                .ToList();
+            if (labels.Count != 1)
+                throw new InvalidOperationException($"{NameDialog} must list its label exactly once: {string.Join(", ", labels.Select(label => label?.ToJsonString()))}");
+            await context.CallGameToolAsync("ui_listing.close_name_dialog", "rimworld/close_window", new { windowType = NameDialog }, cancellationToken);
+
+            // The options dialog begins its listing at a nonzero x inside a scroll view.
+            var optionsSurface = await OpenAndCaptureAsync("ui_listing.options", OptionsDialog);
+            AssertNoDuplicateLabels(optionsSurface);
+            AssertElementsInsideSurface(optionsSurface);
+        }
+        finally
+        {
+            await context.CallGameToolAsync("ui_listing.cleanup_name_dialog", "rimworld/close_window", new { windowType = NameDialog }, cancellationToken);
+            await context.CallGameToolAsync("ui_listing.cleanup_options", "rimworld/close_window", new { windowType = OptionsDialog }, cancellationToken);
+        }
     }
 }

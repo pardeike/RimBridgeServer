@@ -37,8 +37,10 @@ internal static class RimWorldPawns
         };
     }
 
-    // A secure slave is a free colonist to the game, so slave comes before colonist. A hostile pawn is hostile before
-    // it is an animal or a mech, so a manhunter is hostile and a colony mech is mech.
+    // The role is the pawn's place in the colony, so every pawn has exactly one. A secure slave is a free colonist to
+    // the game, so slave comes before colonist. Prisoner, slave and colonist come before hostile, so a prison break, a
+    // slave rebellion or a berserk colonist keeps the role. A hostile pawn is hostile before it is an animal or a mech,
+    // so a manhunter is hostile and a colony mech is mech. hostileToPlayer reports the current hostility on its own.
     public static string RoleOf(Pawn pawn)
     {
         if (pawn.IsPrisonerOfColony)
@@ -74,6 +76,7 @@ internal static class RimWorldPawns
             position = pawn.Position.IsValid ? new { x = pawn.Position.x, z = pawn.Position.z } : null,
             job = pawn.CurJob?.def?.defName,
             drafted = pawn.drafter?.Drafted ?? false,
+            hostileToPlayer = Faction.OfPlayer != null && pawn.HostileTo(Faction.OfPlayer),
             downed = pawn.Downed,
             mentalState = pawn.MentalStateDef?.defName
         };

@@ -537,7 +537,7 @@ Parameters:
 Read the current map in one call: date, weather, temperature, active game conditions, wealth and pawn counts
 
 Returns:
-- The map summary. date.dayOfQuadrum is 1 to 15, as the game shows it. date.hour is 0 to 23 in local map time. outdoorTemperatureC is the current outdoor temperature in degrees Celsius. activeConditions lists the game conditions that affect the map, world conditions included, and is omitted when none is active. The tool recounts wealth for this call. pawnCounts counts spawned pawns only. pawnCounts.colonists are the free colonists without the colony's slaves. pawnCounts.slaves counts those slaves. rimworld/list_colonists counts both. pawnCounts.colonyAnimals are the player's animals. pawnCounts.hostiles are the pawns that are hostile to the player, dormant and fogged ones included. pawnCounts.total counts every spawned pawn.
+- The map summary. date.dayOfQuadrum is 1 to 15, as the game shows it. date.hour is 0 to 23 in local map time. outdoorTemperatureC is the current outdoor temperature in degrees Celsius. activeConditions lists the game conditions that affect the map, world conditions included, and is omitted when none is active. wealth comes from the game's wealth count. The game counts again when the last count is more than 5000 ticks old, so wealth can be up to 5000 ticks old. pawnCounts counts spawned pawns only. colonists, prisoners, slaves, animals, mechs, hostiles and others count the roles of rimworld/list_pawns, so they add up to total. colonists does not count the colony's slaves, and rimworld/list_colonists counts both. colonyAnimals counts the player's animals in any role.
 
 Parameters: none.
 
@@ -562,10 +562,10 @@ Parameters:
 
 ### `rimworld/list_buildings`
 
-List the current map's buildings with position, rotation, size, faction, hit points and power state, filtered by def, architect category or player ownership
+List the current map's buildings with position, covered cells, rotation, faction, hit points and power state, filtered by def, architect category or player ownership
 
 Returns:
-- The buildings, paged. Frames of buildings under construction are included. Blueprints, natural rock and plants are not. The def name of a frame starts with Frame_, and frameBuildDefName is the def that the frame builds. A frame has no architect category, so a category filter does not list it. rotation is north, east, south or west and is omitted when the def does not rotate. hitPoints and maxHitPoints are omitted when the def has no hit points. powerOn is omitted when the building has no power trader. Use rimworld/list_power_nets for watts and stored energy. page.total is the number of buildings after the filters. The reply includes page.nextOffset when more buildings remain.
+- The buildings, paged. Frames of buildings under construction are included. Blueprints, natural rock and plants are not. The def name of a frame starts with Frame_, and frameBuildDefName is the def that the frame builds. A frame has no architect category, so a category filter does not list it. An unknown defName or category fails. position is the cell where the game places the building. It lies inside occupiedRect but is not always its center. occupiedRect is the rectangle of cells that the building covers after rotation. Its x and z are the south-west cell, as for rimworld/get_cells_info. rotation is north, east, south or west and is omitted when the def does not rotate. hitPoints and maxHitPoints are omitted when the def has no hit points. powerOn is omitted when the building has no power trader. Use rimworld/list_power_nets for watts and stored energy. page.total is the number of buildings after the filters. The reply includes page.nextOffset when more buildings remain.
 
 Parameters:
 - `defName` (`string`, `optional`, default `null`): Optional def name such as Wall or Battery. The filter ignores case
@@ -837,7 +837,7 @@ Parameters:
 List every spawned pawn on the current map with its role, faction, position and job
 
 Returns:
-- The pawns, paged. role is colonist, prisoner, slave, animal, mech, hostile or other. A prisoner or a slave of the colony has that role. rimworld/list_colonists also lists slaves. A pawn that is hostile to the player has role hostile, so a manhunter animal is hostile. A colony mech has role mech. other includes visitors and traders. factionIsPlayer is true for the player's pawns, including colony animals and mechs. Use pawnId with rimworld/get_pawn_details for skills, needs, hediffs, traits and work priorities. page.total is the number of pawns after the role filter. The reply includes page.nextOffset when more pawns remain.
+- The pawns, paged. role is colonist, prisoner, slave, animal, mech, hostile or other. Every pawn has exactly one role. A prisoner or a slave of the colony has that role. rimworld/list_colonists also lists slaves. Any other pawn that is hostile to the player has role hostile, so a manhunter animal is hostile. A colony mech has role mech. other includes visitors, traders and colony ghouls. hostileToPlayer is true while the pawn is hostile to the player, also during a prison break, a slave rebellion or a berserk mental state. factionIsPlayer is true for the player's pawns, including colony animals and mechs. Use pawnId with rimworld/get_pawn_details for skills, needs, hediffs, traits and work priorities. page.total is the number of pawns after the role filter. The reply includes page.nextOffset when more pawns remain.
 
 Parameters:
 - `role` (`string`, `optional`, default `null`): Optional role filter: colonist, prisoner, slave, animal, mech, hostile or other. Leave it empty to list every pawn

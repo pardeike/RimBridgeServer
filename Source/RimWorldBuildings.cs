@@ -16,6 +16,13 @@ internal static class RimWorldBuildings
         var map = RimWorldState.CurrentMapOrThrow();
         var wantedDef = defName?.Trim();
         var wantedCategory = category?.Trim();
+        // An unknown filter value fails, so that a typo does not look like a map without such buildings.
+        if (string.IsNullOrEmpty(wantedDef) == false
+            && DefDatabase<ThingDef>.AllDefsListForReading.Any(def => string.Equals(def.defName, wantedDef, StringComparison.OrdinalIgnoreCase)) == false)
+            return new { success = false, message = $"No ThingDef named '{defName}'." };
+        if (string.IsNullOrEmpty(wantedCategory) == false
+            && DefDatabase<DesignationCategoryDef>.AllDefsListForReading.Any(def => ArchitectDesignatorIds.CategoryMatches(wantedCategory, def.defName)) == false)
+            return new { success = false, message = $"Unknown architect category '{category}'. Use an id from rimworld/list_architect_categories or a DesignationCategoryDef name." };
         var buildings = map.listerThings.ThingsInGroup(ThingRequestGroup.BuildingArtificial)
             .OfType<Building>()
             .Where(building => string.IsNullOrEmpty(wantedDef) || string.Equals(building.def?.defName, wantedDef, StringComparison.OrdinalIgnoreCase))
@@ -46,6 +53,7 @@ internal static class RimWorldBuildings
     {
         var def = building.def;
         var trader = building.GetComp<CompPowerTrader>();
+        var occupied = building.OccupiedRect();
         return new
         {
             thingId = RimWorldState.GetThingId(building),
@@ -54,7 +62,8 @@ internal static class RimWorldBuildings
             label = building.LabelCap.ToString(),
             position = building.Position.IsValid ? new { x = building.Position.x, z = building.Position.z } : null,
             rotation = def?.rotatable == true ? RimWorldArchitect.DescribeRotation(building.Rotation) : null,
-            size = def == null ? null : new { x = def.size.x, z = def.size.z },
+            // The covered cells after rotation, in the x, z, width and height form of rimworld/get_cells_info.
+            occupiedRect = new { x = occupied.minX, z = occupied.minZ, width = occupied.Width, height = occupied.Height },
             faction = building.Faction?.Name,
             factionIsPlayer = building.Faction?.IsPlayer ?? false,
             hitPoints = def?.useHitPoints == true ? building.HitPoints : (int?)null,

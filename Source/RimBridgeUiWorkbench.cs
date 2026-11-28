@@ -2695,6 +2695,8 @@ internal static class Listing_GetRect_UiWorkbench_Patch
     }
 }
 
+// Listing.Begin opens a group at listingRect, so curX and curY are already relative to it. The listing patches use
+// them without listingRect, as Listing.GetRect does.
 [HarmonyPatch(typeof(Listing), nameof(Listing.Gap), new[] { typeof(float) })]
 internal static class Listing_Gap_UiWorkbench_Patch
 {
@@ -2709,7 +2711,7 @@ internal static class Listing_Gap_UiWorkbench_Patch
         if (height <= 0f || !RimBridgeUiWorkbench.IsTrackingCurrentSurface())
             return;
 
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __state, __instance.ColumnWidth, height);
+        var rect = new Rect(__instance.curX, __state, __instance.ColumnWidth, height);
         RimBridgeUiWorkbench.RegisterPassiveElement("spacing", "listing.gap", rect, valueText: height.ToString("0.##"));
     }
 }
@@ -2728,12 +2730,13 @@ internal static class Listing_GapLine_UiWorkbench_Patch
         if (height <= 0f || !RimBridgeUiWorkbench.IsTrackingCurrentSurface())
             return;
 
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __state, __instance.ColumnWidth, height);
+        var rect = new Rect(__instance.curX, __state, __instance.ColumnWidth, height);
         RimBridgeUiWorkbench.RegisterPassiveElement("gap_line", "listing.gap_line", rect, valueText: height.ToString("0.##"));
     }
 }
 
-// The TaggedString overload resolves the text and calls this one. A patch on it registers each tagged label twice.
+// Every label overload ends here: Widgets.Label(Rect, TaggedString), both Listing_Standard.Label overloads and
+// Widgets.LabelScrollable. A patch on one of those registers the same label again.
 [HarmonyPatch(typeof(Widgets), nameof(Widgets.Label), new[] { typeof(Rect), typeof(string) })]
 internal static class Widgets_Label_String_UiWorkbench_Patch
 {
@@ -3255,17 +3258,6 @@ internal static class Widgets_ButtonImageHoverColored_UiWorkbench_Patch
     }
 }
 
-// The TaggedString overload resolves the text and calls this one. A patch on it registers each tagged label again.
-[HarmonyPatch(typeof(Listing_Standard), nameof(Listing_Standard.Label), new[] { typeof(string), typeof(float), typeof(Nullable<TipSignal>) })]
-internal static class ListingStandard_Label_String_UiWorkbench_Patch
-{
-    public static void Prefix(Listing_Standard __instance, string label)
-    {
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
-        RimBridgeUiWorkbench.RegisterPassiveElement("label", "listing_standard.label", rect, label);
-    }
-}
-
 [HarmonyPatch]
 internal static class ListingStandard_CheckboxLabeled_Basic_UiWorkbench_Patch
 {
@@ -3277,7 +3269,7 @@ internal static class ListingStandard_CheckboxLabeled_Basic_UiWorkbench_Patch
     [HarmonyPriority(Priority.First)]
     public static void Prefix(Listing_Standard __instance, string label, ref bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
+        var rect = new Rect(__instance.curX, __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         __state = RimBridgeUiWorkbench.BeginCompoundControl("checkbox", "listing_standard.checkbox_labeled", rect, label, checkedState: checkOn);
         __state.InitialCheckedState = checkOn;
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
@@ -3305,7 +3297,7 @@ internal static class ListingStandard_CheckboxLabeled_Tooltip_UiWorkbench_Patch
     [HarmonyPriority(Priority.First)]
     public static void Prefix(Listing_Standard __instance, string label, ref bool checkOn, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
+        var rect = new Rect(__instance.curX, __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         __state = RimBridgeUiWorkbench.BeginCompoundControl("checkbox", "listing_standard.checkbox_labeled", rect, label, checkedState: checkOn);
         __state.InitialCheckedState = checkOn;
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
@@ -3328,7 +3320,7 @@ internal static class ListingStandard_ButtonText_UiWorkbench_Patch
     [HarmonyPriority(Priority.First)]
     public static void Prefix(Listing_Standard __instance, string label, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
+        var rect = new Rect(__instance.curX, __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "listing_standard.button_text", rect, label, actionable: true);
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
@@ -3347,7 +3339,7 @@ internal static class ListingStandard_ButtonTextLabeled_UiWorkbench_Patch
     [HarmonyPriority(Priority.First)]
     public static void Prefix(Listing_Standard __instance, string label, string buttonLabel, ref RimBridgeUiWorkbench.UiPatchControlState __state)
     {
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
+        var rect = new Rect(__instance.curX, __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         __state = RimBridgeUiWorkbench.BeginCompoundControl("button", "listing_standard.button_text_labeled", rect, RimBridgeUiWorkbench.IsTrackingCurrentSurface() ? $"{label}: {buttonLabel}" : null, actionable: true);
         RimBridgeUiWorkbench.PrepareControlInteraction(__state, rect);
     }
@@ -3365,7 +3357,7 @@ internal static class ListingStandard_TextEntryLabeled_UiWorkbench_Patch
 {
     public static void Prefix(Listing_Standard __instance, string label, string text)
     {
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
+        var rect = new Rect(__instance.curX, __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         RimBridgeUiWorkbench.RegisterPassiveElement("text_field", "listing_standard.text_entry_labeled", rect, label, text);
     }
 }
@@ -3378,7 +3370,7 @@ internal static class ListingStandard_SliderLabeled_UiWorkbench_Patch
         if (!RimBridgeUiWorkbench.IsTrackingCurrentSurface())
             return;
 
-        var rect = new Rect(__instance.listingRect.x + __instance.curX, __instance.listingRect.y + __instance.curY, __instance.ColumnWidth, Text.LineHeight);
+        var rect = new Rect(__instance.curX, __instance.curY, __instance.ColumnWidth, Text.LineHeight);
         RimBridgeUiWorkbench.RegisterPassiveElement("slider", "listing_standard.slider_labeled", rect, label, $"{val:0.##} [{min:0.##}, {max:0.##}]");
     }
 }
