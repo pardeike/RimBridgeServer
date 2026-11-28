@@ -57,6 +57,7 @@ internal static class SmokeScenarioCatalog
     public const string ListBuildingsScenarioName = "list-buildings";
     public const string MapSummaryScenarioName = "map-summary";
     public const string UiLayoutListingScenarioName = "ui-layout-listing";
+    public const string DlcPawnStatesScenarioName = "dlc-pawn-states";
     private const string SaveLoadRoundTripSaveName = "rimbridge_live_smoke_save_load_roundtrip";
     private const string SaveModCompatibilityFixtureName = "rimbridge_live_smoke_missing_mod_guard";
     private const string SaveModCompatibilityOverrideFixtureName = "rimbridge_live_smoke_missing_mod_override";
@@ -302,6 +303,12 @@ internal static class SmokeScenarioCatalog
                 Name = UiLayoutListingScenarioName,
                 Description = "Open Dialog_AddPreferredName and Dialog_Options, and verify with rimworld/get_ui_layout that a Listing_Standard label is listed once and that the listing controls of the options dialog lie inside the window.",
                 RunAsync = RunUiLayoutListingAsync
+            },
+            [DlcPawnStatesScenarioName] = new SmokeScenarioDefinition
+            {
+                Name = DlcPawnStatesScenarioName,
+                Description = "Needs Royalty, Ideology, Biotech and Anomaly. Make DLC pawn states with the game's debug actions: a pacifist gene, a recruited Knight, an enslaved villager, a child, a colony ghoul, a shambler, a hostile and a recruited lifter mech, a berserk colonist and a slave rebellion. Verify the roles and hostility of rimworld/list_pawns, the disabled and permanently disabled work types of rimworld/get_pawn_details and the role counts of rimworld/get_map_summary, then destroy the spawned pawns.",
+                RunAsync = RunDlcPawnStatesAsync
             }
         };
 
@@ -6330,6 +6337,294 @@ internal static class SmokeScenarioCatalog
 
         if (sum != JsonNodeHelpers.ReadInt32(counts, "total") || (JsonNodeHelpers.ReadInt32(counts, "colonyAnimals") ?? -1) < 0)
             throw new InvalidOperationException($"The role counts must add up to pawnCounts.total, and colonyAnimals must be present: {counts?.ToJsonString()}");
+    }
+
+    private static async Task RunDlcPawnStatesAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
+    {
+        await context.EnsurePlayableGameAsync(cancellationToken);
+        await context.WaitForLongEventIdleAsync("dlc_pawns.wait_for_long_event_idle", cancellationToken);
+
+        var mods = await context.CallGameToolAsync("dlc_pawns.list_mods", "rimworld/list_mods", new { includeInactive = false }, cancellationToken);
+        context.EnsureSucceeded(mods, "Listing the active mods");
+        var activePackageIds = JsonNodeHelpers.ReadArray(mods.StructuredContent, "mods")
+            .Select(mod => JsonNodeHelpers.ReadString(mod, "packageId")?.ToLowerInvariant())
+            .ToHashSet();
+        var missingDlc = new[] { "Royalty", "Ideology", "Biotech", "Anomaly" }
+            .Where(dlc => activePackageIds.Contains("ludeon.rimworld." + dlc.ToLowerInvariant()) == false)
+            .ToList();
+        if (missingDlc.Count > 0)
+            throw new InvalidOperationException($"This scenario needs {string.Join(", ", missingDlc)}. Run it in a game with Royalty, Ideology, Biotech and Anomaly active.");
+
+        var colonists = await context.CallGameToolAsync("dlc_pawns.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
+        context.EnsureSucceeded(colonists, "Listing current-map colonists");
+        var origin = ResolveColonistSearchOrigin(colonists.StructuredContent);
+        var wasPaused = JsonNodeHelpers.ReadBoolean(colonists.StructuredContent, "state", "paused") == true;
+        // The pawns must stay on their cells, because the cleanup destroys the things on each pawn's cell.
+        var pause = await context.CallGameToolAsync("dlc_pawns.pause", "rimworld/pause_game", new { pause = true }, cancellationToken);
+        context.EnsureSucceeded(pause, "Pausing the game");
+
+        var spawned = new List<string>();
+        var stepIndex = 0;
+        string Step(string name) => $"dlc_pawns.{name}_{++stepIndex}";
+
+        async Task<Dictionary<string, JsonNode?>> RowsAsync()
+        {
+            var rows = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+            int? offset = 0;
+            while (offset.HasValue)
+            {
+                var reply = await context.CallGameToolAsync(Step("list_pawns"), "rimworld/list_pawns", new { offset = offset.Value }, cancellationToken);
+                context.EnsureSucceeded(reply, $"Listing current-map pawns from offset {offset.Value}");
+                foreach (var row in JsonNodeHelpers.ReadArray(reply.StructuredContent, "pawns"))
+                    rows[ReadRequiredString(row, "pawnId")] = row;
+                offset = JsonNodeHelpers.ReadInt32(reply.StructuredContent, "page", "nextOffset");
+            }
+
+            return rows;
+        }
+
+        async Task<JsonNode?> RowAsync(string pawnId)
+        {
+            return (await RowsAsync()).TryGetValue(pawnId, out var row) ? row : throw new InvalidOperationException($"list_pawns must list pawn '{pawnId}'.");
+        }
+
+        static void ExpectRow(JsonNode? row, string role, bool hostileToPlayer, bool factionIsPlayer, string pawn)
+        {
+            if (JsonNodeHelpers.ReadString(row, "role") != role
+                || JsonNodeHelpers.ReadBoolean(row, "hostileToPlayer") != hostileToPlayer
+                || JsonNodeHelpers.ReadBoolean(row, "factionIsPlayer") != factionIsPlayer)
+                throw new InvalidOperationException($"{pawn} must have role {role}, hostileToPlayer {hostileToPlayer} and factionIsPlayer {factionIsPlayer}: {row?.ToJsonString()}");
+        }
+
+        async Task<(int X, int Z)> FindFreeCellAsync()
+        {
+            var occupied = (await RowsAsync()).Values
+                .Select(row => CellKey(JsonNodeHelpers.ReadInt32(row, "position", "x") ?? -1, JsonNodeHelpers.ReadInt32(row, "position", "z") ?? -1))
+                .ToHashSet(StringComparer.Ordinal);
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                var found = await context.CallGameToolAsync(Step("find_cell"), "rimworld/find_random_cell_near", new
+                {
+                    x = origin.X,
+                    z = origin.Z,
+                    startingSearchRadius = 4,
+                    maxSearchRadius = 25,
+                    requireStandable = true,
+                    requireNoImpassableThings = true
+                }, cancellationToken);
+                context.EnsureSucceeded(found, "Finding a standable cell near the colonists");
+                var x = JsonNodeHelpers.ReadInt32(found.StructuredContent, "cell", "x") ?? throw new InvalidOperationException("No cell x.");
+                var z = JsonNodeHelpers.ReadInt32(found.StructuredContent, "cell", "z") ?? throw new InvalidOperationException("No cell z.");
+                if (occupied.Contains(CellKey(x, z)) == false)
+                    return (x, z);
+            }
+
+            throw new InvalidOperationException("Could not find a standable cell without a pawn near the colonists.");
+        }
+
+        async Task<string> SpawnAsync(string defName)
+        {
+            var cell = await FindFreeCellAsync();
+            var spawn = await context.CallGameToolAsync(Step($"spawn_{defName}"), "rimworld/spawn_thing", new { defName, x = cell.X, z = cell.Z }, cancellationToken);
+            context.EnsureSucceeded(spawn, $"Spawning '{defName}' with rimworld/spawn_thing");
+            var thingId = ReadRequiredString(spawn.StructuredContent, "thingId");
+            spawned.Add(thingId);
+            return thingId;
+        }
+
+        async Task PawnActionAsync(string pawnId, string path)
+        {
+            var execution = await context.CallGameToolAsync(Step("debug_action"), "rimworld/execute_debug_action", new { path, pawnId }, cancellationToken);
+            context.EnsureSucceeded(execution, $"Running the debug action '{path}' on pawn '{pawnId}'");
+        }
+
+        async Task<JsonNode?> DetailsAsync(string pawnId)
+        {
+            var details = await context.CallGameToolAsync(Step("details"), "rimworld/get_pawn_details", new { pawnId }, cancellationToken);
+            context.EnsureSucceeded(details, $"Reading the details of pawn '{pawnId}'");
+            return details.StructuredContent;
+        }
+
+        static JsonNode? Entry(JsonNode? details, string list, string defName)
+        {
+            return JsonNodeHelpers.ReadArray(details, list).FirstOrDefault(node => JsonNodeHelpers.ReadString(node, "defName") == defName);
+        }
+
+        static bool? Disabled(JsonNode? details, string workType) => JsonNodeHelpers.ReadBoolean(Entry(details, "workPriorities", workType), "disabled");
+        static bool? Permanent(JsonNode? details, string workType) => JsonNodeHelpers.ReadBoolean(Entry(details, "workPriorities", workType), "permanentlyDisabled");
+
+        async Task CheckCountsAsync(string when, string slaveId, string ghoulId)
+        {
+            var summary = await context.CallGameToolAsync(Step("map_summary"), "rimworld/get_map_summary", new { }, cancellationToken);
+            context.EnsureSucceeded(summary, "Reading the map summary");
+            var counts = JsonNodeHelpers.GetPath(summary.StructuredContent, "pawnCounts");
+            var rows = await RowsAsync();
+            var sum = 0;
+            foreach (var (role, field) in new[] { ("colonist", "colonists"), ("prisoner", "prisoners"), ("slave", "slaves"), ("animal", "animals"), ("mech", "mechs"), ("hostile", "hostiles"), ("other", "others") })
+            {
+                var count = JsonNodeHelpers.ReadInt32(counts, field) ?? throw new InvalidOperationException($"pawnCounts.{field} must be present {when}: {counts?.ToJsonString()}");
+                var listed = rows.Values.Count(row => JsonNodeHelpers.ReadString(row, "role") == role);
+                if (count != listed)
+                    throw new InvalidOperationException($"pawnCounts.{field} must equal the {listed} list_pawns rows with role {role} {when}: {counts?.ToJsonString()}");
+                sum += count;
+            }
+
+            if (sum != JsonNodeHelpers.ReadInt32(counts, "total") || sum != rows.Count)
+                throw new InvalidOperationException($"The role counts must add up to pawnCounts.total and to the {rows.Count} list_pawns rows {when}: {counts?.ToJsonString()}");
+            if ((JsonNodeHelpers.ReadInt32(counts, "slaves") ?? 0) < 1 || (JsonNodeHelpers.ReadInt32(counts, "mechs") ?? 0) < 1
+                || (JsonNodeHelpers.ReadInt32(counts, "others") ?? 0) < 1 || (JsonNodeHelpers.ReadInt32(counts, "hostiles") ?? 0) < 2)
+                throw new InvalidOperationException($"pawnCounts must count the slave, the colony mech, the ghoul, the hostile mech and the shambler {when}: {counts?.ToJsonString()}");
+
+            var listedColonists = await context.CallGameToolAsync(Step("list_colonists"), "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
+            context.EnsureSucceeded(listedColonists, "Listing current-map colonists");
+            var colonistIds = JsonNodeHelpers.ReadArray(listedColonists.StructuredContent, "colonists").Select(colonist => JsonNodeHelpers.ReadString(colonist, "pawnId")).ToHashSet();
+            if (colonistIds.Contains(slaveId) == false || colonistIds.Contains(ghoulId))
+                throw new InvalidOperationException($"list_colonists must list the slave '{slaveId}' and not the ghoul '{ghoulId}' {when}.");
+            if ((JsonNodeHelpers.ReadInt32(counts, "colonists") ?? 0) + (JsonNodeHelpers.ReadInt32(counts, "slaves") ?? 0) != colonistIds.Count)
+                throw new InvalidOperationException($"pawnCounts.colonists plus pawnCounts.slaves must equal the {colonistIds.Count} pawns of list_colonists {when}: {counts?.ToJsonString()}");
+        }
+
+        try
+        {
+            // Biotech gene. A backstory or a trait can already disable hunting, so the gene needs a colonist that can hunt.
+            string? pacifistId = null;
+            for (var attempt = 0; attempt < 5 && pacifistId == null; attempt++)
+            {
+                var candidate = await SpawnAsync("Colonist");
+                if (Disabled(await DetailsAsync(candidate), "Hunting") == false)
+                    pacifistId = candidate;
+            }
+
+            if (pacifistId == null)
+                throw new InvalidOperationException("None of five spawned colonists could hunt.");
+            await PawnActionAsync(pacifistId, "Actions\\Add Gene...\\Xenogene\\ViolenceDisabled");
+            var pacifist = await DetailsAsync(pacifistId);
+            if (Disabled(pacifist, "Hunting") != true || Permanent(pacifist, "Hunting") != false)
+                throw new InvalidOperationException($"The ViolenceDisabled gene must disable Hunting, but not permanently: {Entry(pacifist, "workPriorities", "Hunting")?.ToJsonString()}");
+            foreach (var skill in new[] { "Shooting", "Melee" })
+            {
+                if (JsonNodeHelpers.ReadBoolean(Entry(pacifist, "skills", skill), "permanentlyDisabled") != true)
+                    throw new InvalidOperationException($"The ViolenceDisabled gene must permanently disable the {skill} skill: {Entry(pacifist, "skills", skill)?.ToJsonString()}");
+            }
+
+            // Royalty title. The Knight title disables ManualDumb, that is Hauling and Cleaning, for a conceited noble.
+            // A backstory can disable both permanently. Then the title's effect is hidden, so spawn another Knight.
+            string? knightId = null;
+            for (var attempt = 0; attempt < 4 && knightId == null; attempt++)
+            {
+                var candidate = await SpawnAsync("Empire_Royal_Knight");
+                await PawnActionAsync(candidate, "Actions\\T: Recruit");
+                var knight = await DetailsAsync(candidate);
+                if (Disabled(knight, "Hauling") != true || Disabled(knight, "Cleaning") != true)
+                    throw new InvalidOperationException($"The recruited Knight must not haul or clean: {Entry(knight, "workPriorities", "Hauling")?.ToJsonString()} {Entry(knight, "workPriorities", "Cleaning")?.ToJsonString()}");
+                if (Permanent(knight, "Hauling") == false || Permanent(knight, "Cleaning") == false)
+                    knightId = candidate;
+            }
+
+            if (knightId == null)
+                throw new InvalidOperationException("Each of four recruited Knights had Hauling and Cleaning permanently disabled.");
+            ExpectRow(await RowAsync(knightId), "colonist", false, true, "The recruited Knight");
+
+            // Ideology slave. Slavery disables some work types. The game skips a slave's backstory and traits.
+            var slaveId = await SpawnAsync("Villager");
+            await PawnActionAsync(slaveId, "Actions\\T: Enslave");
+            ExpectRow(await RowAsync(slaveId), "slave", false, true, "The enslaved villager");
+            var slave = await DetailsAsync(slaveId);
+            foreach (var workType in new[] { "Warden", "Hunting", "Art", "Research" })
+            {
+                if (Disabled(slave, workType) != true)
+                    throw new InvalidOperationException($"A slave must not do {workType}: {Entry(slave, "workPriorities", workType)?.ToJsonString()}");
+            }
+
+            var permanentSlaveWork = JsonNodeHelpers.ReadArray(slave, "workPriorities").FirstOrDefault(work => JsonNodeHelpers.ReadBoolean(work, "permanentlyDisabled") != false);
+            if (permanentSlaveWork != null)
+                throw new InvalidOperationException($"No work type of a slave may be permanently disabled: {permanentSlaveWork.ToJsonString()}");
+
+            // Biotech child. Smithing and Research need age 13. A childhood backstory can disable one of them permanently, but not both.
+            var before = (await RowsAsync()).Keys.ToHashSet(StringComparer.Ordinal);
+            var childCell = await FindFreeCellAsync();
+            var childSpawn = await context.CallGameToolAsync(Step("spawn_child"), "rimworld/execute_debug_action", new { path = "Actions\\Spawn Child...\\Colonist", x = childCell.X, z = childCell.Z }, cancellationToken);
+            context.EnsureSucceeded(childSpawn, "Spawning a colonist child with the Spawn Child debug action");
+            var newRows = (await RowsAsync()).Where(pair => before.Contains(pair.Key) == false).ToList();
+            if (newRows.Count != 1)
+                throw new InvalidOperationException($"The Spawn Child debug action must add exactly one pawn, not {newRows.Count}.");
+            var childId = newRows[0].Key;
+            spawned.Add(childId);
+            ExpectRow(newRows[0].Value, "colonist", false, true, "The spawned child");
+            var child = await DetailsAsync(childId);
+            if (Disabled(child, "Smithing") != true || Disabled(child, "Research") != true || Permanent(child, "Smithing") != false && Permanent(child, "Research") != false)
+                throw new InvalidOperationException($"A child must not do Smithing or Research, and age must not disable them permanently: {Entry(child, "workPriorities", "Smithing")?.ToJsonString()} {Entry(child, "workPriorities", "Research")?.ToJsonString()}");
+
+            // Anomaly ghoul. A colony ghoul is not a colonist. Its mutation disables the AllWork tag permanently.
+            // Patient and PatientBedRest have no work tags, so a ghoul can still be a patient.
+            var ghoulId = await SpawnAsync("Colonist");
+            await PawnActionAsync(ghoulId, "Actions\\Set mutant...\\Ghoul");
+            ExpectRow(await RowAsync(ghoulId), "other", false, true, "The colony ghoul");
+            var ghoul = await DetailsAsync(ghoulId);
+            var ghoulWork = JsonNodeHelpers.ReadArray(ghoul, "workPriorities");
+            if (ghoulWork.Count == 0)
+                throw new InvalidOperationException($"The colony ghoul must report work priorities: {ghoul?.ToJsonString()}");
+            foreach (var work in ghoulWork)
+            {
+                var patient = JsonNodeHelpers.ReadString(work, "defName") is "Patient" or "PatientBedRest";
+                if (JsonNodeHelpers.ReadBoolean(work, "disabled") != !patient || JsonNodeHelpers.ReadBoolean(work, "permanentlyDisabled") != !patient)
+                    throw new InvalidOperationException($"The ghoul must be able to be a patient and have every other work type permanently disabled: {work?.ToJsonString()}");
+            }
+
+            // Anomaly shambler.
+            var shamblerId = await SpawnAsync("Villager");
+            await PawnActionAsync(shamblerId, "Actions\\Set mutant...\\Shambler");
+            ExpectRow(await RowAsync(shamblerId), "hostile", true, false, "The shambler");
+
+            // Biotech mechs. A lifter can only haul, so a colony lifter has every other work type permanently disabled.
+            var hostileMechId = await SpawnAsync("Mech_Lifter");
+            ExpectRow(await RowAsync(hostileMechId), "hostile", true, false, "The mechanoid lifter");
+            var colonyMechId = await SpawnAsync("Mech_Lifter");
+            await PawnActionAsync(colonyMechId, "Actions\\T: Recruit");
+            ExpectRow(await RowAsync(colonyMechId), "mech", false, true, "The recruited lifter");
+            var mech = await DetailsAsync(colonyMechId);
+            var mechWork = JsonNodeHelpers.ReadArray(mech, "workPriorities");
+            if (mechWork.Count == 0)
+                throw new InvalidOperationException($"The colony lifter must report work priorities: {mech?.ToJsonString()}");
+            foreach (var work in mechWork)
+            {
+                var hauling = JsonNodeHelpers.ReadString(work, "defName") == "Hauling";
+                if (JsonNodeHelpers.ReadBoolean(work, "disabled") != !hauling || JsonNodeHelpers.ReadBoolean(work, "permanentlyDisabled") != !hauling)
+                    throw new InvalidOperationException($"The colony lifter must haul and have every other work type permanently disabled: {work?.ToJsonString()}");
+            }
+
+            // A berserk colonist keeps its role and is hostile to the player.
+            var berserkId = await SpawnAsync("Colonist");
+            await PawnActionAsync(berserkId, "Actions\\Mental state...\\Berserk");
+            ExpectRow(await RowAsync(berserkId), "colonist", true, true, "The berserk colonist");
+
+            await CheckCountsAsync("before the slave rebellion", slaveId, ghoulId);
+
+            await PawnActionAsync(slaveId, "Actions\\T: Start slave rebellion (aggressive)");
+            ExpectRow(await RowAsync(slaveId), "slave", true, true, "The rebelling slave");
+            await CheckCountsAsync("during the slave rebellion", slaveId, ghoulId);
+        }
+        finally
+        {
+            try
+            {
+                foreach (var pawnId in spawned)
+                {
+                    var destroy = await context.CallGameToolAsync(Step("destroy"), "rimworld/execute_debug_action", new { path = "Actions\\T: Destroy", thingId = pawnId }, cancellationToken);
+                    if (destroy.Success == false)
+                        context.Note($"Could not destroy the spawned pawn '{pawnId}': {destroy.Message}");
+                }
+
+                var left = (await RowsAsync()).Keys.Where(spawned.Contains).ToList();
+                if (left.Count > 0)
+                    context.Note($"Spawned pawns are still on the map: {string.Join(", ", left)}");
+                await context.CallGameToolAsync("dlc_pawns.restore_pause", "rimworld/pause_game", new { pause = wasPaused }, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                context.Note($"The cleanup failed: {exception.Message}");
+            }
+        }
     }
 
     private static async Task RunRepeatedRowClickAsync(SmokeScenarioContext context, CancellationToken cancellationToken)
