@@ -364,6 +364,13 @@ internal static class RimWorldTargeting
         return true;
     }
 
+    private static readonly System.Reflection.FieldInfo FloatMenuScrollPositionField = HarmonyLib.AccessTools.Field(typeof(FloatMenu), "scrollPosition");
+
+    private static UnityEngine.Vector2 ReadFloatMenuScrollPosition(FloatMenu menu)
+    {
+        return FloatMenuScrollPositionField?.GetValue(menu) is UnityEngine.Vector2 position ? position : UnityEngine.Vector2.zero;
+    }
+
     private static IReadOnlyList<FloatMenuTargetRect> ComputeContextMenuOptionRects(FloatMenu menu, ContextMenuSnapshot snapshot)
     {
         return FloatMenuTargetLayoutCalculator.Compute(new FloatMenuTargetLayoutRequest
@@ -375,6 +382,8 @@ internal static class RimWorldTargeting
             ColumnCount = Math.Max(menu.ColumnCount, 1),
             MaxViewHeight = menu.MaxViewHeight,
             OptionSpacing = FloatMenu.OptionSpacing,
+            ScrollX = ReadFloatMenuScrollPosition(menu).x,
+            ScrollY = ReadFloatMenuScrollPosition(menu).y,
             TitleHeight = 0f,
             OptionHeights = snapshot.Options.Select(option => option.RequiredHeight).ToList()
         });

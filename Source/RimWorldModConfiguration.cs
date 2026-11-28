@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using HarmonyLib;
 using RimBridgeServer.Core;
 using Verse;
 
@@ -188,7 +189,8 @@ internal static class RimWorldModConfiguration
             success = true,
             requestedModId = normalizedQuery,
             changed,
-            saved = changed && save,
+            saved = changed && save && SavesModsConfig,
+            notSavedReason = changed && save && !SavesModsConfig ? CommandLineModListReason : null,
             previousEnabled,
             currentEnabled,
             message = changed
@@ -198,6 +200,13 @@ internal static class RimWorldModConfiguration
             configurationStatus = ToResponseStatus(after)
         };
     }
+
+    private const string CommandLineModListReason = "RimWorld started with a -mod command-line mod list, so it does not write ModsConfig.xml. The change lasts until the game exits, and the next start uses the command-line list again.";
+
+    private static readonly System.Reflection.FieldInfo CommandLineModListField = AccessTools.Field(typeof(ModsConfig), "commandLineModList");
+
+    // ModsConfig.Save returns without writing when the mod list came from the command line.
+    private static bool SavesModsConfig => CommandLineModListField?.GetValue(null) is not true;
 
     public static object ReorderModResponse(string modId, int targetIndex, bool save = true)
     {
@@ -228,7 +237,11 @@ internal static class RimWorldModConfiguration
         string reorderError;
         try
         {
-            changed = ModsConfig.TryReorder(beforeEntry.ActiveLoadOrder.Value, targetIndex, out reorderError);
+            // TryReorder inserts the mod before the entry at its second argument and then removes the old entry.
+            // So a move down must insert after the target entry, as the mod list page does with placeAfter + 1.
+            var currentIndex = beforeEntry.ActiveLoadOrder.Value;
+            var insertionIndex = targetIndex > currentIndex ? targetIndex + 1 : targetIndex;
+            changed = ModsConfig.TryReorder(currentIndex, insertionIndex, out reorderError);
             if (changed && save)
                 ModsConfig.Save();
         }
@@ -252,7 +265,8 @@ internal static class RimWorldModConfiguration
             success = true,
             requestedModId = normalizedQuery,
             changed,
-            saved = changed && save,
+            saved = changed && save && SavesModsConfig,
+            notSavedReason = changed && save && !SavesModsConfig ? CommandLineModListReason : null,
             previousIndex = beforeEntry.ActiveLoadOrder,
             targetIndex,
             currentIndex = afterEntry?.ActiveLoadOrder,

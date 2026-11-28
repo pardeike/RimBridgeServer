@@ -236,6 +236,18 @@ internal static class RimWorldInput
             return BuildCommandResult("cancel", before, GetUiState(), $"Ended the active debug tool '{label}'.");
         }
 
+        // Escape goes to the windows first. With no window that closes on cancel, the game's DesignatorManager
+        // deselects the selected designator, as a player expects after placing a floor or a stockpile.
+        var designatorManager = Find.DesignatorManager;
+        var selectedDesignator = designatorManager?.SelectedDesignator;
+        var cancelWindowOpen = Find.WindowStack?.Windows?.Any(window => window != null && window.closeOnCancel) == true;
+        if (!cancelWindowOpen && selectedDesignator != null)
+        {
+            var before = GetUiState();
+            designatorManager.Deselect();
+            return BuildCommandResult("cancel", before, GetUiState(), $"Deselected the designator '{selectedDesignator.Label}'.");
+        }
+
         return DispatchWindowCommand("cancel", stack => stack.Notify_PressedCancel());
     }
 
@@ -631,8 +643,10 @@ internal static class RimWorldInput
     private static Window ResolveWindow(WindowStack windowStack, string windowType)
     {
         var windows = windowStack.Windows?.OfType<Window>() ?? Enumerable.Empty<Window>();
+        // An ImmediateWindow is a helper that the game draws again every frame, such as a tooltip or an alert
+        // readout, and it often sits on top. Without a type, close the top window that a player sees as a window.
         if (string.IsNullOrWhiteSpace(windowType))
-            return windows.LastOrDefault();
+            return windows.LastOrDefault(window => window is not ImmediateWindow);
 
         var trimmed = windowType.Trim();
         return windows

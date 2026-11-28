@@ -19,7 +19,7 @@ internal static class RimWorldPawns
         if (filter != null && Roles.Contains(filter) == false)
             return new { success = false, message = $"Unknown role '{role}'. Use colonist, prisoner, slave, animal, mech, hostile or other." };
 
-        var pawns = RimWorldState.AllCurrentMapPawns(map)
+        var pawns = RimWorldState.AllCurrentMapPawnsIncludingHeld(map)
             .Select(pawn => (Pawn: pawn, Role: RoleOf(pawn)))
             .Where(entry => filter == null || entry.Role == filter)
             .OrderBy(entry => Array.IndexOf(Roles, entry.Role))
@@ -73,7 +73,8 @@ internal static class RimWorldPawns
             role,
             faction = pawn.Faction?.Name,
             factionIsPlayer = pawn.Faction?.IsPlayer ?? false,
-            position = pawn.Position.IsValid ? new { x = pawn.Position.x, z = pawn.Position.z } : null,
+            position = pawn.PositionHeld.IsValid ? new { x = pawn.PositionHeld.x, z = pawn.PositionHeld.z } : null,
+            heldBy = pawn.Spawned ? null : RimWorldState.DescribeHolder(pawn),
             job = pawn.CurJob?.def?.defName,
             drafted = pawn.drafter?.Drafted ?? false,
             hostileToPlayer = Faction.OfPlayer != null && pawn.HostileTo(Faction.OfPlayer),

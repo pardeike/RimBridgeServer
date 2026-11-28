@@ -508,7 +508,7 @@ public sealed class CapabilityScriptRunner
             return;
         }
 
-        if (string.Equals(call, "rimbridge/run_script", StringComparison.OrdinalIgnoreCase))
+        if (IsScriptRunnerCall(call))
         {
             state.RecordExecutedStep(
                 CreateInvalidStepContext(
@@ -517,7 +517,7 @@ public sealed class CapabilityScriptRunner
                     baseId,
                     call,
                     "script.invalid_step",
-                    "Nested rimbridge/run_script calls are not supported in this version."),
+                    $"A script cannot call '{call}'. Nested script runs are not supported, because each nested run would get its own time and statement budget."),
                 referenceable: true);
             return;
         }
@@ -1267,6 +1267,31 @@ public sealed class CapabilityScriptRunner
             : $"The most recent continueUntil attempt timed out: {errorMessage}";
     }
 
+    private static readonly HashSet<string> ScriptRunnerAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "rimbridge/run_script",
+        "rimbridge/run_lua",
+        "rimbridge/run_lua_file"
+    };
+
+    // A script runner can be named by its alias or by its capability id. Both forms are refused.
+    private bool IsScriptRunnerCall(string call)
+    {
+        if (ScriptRunnerAliases.Contains(call))
+            return true;
+
+        try
+        {
+            var descriptor = _registry.ResolveDescriptor(call);
+            return ScriptRunnerAliases.Contains(descriptor.Id)
+                || (descriptor.Aliases?.Any(ScriptRunnerAliases.Contains) ?? false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
     private ExecutedStepContext InvokeStepOnce(
         string reportId,
         string baseId,
@@ -1280,6 +1305,17 @@ public sealed class CapabilityScriptRunner
             scriptStatementId: baseId,
             scriptStepId: reportId,
             scriptCall: call);
+        // An unknown tool name is a failed step, as any other failed call. A thrown exception would lose the
+        // output and the results of the steps that ran before it.
+        try
+        {
+            _registry.ResolveDescriptor(call);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            return CreateFailedStepContext(reportIndex, reportId, baseId, call, "capability.not_found", ex.Message);
+        }
+
         var envelope = _registry.Invoke(call, arguments);
         return new ExecutedStepContext
         {
@@ -1592,7 +1628,11 @@ public sealed class CapabilityScriptRunner
             if (operands.Count != 2)
                 throw new InvalidOperationException("Arithmetic expression '$mod' requires exactly two operands.");
 
-            value = NormalizeArithmeticResult(operands[0] % operands[1]);
+            // Lua's % is floored: the result has the sign of the divisor, so -1 % 5 is 4 and not -1.
+            var remainder = operands[0] % operands[1];
+            if (remainder != 0 && (remainder < 0) != (operands[1] < 0))
+                remainder += operands[1];
+            value = NormalizeArithmeticResult(remainder);
             return true;
         }
 
@@ -2172,6 +2212,10 @@ public sealed class CapabilityScriptRunner
 
     private static bool ObjectEquals(object left, object right)
     {
+        // Two strings are equal only when their text is equal, as in Lua. "1.0" and "1" differ.
+        if (left is string leftText && right is string rightText)
+            return string.Equals(leftText, rightText, StringComparison.Ordinal);
+
         if (TryCompareNumbers(left, right, out var numericComparison))
             return numericComparison == 0;
 
@@ -2242,19 +2286,29 @@ public sealed class CapabilityScriptRunner
                 result = ulongValue;
                 return true;
             case float floatValue:
-                result = (decimal)floatValue;
-                return true;
+                return TryConvertFloatingPoint(floatValue, out result);
             case double doubleValue:
-                result = (decimal)doubleValue;
-                return true;
+                return TryConvertFloatingPoint(doubleValue, out result);
             case decimal decimalValue:
                 result = decimalValue;
                 return true;
-            case string text when decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out result):
+            // NumberStyles.Float has no thousands separator, so "1,5" is not the number 15.
+            case string text when decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out result):
                 return true;
             default:
                 return false;
         }
+    }
+
+    // NaN, infinity and values outside the decimal range are not numbers here. The cast would throw.
+    private static bool TryConvertFloatingPoint(double value, out decimal result)
+    {
+        result = 0m;
+        if (double.IsNaN(value) || double.IsInfinity(value) || Math.Abs(value) >= 7.9e28)
+            return false;
+
+        result = (decimal)value;
+        return true;
     }
 
     private static bool TryResolvePath(object root, string path, out object resolved)

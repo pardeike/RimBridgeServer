@@ -311,6 +311,8 @@ internal sealed class ContextMenuCapabilityModule
         {
             if (Current.Game == null)
                 return new PreparedMapClick { Success = false, Failure = new { success = false, message = "No game is currently loaded." } };
+            if (RimWorldState.WorldViewOpen)
+                return new PreparedMapClick { Success = false, Failure = new { success = false, message = RimWorldState.WorldViewOpenMessage } };
 
             var selectedPawns = Find.Selector.SelectedPawns.ToList();
             if (requireSelectedPawns && selectedPawns.Count == 0)
@@ -335,6 +337,8 @@ internal sealed class ContextMenuCapabilityModule
         {
             if (Current.Game == null)
                 return new PreparedMapClick { Success = false, Failure = new { success = false, message = "No game is currently loaded." } };
+            if (RimWorldState.WorldViewOpen)
+                return new PreparedMapClick { Success = false, Failure = new { success = false, message = RimWorldState.WorldViewOpenMessage } };
 
             var map = RimWorldState.CurrentMapOrThrow();
             if (!TryResolveMapCell(map, x, z, out var target, out var failure))
@@ -350,6 +354,8 @@ internal sealed class ContextMenuCapabilityModule
         {
             if (Current.Game == null)
                 return new PreparedMapDrag { Success = false, Failure = new { success = false, message = "No game is currently loaded." } };
+            if (RimWorldState.WorldViewOpen)
+                return new PreparedMapDrag { Success = false, Failure = new { success = false, message = RimWorldState.WorldViewOpenMessage } };
 
             var map = RimWorldState.CurrentMapOrThrow();
             if (!TryResolveMapCell(map, fromX, fromZ, out var startTarget, out var failure))

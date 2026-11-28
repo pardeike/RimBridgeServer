@@ -150,6 +150,20 @@ internal static class RimWorldSelectionSemantics
             };
         }
 
+        // Only a Command acts on ProcessInput. Other gizmos, such as the psyfocus bar or the hemogen slider, read the
+        // mouse inside their own GizmoOnGUI, so ProcessInput does nothing for them.
+        if (representative is not Command)
+        {
+            return new
+            {
+                success = false,
+                message = $"Gizmo '{gizmoId}' ({representative.GetType().Name}) is not a command. It reacts to the mouse inside its own drawing, such as a bar or a slider. Use rimworld/get_ui_layout and rimworld/click_ui_target on the gizmo grid instead.",
+                requestedGizmoId = gizmoId,
+                selectionFingerprint = selectionFingerprintBefore,
+                gizmo = DescribeGroupedGizmo(target)
+            };
+        }
+
         if (representative.Disabled)
         {
             return new
@@ -398,9 +412,9 @@ internal static class RimWorldSelectionSemantics
         [
             representative?.GetType().FullName ?? "unknown",
             representative?.Order.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) ?? "0",
+            // Not Desc or TopRightLabel. They change while the game runs, for example a ritual repeat penalty in the
+            // description or the charges of an ability, and the id must stay the same between list and execute.
             command?.Label ?? string.Empty,
-            command?.Desc ?? string.Empty,
-            command?.TopRightLabel ?? string.Empty,
             groupedGizmos.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
             string.Join("|", ownerTokens)
         ];
@@ -430,6 +444,7 @@ internal static class RimWorldSelectionSemantics
                 ? representative.disabledReason
                 : null,
             visible = representative?.Visible ?? false,
+            executable = representative is Command,
             order = representative?.Order ?? 0f,
             groupSize = group.GroupedGizmos.Count,
             ownerCount = owners.Count,

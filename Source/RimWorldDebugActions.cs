@@ -210,7 +210,8 @@ internal static class RimWorldDebugActions
 
             try
             {
-                targetPawn = RimWorldState.ResolveCurrentMapPawn(pawnName, pawnId);
+                // The game's debug tool targets the pawns at a cell, including pawns held in a building there.
+                targetPawn = RimWorldState.ResolveCurrentMapPawnIncludingHeld(pawnName, pawnId);
             }
             catch (Exception ex)
             {

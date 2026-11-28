@@ -204,6 +204,9 @@ internal static class RimWorldArchitect
         if (!TryResolveDesignator(designatorId, out var descriptor, out error))
             return Failure(error);
 
+        if (!IsDesignatorVisible(descriptor.Designator))
+            return Failure($"Architect designator '{designatorId}' is not available now, for example because its research is not finished. RimWorld hides it in the Architect menu. Enable god mode to use it anyway.");
+
         if (!TrySelectDescriptor(descriptor, out error))
             return Failure(error);
 
@@ -227,6 +230,10 @@ internal static class RimWorldArchitect
             return Failure(error);
         if (!descriptor.Actionable || !descriptor.SupportsCellApplication)
             return Failure($"Architect designator '{designatorId}' does not support direct cell application.");
+        // The Architect menu hides a designator whose research, tech level, prerequisite building or other rule
+        // is not met. Colonists build a blueprint without checking these rules again, so refuse a hidden one.
+        if (!IsDesignatorVisible(descriptor.Designator))
+            return Failure($"Architect designator '{designatorId}' is not available now, for example because its research is not finished. RimWorld hides it in the Architect menu. Enable god mode to use it anyway.");
         if (!TrySelectDescriptor(descriptor, out error))
             return Failure(error);
         if (!TryApplyBuildOptions(descriptor.Designator, stuffDefName, rotation, out error))
@@ -278,17 +285,32 @@ internal static class RimWorldArchitect
             });
         }
 
+        // RimWorld's visible stockpile tool can still create a fresh zone on empty cells even when an existing zone
+        // target is selected. For automation, an explicit target only expands: it takes unzoned cells that connect to
+        // it, as Designator_ZoneAdd does, and never cells of another zone or a new zone.
+        List<IntVec3> targetZoneCellsToAdd = null;
+        if (explicitTargetZone != null)
+        {
+            targetZoneCellsToAdd = PlanTargetZoneExpansion(map, explicitTargetZone, acceptedCells, out var skippedCells);
+            foreach (var skipped in skippedCells)
+            {
+                acceptedCells.Remove(skipped.Cell);
+                rejectedCells.Add(new { x = skipped.Cell.x, z = skipped.Cell.z, accepted = false, reason = skipped.Reason });
+            }
+        }
+
+        var zoneBefore = descriptor.Designator is Designator_ZoneAdd
+            ? acceptedCells.ToDictionary(cell => cell, cell => map.zoneManager?.ZoneAt(cell))
+            : null;
+
         Exception applyException = null;
         if (!dryRun && acceptedCells.Count > 0)
         {
             try
             {
-                // RimWorld's visible stockpile tool can still create a fresh zone on empty cells even when an
-                // existing zone target is selected. For automation we need deterministic expand semantics, so
-                // explicit zone targets apply directly to the chosen zone instance.
                 if (explicitTargetZone != null)
                 {
-                    foreach (var cell in acceptedCells)
+                    foreach (var cell in targetZoneCellsToAdd)
                         explicitTargetZone.AddCell(cell);
                 }
                 // Mirror DesignatorManager.ProcessInputEvents: only designators without a drag style take single-cell
@@ -316,8 +338,16 @@ internal static class RimWorldArchitect
 
         var selectionState = CaptureSelectionState();
         var sampleCell = requestedCells.Count == 1 ? CreateCellInfoPayload(map, requestedCells[0]) : null;
+        // The cells that this apply put into a zone of the placed type. A rectangle over two zones and the gap
+        // between them adds only the gap, to a zone of its own, so the result zone is the zone that gained cells.
+        var placedZoneType = (descriptor.Designator as Designator_ZoneAdd)?.zoneTypeToPlace;
+        var gainedCells = !dryRun && applyException == null && zoneBefore != null
+            ? acceptedCells.Where(cell => map.zoneManager?.ZoneAt(cell) is Zone after && after != zoneBefore[cell] && after.GetType() == placedZoneType).ToList()
+            : [];
         var resultZone = !dryRun && acceptedCells.Count > 0 && descriptor.Designator is Designator_ZoneAdd
-            ? map.zoneManager?.ZoneAt(acceptedCells[0])
+            ? gainedCells.Select(cell => map.zoneManager.ZoneAt(cell)).GroupBy(zone => zone).OrderByDescending(group => group.Count()).Select(group => group.Key).FirstOrDefault()
+                ?? explicitTargetZone
+                ?? map.zoneManager?.ZoneAt(acceptedCells[0])
             : null;
         var zoneResult = resultZone == null
             ? null
@@ -347,7 +377,8 @@ internal static class RimWorldArchitect
             designator = DescribeDesignator(descriptor, selectionState),
             requestedCellCount = requestedCells.Count,
             acceptedCellCount = acceptedCells.Count,
-            appliedCellCount = dryRun || applyException != null ? 0 : zonedCellCount ?? acceptedCells.Count,
+            appliedCellCount = dryRun || applyException != null ? 0 : zoneBefore != null ? gainedCells.Count : acceptedCells.Count,
+            zonedCellCount,
             rejectedCellCount = rejectedCells.Count,
             acceptedCells = listedAccepted,
             acceptedCellsOmitted = listedAccepted == null ? (bool?)true : null,
@@ -358,6 +389,65 @@ internal static class RimWorldArchitect
             sampleCell,
             state = RimWorldState.ToolStateSnapshot()
         };
+    }
+
+    private readonly struct SkippedZoneCell
+    {
+        public SkippedZoneCell(IntVec3 cell, string reason)
+        {
+            Cell = cell;
+            Reason = reason;
+        }
+
+        public IntVec3 Cell { get; }
+
+        public string Reason { get; }
+    }
+
+    // Mirrors Designator_ZoneAdd.DesignateMultiCell for a fixed target zone: zoned cells are skipped, and an unzoned
+    // cell is added once it touches the target or a cell added before it. A fishing zone takes only cells of its own
+    // water type, as Designator_ZoneAdd_Fishing splits salt water from fresh water.
+    private static List<IntVec3> PlanTargetZoneExpansion(Map map, Zone target, IEnumerable<IntVec3> cells, out List<SkippedZoneCell> skipped)
+    {
+        skipped = [];
+        var zoneCells = new HashSet<IntVec3>(target.Cells);
+        WaterBodyType? targetWaterType = target is Zone_Fishing && target.Cells.Count > 0 ? target.Cells[0].GetWaterBodyType(map) : null;
+        var pending = new List<IntVec3>();
+        foreach (var cell in cells)
+        {
+            var zone = map.zoneManager.ZoneAt(cell);
+            if (zone == target)
+                continue;
+            if (zone != null)
+                skipped.Add(new SkippedZoneCell(cell, $"The cell belongs to the zone '{zone.label}'."));
+            else if (targetWaterType != null && cell.GetWaterBodyType(map) != targetWaterType)
+                skipped.Add(new SkippedZoneCell(cell, $"The cell has another water type than the fishing zone '{target.label}'."));
+            else
+                pending.Add(cell);
+        }
+
+        var toAdd = new List<IntVec3>();
+        var progress = true;
+        while (progress && pending.Count > 0)
+        {
+            progress = false;
+            for (var index = pending.Count - 1; index >= 0; index--)
+            {
+                var cell = pending[index];
+                if (!GenAdj.CardinalDirections.Any(direction => zoneCells.Contains(cell + direction)))
+                    continue;
+
+                zoneCells.Add(cell);
+                toAdd.Add(cell);
+                pending.RemoveAt(index);
+                progress = true;
+            }
+        }
+
+        foreach (var cell in pending)
+            skipped.Add(new SkippedZoneCell(cell, $"The cell does not connect to the target zone '{target.label}'."));
+
+        return toAdd;
     }
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Designator_ZoneAdd, Zone> ExplicitZoneTargets = new();
@@ -477,7 +567,6 @@ internal static class RimWorldArchitect
 
         var width = cells.Count == 0 ? 0 : maxX - minX + 1;
         var height = cells.Count == 0 ? 0 : maxZ - minZ + 1;
-        var onBorder = cells.Count(cell => cell.x == minX || cell.x == maxX || cell.z == minZ || cell.z == maxZ);
         return new
         {
             id = plan.GetUniqueLoadID(),
@@ -486,10 +575,7 @@ internal static class RimWorldArchitect
             hidden = plan.Hidden,
             cellCount = cells.Count,
             bounds = cells.Count == 0 ? null : new { x = minX, z = minZ, width, height, maxX, maxZ },
-            shape = cells.Count == 0 ? "empty"
-                : cells.Count == width * height ? "filled_rectangle"
-                : onBorder == cells.Count ? "rectangle_outline"
-                : "irregular",
+            shape = PlanShapes.Classify(cells.Select(cell => (cell.x, cell.z)).Distinct().ToList()),
             cells = includeCells ? cells.OrderBy(cell => cell.z).ThenBy(cell => cell.x).Select(ToCellPayload).ToList() : null
         };
     }
@@ -591,6 +677,10 @@ internal static class RimWorldArchitect
             x = cell.x,
             z = cell.z,
             terrain = map.terrainGrid.TerrainAt(cell)?.defName,
+            underTerrain = map.terrainGrid.UnderTerrainAt(cell)?.defName,
+            foundation = map.terrainGrid.FoundationAt(cell)?.defName,
+            polluted = ModsConfig.BiotechActive && cell.IsPolluted(map) ? true : (bool?)null,
+            vacuum = ReadVacuum(map, cell),
             roof = map.roofGrid.RoofAt(cell)?.defName,
             fogged = cell.Fogged(map),
             walkable = cell.Walkable(map),
@@ -1235,10 +1325,13 @@ internal static class RimWorldArchitect
             return false;
         }
 
+        // As in the game's dropdown menu, the chosen child becomes the active child and the selected designator.
+        // A selected dropdown has no drag style, so a map click would call Designator_Dropdown.DesignateSingleCell,
+        // which throws NotImplementedException.
         if (descriptor.ContainerDesignator is Designator_Dropdown dropdown)
             dropdown.SetActiveDesignator(descriptor.Designator, true);
 
-        manager.Select(descriptor.EffectiveRootDesignator);
+        manager.Select(descriptor.Designator);
         manager.CheckSelectedDesignatorValid();
         return true;
     }
@@ -1255,6 +1348,9 @@ internal static class RimWorldArchitect
             var visibleDesignators = CreateVisibleDesignatorSet(visibleRoots);
             var roots = includeHidden ? GetAllRootDesignators(category) : visibleRoots;
             var designators = BuildDesignatorDescriptors(category, roots, visibleDesignators);
+            // Filter after the ids are built, so an id is the same with and without includeHidden.
+            if (!includeHidden)
+                designators = designators.Where(designator => designator.Visible).ToList();
             var categoryVisible = category.Visible;
 
             if (!includeHidden && !categoryVisible)
@@ -1311,18 +1407,35 @@ internal static class RimWorldArchitect
             if (root == null)
                 continue;
 
+            if (!IsDesignatorVisible(root))
+                continue;
+
             visible.Add(root);
             if (root is not Designator_Dropdown dropdown)
                 continue;
 
             foreach (var child in dropdown.Elements ?? [])
             {
-                if (child != null)
+                if (child != null && IsDesignatorVisible(child))
                     visible.Add(child);
             }
         }
 
         return visible;
+    }
+
+    // Designator.Visible holds the game's availability rules, as GizmoGridDrawer uses them for the Architect menu.
+    // Some rules read the current map, so a failure counts as visible rather than hiding every designator.
+    private static bool IsDesignatorVisible(Designator designator)
+    {
+        try
+        {
+            return designator.Visible;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
     }
 
     private static List<ArchitectDesignatorDescriptor> BuildDesignatorDescriptors(DesignationCategoryDef category, IEnumerable<Designator> roots, HashSet<Designator> visibleDesignators)
@@ -1409,20 +1522,26 @@ internal static class RimWorldArchitect
         if (designator is Designator_Build build && !string.IsNullOrWhiteSpace(build.PlacingDef?.defName))
             return "build-" + build.PlacingDef.defName;
 
-        if (designator is Designator_Dropdown)
-            return "dropdown-" + BuildStableDesignatorLabelKey(designator);
+        // A dropdown's label is the label of its active child, which changes when another child is applied. Its
+        // children share one dropdown group def, and that name stays the same.
+        if (designator is Designator_Dropdown dropdown)
+        {
+            var groupDefName = dropdown.Elements?
+                .OfType<Designator_Build>()
+                .Select(child => child.PlacingDef?.designatorDropdown?.defName)
+                .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+            return "dropdown-" + (groupDefName ?? BuildStableDesignatorLabelKey(designator));
+        }
 
         return BuildStableDesignatorLabelKey(designator);
     }
 
+    // Labels are translated, so a key from a label differs between languages. The tutor tag and the type name do not.
+    // Two designators of one type in a category get a numeric suffix in category order.
     private static string BuildStableDesignatorLabelKey(Designator designator)
     {
         if (!string.IsNullOrWhiteSpace(designator.HighlightTag))
             return "highlight-" + designator.HighlightTag;
-        if (!string.IsNullOrWhiteSpace(designator.defaultLabel))
-            return "label-" + designator.defaultLabel;
-        if (!string.IsNullOrWhiteSpace(designator.Label))
-            return "label-" + designator.Label;
 
         return "type-" + designator.GetType().Name;
     }
@@ -1462,13 +1581,32 @@ internal static class RimWorldArchitect
         return ResolveDesignatorApplicationKind(designator) is "build" or "zone" or "area";
     }
 
+    // The game selects a dropdown child, not the dropdown, so the dropdown of a selected child is looked up.
+    private static Designator_Dropdown FindContainingDropdown(Designator designator)
+    {
+        if (designator is Designator_Dropdown)
+            return null;
+
+        foreach (var category in DefDatabase<DesignationCategoryDef>.AllDefsListForReading)
+        {
+            foreach (var dropdown in category?.AllResolvedAndIdeoDesignators?.OfType<Designator_Dropdown>() ?? [])
+            {
+                if (dropdown.Elements?.Contains(designator) == true)
+                    return dropdown;
+            }
+        }
+
+        return null;
+    }
+
     private static ArchitectSelectionState CaptureSelectionState()
     {
         var manager = TryGetDesignatorManager();
-        var selectedRoot = manager?.SelectedDesignator;
-        var selectedAction = selectedRoot is Designator_Dropdown dropdown && dropdown.activeDesignator != null
+        var selectedDesignator = manager?.SelectedDesignator;
+        var selectedRoot = selectedDesignator == null ? null : FindContainingDropdown(selectedDesignator) ?? selectedDesignator;
+        var selectedAction = selectedDesignator is Designator_Dropdown dropdown && dropdown.activeDesignator != null
             ? dropdown.activeDesignator
-            : selectedRoot;
+            : selectedDesignator;
 
         return new ArchitectSelectionState
         {
@@ -1822,6 +1960,16 @@ internal static class RimWorldArchitect
         };
     }
 
+    // Odyssey: the vacuum of a cell on a space map, 0 for air and 1 for open space. Null when the map has no vacuum.
+    private static float? ReadVacuum(Map map, IntVec3 cell)
+    {
+        if (!ModsConfig.OdysseyActive)
+            return null;
+
+        var vacuum = cell.GetVacuum(map);
+        return vacuum > 0f ? (float)Math.Round(vacuum, 3) : null;
+    }
+
     private static object CreateCellInfoPayload(Map map, IntVec3 cell)
     {
         var things = map.thingGrid.ThingsListAt(cell)
@@ -1863,6 +2011,10 @@ internal static class RimWorldArchitect
             x = cell.x,
             z = cell.z,
             terrainDefName = map.terrainGrid.TerrainAt(cell)?.defName,
+            underTerrainDefName = map.terrainGrid.UnderTerrainAt(cell)?.defName,
+            foundationDefName = map.terrainGrid.FoundationAt(cell)?.defName,
+            polluted = ModsConfig.BiotechActive ? cell.IsPolluted(map) : (bool?)null,
+            vacuum = ReadVacuum(map, cell),
             roofDefName = map.roofGrid.RoofAt(cell)?.defName,
             fogged = cell.Fogged(map),
             walkable = cell.Walkable(map),

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using RimWorld;
+using RimWorld.Planet;
 using RimBridgeServer.Core;
 using UnityEngine;
 using Verse;
@@ -118,6 +119,12 @@ internal static class RimWorldState
         };
     }
 
+    // While the world view is open, the game sends clicks to the world map, so a map click could give a caravan a
+    // travel order. WorldSelected is also true when no map is current.
+    public static bool WorldViewOpen => WorldRendererUtility.WorldSelected;
+
+    public const string WorldViewOpenMessage = "The world view is open, so the game would send this input to the world map. Close the World tab first with rimworld/close_main_tab, or move the camera to the map with rimworld/jump_camera_to_cell.";
+
     public static Map CurrentMapOrThrow()
     {
         var map = Find.CurrentMap;
@@ -159,6 +166,21 @@ internal static class RimWorldState
         return ResolvePawn(pawnName, pawnId, AllPlayerColonists(), "player-controlled colonist");
     }
 
+    // The spawned player pawns that have a draft controller on any map: colonists, slaves, colony mechs and ghouls.
+    public static Pawn ResolveDraftablePawn(string pawnName = null, string pawnId = null)
+    {
+        List<Pawn> candidates = Current.Game == null || Faction.OfPlayerSilentFail == null
+            ? []
+            : Find.Maps
+                .Where(map => map != null)
+                .SelectMany(map => map.mapPawns.SpawnedPawnsInFaction(Faction.OfPlayer))
+                .Where(pawn => pawn.drafter != null)
+                .Distinct()
+                .OrderBy(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort)
+                .ToList();
+        return ResolvePawn(pawnName, pawnId, candidates, "player pawn that can be drafted");
+    }
+
     public static Pawn ResolveCurrentMapColonist(string pawnName = null, string pawnId = null)
     {
         return ResolvePawn(pawnName, pawnId, CurrentMapColonists(CurrentMapOrThrow()), "current-map colonist");
@@ -167,6 +189,23 @@ internal static class RimWorldState
     public static Pawn ResolveCurrentMapPawn(string pawnName = null, string pawnId = null)
     {
         return ResolvePawn(pawnName, pawnId, AllCurrentMapPawns(CurrentMapOrThrow()), "current-map pawn");
+    }
+
+    // The living pawns of a map, spawned or held: an entity on a holding platform, a pawn in a casket, a growth vat
+    // or a biosculpter pod, a carried baby.
+    public static List<Pawn> AllCurrentMapPawnsIncludingHeld(Map map)
+    {
+        return map.mapPawns.AllPawnsSpawned
+            .Concat(map.mapPawns.AllPawnsUnspawned)
+            .Where(pawn => pawn != null && !pawn.Dead)
+            .Distinct()
+            .OrderBy(pawn => pawn.Name?.ToStringShort ?? pawn.LabelShort)
+            .ToList();
+    }
+
+    public static Pawn ResolveCurrentMapPawnIncludingHeld(string pawnName = null, string pawnId = null)
+    {
+        return ResolvePawn(pawnName, pawnId, AllCurrentMapPawnsIncludingHeld(CurrentMapOrThrow()), "current-map pawn");
     }
 
     public static Pawn ResolveAnyPawn(string pawnName = null, string pawnId = null)
@@ -238,8 +277,41 @@ internal static class RimWorldState
         return new string(chars);
     }
 
+    // The innermost thing or world object that holds an unspawned thing: a building, a carrying pawn, a caravan.
+    public static object DescribeHolder(Thing thing)
+    {
+        for (var holder = thing?.ParentHolder; holder != null; holder = holder.ParentHolder)
+        {
+            if (holder is Thing holderThing)
+            {
+                return new
+                {
+                    thingId = GetThingId(holderThing),
+                    defName = holderThing.def?.defName,
+                    label = holderThing.LabelCap.ToString()
+                };
+            }
+
+            if (holder is RimWorld.Planet.WorldObject worldObject)
+            {
+                return new
+                {
+                    worldObjectId = worldObject.GetUniqueLoadID(),
+                    defName = worldObject.def?.defName,
+                    label = worldObject.LabelCap.ToString()
+                };
+            }
+        }
+
+        return null;
+    }
+
     public static object DescribePawn(Pawn pawn)
     {
+        // A pawn on a holding platform, in a casket or pod, carried or in a caravan is not spawned. Map and Position
+        // are then null and stale. MapHeld and PositionHeld give the map and the cell of the holder.
+        var map = pawn.MapHeld;
+        var position = pawn.PositionHeld;
         return new
         {
             pawnId = GetThingId(pawn),
@@ -247,7 +319,6 @@ internal static class RimWorldState
             className = pawn.GetType().FullName ?? pawn.GetType().Name,
             defName = pawn.def?.defName,
             kindDef = pawn.kindDef?.defName,
-            race = pawn.def?.race?.ToString(),
             name = pawn.Name?.ToStringShort ?? pawn.LabelShort,
             fullName = pawn.Name?.ToStringFull ?? pawn.LabelCap,
             label = pawn.LabelCap,
@@ -256,10 +327,11 @@ internal static class RimWorldState
             downed = pawn.Downed,
             dead = pawn.Dead,
             spawned = pawn.Spawned,
-            map = pawn.Map?.Index.ToString(CultureInfo.InvariantCulture),
-            mapId = GetMapId(pawn.Map),
-            mapIndex = pawn.Map?.Index,
-            position = pawn.Position.IsValid ? new { x = pawn.Position.x, z = pawn.Position.z } : null,
+            heldBy = pawn.Spawned ? null : DescribeHolder(pawn),
+            map = map?.Index.ToString(CultureInfo.InvariantCulture),
+            mapId = GetMapId(map),
+            mapIndex = map?.Index,
+            position = map != null && position.IsValid ? new { x = position.x, z = position.z } : null,
             job = pawn.CurJob?.def?.defName,
             mentalState = pawn.MentalStateDef?.defName,
             faction = pawn.Faction?.Name,

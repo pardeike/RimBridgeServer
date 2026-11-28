@@ -310,6 +310,9 @@ internal static class RimWorldHover
 
     private static object SetMapHoverTarget(int? x, int? z, string thingId, string pawnName, string pawnId, float offsetX, float offsetY, int? durationMs)
     {
+        if (RimWorldState.WorldViewOpen)
+            throw new InvalidOperationException(RimWorldState.WorldViewOpenMessage);
+
         RimBridgeUiWorkbench.ClearHoveredElement();
 
         if (!string.IsNullOrWhiteSpace(thingId))

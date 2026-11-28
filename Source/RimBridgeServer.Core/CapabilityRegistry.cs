@@ -10,6 +10,8 @@ namespace RimBridgeServer.Core;
 
 public sealed class CapabilityRegistry
 {
+    public const string ReservedArgumentPrefix = "_rimBridge";
+
     private sealed class StartedInvocation
     {
         public RimBridgeCapabilityRegistration Registration { get; set; }
@@ -35,10 +37,16 @@ public sealed class CapabilityRegistry
         if (provider == null)
             throw new ArgumentNullException(nameof(provider));
 
-        foreach (var registration in provider.GetCapabilities() ?? Array.Empty<RimBridgeCapabilityRegistration>())
-        {
+        // Validate the whole provider before the first registration. A provider with a colliding or invalid
+        // name is rejected as a whole, so no part of it is callable while discovery reports it as failed.
+        var registrations = (provider.GetCapabilities() ?? Array.Empty<RimBridgeCapabilityRegistration>()).ToList();
+        var pendingIds = new HashSet<string>(StringComparer.Ordinal);
+        var pendingAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var registration in registrations)
+            Validate(registration, pendingIds, pendingAliases);
+
+        foreach (var registration in registrations)
             Register(registration);
-        }
     }
 
     public IReadOnlyList<CapabilityDescriptor> GetCapabilities()
@@ -212,7 +220,11 @@ public sealed class CapabilityRegistry
             return;
 
         var known = new HashSet<string>(descriptor.Parameters.Select(parameter => parameter.Name), StringComparer.OrdinalIgnoreCase);
-        var unknown = arguments.Keys.Where(name => !known.Contains(name)).OrderBy(name => name, StringComparer.Ordinal).ToList();
+        // Arguments that start with _rimBridge are host options, such as the SDK call timeout _rimBridgeTimeoutMs.
+        var unknown = arguments.Keys
+            .Where(name => !known.Contains(name) && !name.StartsWith(ReservedArgumentPrefix, StringComparison.Ordinal))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
         if (unknown.Count == 0)
             return;
 
@@ -224,7 +236,7 @@ public sealed class CapabilityRegistry
         });
     }
 
-    private void Register(RimBridgeCapabilityRegistration registration)
+    private void Validate(RimBridgeCapabilityRegistration registration, HashSet<string> pendingIds, Dictionary<string, string> pendingAliases)
     {
         if (registration == null)
             throw new ArgumentNullException(nameof(registration));
@@ -233,9 +245,29 @@ public sealed class CapabilityRegistry
         if (string.IsNullOrWhiteSpace(descriptor.Id))
             throw new InvalidOperationException("Capability registration must have a non-empty id.");
 
-        if (_registrationsById.ContainsKey(descriptor.Id))
+        if (_registrationsById.ContainsKey(descriptor.Id) || !pendingIds.Add(descriptor.Id))
             throw new InvalidOperationException($"Capability id '{descriptor.Id}' is already registered.");
 
+        ValidateAlias(descriptor.Id, descriptor.Id, pendingAliases);
+        foreach (var alias in descriptor.Aliases.Where(alias => string.IsNullOrWhiteSpace(alias) == false))
+        {
+            GabpToolNameValidator.EnsureCanonical(alias, nameof(descriptor.Aliases));
+            ValidateAlias(alias, descriptor.Id, pendingAliases);
+        }
+    }
+
+    private void ValidateAlias(string alias, string descriptorId, Dictionary<string, string> pendingAliases)
+    {
+        if ((_idsByAlias.TryGetValue(alias, out var existingId) || pendingAliases.TryGetValue(alias, out existingId))
+            && string.Equals(existingId, descriptorId, StringComparison.Ordinal) == false)
+            throw new InvalidOperationException($"Capability alias '{alias}' is already registered for '{existingId}'.");
+
+        pendingAliases[alias] = descriptorId;
+    }
+
+    private void Register(RimBridgeCapabilityRegistration registration)
+    {
+        var descriptor = registration.Descriptor;
         _registrationsById.Add(descriptor.Id, registration);
 
         RegisterAlias(descriptor.Id, descriptor.Id);

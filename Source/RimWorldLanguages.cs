@@ -113,6 +113,20 @@ internal static class RimWorldLanguages
             };
         }
 
+        // Selecting a language reloads all defs (PlayDataLoader.ClearAllPlayData), which destroys a running game.
+        // The game's own options dialog refuses this outside the main menu too.
+        if (Current.ProgramState != ProgramState.Entry)
+        {
+            return new
+            {
+                success = false,
+                command = "switch_language",
+                message = "RimWorld can switch language only from the main menu. Switching reloads all game data and would end the current game. Use rimworld/go_to_main_menu first.",
+                before = beforeState,
+                beforeUi = RimWorldInput.DescribeUiState(beforeUi)
+            };
+        }
+
         LanguageDatabase.SelectLanguage(target);
         Prefs.Save();
 

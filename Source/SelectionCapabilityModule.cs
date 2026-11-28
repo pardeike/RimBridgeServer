@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Linq;
+using RimWorld;
 using Verse;
 
 namespace RimBridgeServer;
@@ -37,15 +38,19 @@ internal sealed class SelectionCapabilityModule
 
     public object SelectPawn(string pawnName = null, string pawnId = null, bool append = false)
     {
-        var pawn = RimWorldState.ResolveColonist(pawnName, pawnId);
+        // As a click in the game, this selects any spawned pawn of the current map: a colonist, an animal, a mech,
+        // a visitor or an enemy. The selector ignores a pawn on another map.
+        var pawn = RimWorldState.ResolveCurrentMapPawn(pawnName, pawnId);
         if (!append)
             Find.Selector.ClearSelection();
 
         Find.Selector.Select(pawn, playSound: false, forceDesignatorDeselect: false);
+        var selected = Find.Selector.IsSelected(pawn);
 
         return new
         {
-            success = true,
+            success = selected,
+            message = selected ? null : $"RimWorld did not select '{pawn.LabelShort}'.",
             selected = RimWorldState.DescribePawn(pawn),
             selectedCount = Find.Selector.NumSelected
         };
@@ -67,16 +72,59 @@ internal sealed class SelectionCapabilityModule
 
     public object SetDraft(string pawnName = null, string pawnId = null, bool drafted = true)
     {
-        var pawn = RimWorldState.ResolveColonist(pawnName, pawnId);
-        if (pawn.drafter == null)
-            return new { success = false, message = $"Pawn '{(string.IsNullOrWhiteSpace(pawnId) ? pawnName : pawnId)}' cannot be drafted." };
+        var pawn = RimWorldState.ResolveDraftablePawn(pawnName, pawnId);
+        var label = pawn.Name?.ToStringShort ?? pawn.LabelShort;
+        if (pawn.drafter.Drafted == drafted)
+        {
+            return new
+            {
+                success = true,
+                changed = false,
+                pawn = label,
+                pawnInfo = RimWorldState.DescribePawn(pawn),
+                drafted
+            };
+        }
 
-        pawn.drafter.Drafted = drafted;
+        // Use the draft toggle that the game shows for the pawn. Its rules then apply: a downed or deathresting pawn,
+        // a mech out of its mechanitor's range or bandwidth, and a pawn in a ritual or a ceremony that forbids drafting
+        // cannot be drafted. A pawn in a mental state gets no toggle.
+        var toggle = pawn.GetGizmos()
+            .OfType<Command_Toggle>()
+            .FirstOrDefault(command => command.hotKey == KeyBindingDefOf.Command_ColonistDraft && command.toggleAction != null);
+        if (toggle == null)
+        {
+            // Pawn_DraftController.ShowDraftGizmo hides the toggle of a colony mech that no mechanitor controls.
+            var reason = ModsConfig.BiotechActive && pawn.IsColonyMech && pawn.GetMechControlGroup() == null
+                ? $"RimWorld shows no draft toggle for '{label}', because no mechanitor controls this mech."
+                : $"RimWorld shows no draft toggle for '{label}' now. Only a colonist, a colony mech or a colony ghoul under player control can be drafted, for example not one in a mental state.";
+            return new
+            {
+                success = false,
+                message = reason,
+                pawnInfo = RimWorldState.DescribePawn(pawn),
+                drafted = pawn.drafter.Drafted
+            };
+        }
 
+        if (toggle.Disabled)
+        {
+            return new
+            {
+                success = false,
+                message = $"RimWorld does not allow drafting '{label}' now: {toggle.disabledReason}",
+                disabledReason = toggle.disabledReason,
+                pawnInfo = RimWorldState.DescribePawn(pawn),
+                drafted = pawn.drafter.Drafted
+            };
+        }
+
+        toggle.toggleAction();
         return new
         {
-            success = true,
-            pawn = pawn.Name?.ToStringShort ?? pawn.LabelShort,
+            success = pawn.drafter.Drafted == drafted,
+            changed = true,
+            pawn = label,
             pawnInfo = RimWorldState.DescribePawn(pawn),
             drafted = pawn.drafter.Drafted
         };

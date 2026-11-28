@@ -228,6 +228,8 @@ internal sealed class ViewCapabilityModule
     public object JumpCameraToPawn(string pawnName = null, string pawnId = null)
     {
         var pawn = RimWorldState.ResolveCurrentMapPawn(pawnName, pawnId);
+        // As CameraJumper does, a jump to a map position shows the map. Otherwise the world view stays in front.
+        CameraJumper.TryHideWorld();
         Find.CameraDriver.JumpToCurrentMapLoc(pawn.Position);
         Find.Selector.ClearSelection();
         Find.Selector.Select(pawn, playSound: false, forceDesignatorDeselect: false);
@@ -247,6 +249,7 @@ internal sealed class ViewCapabilityModule
         if (!cell.InBounds(map))
             return new { success = false, message = $"Cell ({x}, {z}) is out of bounds for the current map." };
 
+        CameraJumper.TryHideWorld();
         Find.CameraDriver.JumpToCurrentMapLoc(cell);
         return new { success = true, cell = new { x, z }, camera = RimWorldState.DescribeCamera() };
     }
@@ -312,6 +315,7 @@ internal sealed class ViewCapabilityModule
             (float)pawns.Average(pawn => pawn.Position.z) + 0.5f);
         var size = RimWorldState.ComputeFrameRootSize(pawns);
 
+        CameraJumper.TryHideWorld();
         Find.CameraDriver.SetRootPosAndSize(center, size);
 
         return new
@@ -1005,6 +1009,7 @@ internal sealed class ViewCapabilityModule
             ? Mathf.Clamp(requestedRootSize, driver.config.sizeRange.min, driver.config.sizeRange.max)
             : driver.RootSize;
 
+        CameraJumper.TryHideWorld();
         driver.SetRootPosAndSize(center, appliedRootSize);
         var clipRect = CreateMapCellClipRect(paddedRect);
         var requiredRootSize = ComputeRequiredRootSizeForCellRect(paddedRect);

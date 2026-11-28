@@ -62,18 +62,47 @@ internal sealed class LifecycleCapabilityModule
             return new { success = false, message = "No game is currently loaded" };
         }
 
-        var currentlyPaused = Find.TickManager.Paused;
-        if (pause && !currentlyPaused)
-            Find.TickManager.TogglePaused();
-        else if (!pause && currentlyPaused)
-            Find.TickManager.TogglePaused();
+        var tickManager = Find.TickManager;
+        SetTimeSpeedPaused(pause);
+        var speedPaused = tickManager.CurTimeSpeed == TimeSpeed.Paused;
+        var success = speedPaused == pause;
+        string message;
+        if (!success)
+            message = pause ? "RimWorld did not pause." : "RimWorld refused to unpause. The player cannot control the game now, for example during a gravship landing confirmation.";
+        else if (!pause && tickManager.ForcePaused)
+            message = "Game unpaused. A window, a long event or a cutscene still forces a pause until it ends.";
+        else
+            message = pause ? "Game paused" : "Game unpaused";
 
         return new
         {
-            success = true,
-            paused = Find.TickManager.Paused,
-            message = pause ? "Game paused" : "Game unpaused"
+            success,
+            paused = tickManager.Paused,
+            timeSpeed = tickManager.CurTimeSpeed.ToString(),
+            forcePaused = tickManager.ForcePaused,
+            message
         };
+    }
+
+    // TickManager.Paused is also true while a window, a long event or a cutscene forces a pause (ForcePaused), and
+    // TogglePaused only looks at the time speed. So pause decisions read and set the time speed, never Paused.
+    // Otherwise a forced pause hides the real speed: a "pause" leaves the game running after the window closes, and
+    // an "unpause" sets the speed to Paused.
+    internal static void SetTimeSpeedPaused(bool pause)
+    {
+        var tickManager = Find.TickManager;
+        if (tickManager == null || (tickManager.CurTimeSpeed == TimeSpeed.Paused) == pause)
+            return;
+
+        tickManager.TogglePaused();
+        if (pause && tickManager.CurTimeSpeed != TimeSpeed.Paused)
+            tickManager.CurTimeSpeed = TimeSpeed.Paused;
+    }
+
+    // Enum.TryParse also accepts numbers that are not TimeSpeed values, such as "5".
+    internal static bool TryParseTimeSpeed(string speed, out TimeSpeed parsed)
+    {
+        return Enum.TryParse(speed, ignoreCase: true, out parsed) && Enum.IsDefined(typeof(TimeSpeed), parsed);
     }
 
     public object SetTimeSpeed(string speed = "Normal", bool? ultraSpeedBoost = null)
@@ -88,7 +117,7 @@ internal sealed class LifecycleCapabilityModule
             };
         }
 
-        if (Enum.TryParse<TimeSpeed>(speed, ignoreCase: true, out var parsed) == false)
+        if (TryParseTimeSpeed(speed, out var parsed) == false)
         {
             return new
             {
@@ -143,7 +172,7 @@ internal sealed class LifecycleCapabilityModule
             };
         }
 
-        if (Enum.TryParse<TimeSpeed>(speed, ignoreCase: true, out var parsedSpeed) == false)
+        if (TryParseTimeSpeed(speed, out var parsedSpeed) == false)
         {
             return new
             {
@@ -285,7 +314,7 @@ internal sealed class LifecycleCapabilityModule
             };
         }
 
-        if (Enum.TryParse<TimeSpeed>(speed, ignoreCase: true, out var parsedSpeed) == false)
+        if (TryParseTimeSpeed(speed, out var parsedSpeed) == false)
         {
             return new
             {
@@ -797,7 +826,21 @@ internal sealed class LifecycleCapabilityModule
         if (thing.def.CanHaveFaction)
             thing.SetFaction(thing.def.building?.isInsectCocoon == true ? Faction.OfInsects : Faction.OfPlayerSilentFail);
 
+        // GenSpawn.Spawn logs an error and returns null when a multi-cell thing does not fit in the map.
+        var occupied = GenAdj.OccupiedRect(cell, Rot4.North, thingDef.Size);
+        if (!occupied.InBounds(map))
+        {
+            return new
+            {
+                success = false,
+                message = $"'{thingDef.defName}' is {thingDef.size.x}x{thingDef.size.z} cells and does not fit in the map at ({x}, {z}). It would occupy ({occupied.minX}, {occupied.minZ}) to ({occupied.maxX}, {occupied.maxZ})."
+            };
+        }
+
         var spawned = GenSpawn.Spawn(thing, cell, map, WipeMode.Vanish);
+        if (spawned == null)
+            return new { success = false, message = $"RimWorld did not spawn '{thingDef.defName}' at ({x}, {z})." };
+
         return new
         {
             success = true,
@@ -956,6 +999,7 @@ internal sealed class LifecycleCapabilityModule
             return compatibilityFailure;
 
         object queuedState;
+        Game previousGame = null;
         try
         {
             queuedState = Dispatcher.Invoke(() =>
@@ -964,6 +1008,7 @@ internal sealed class LifecycleCapabilityModule
                     Find.WindowStack.TryRemove(Find.WindowStack.FloatMenu, doCloseSound: false);
                 RimBridgeContextMenus.Clear();
 
+                previousGame = Current.Game;
                 GameDataSaveLoader.LoadGame(safeName);
                 return RimWorldState.ToolStateSnapshot();
             }, timeoutMs: ResolveLoadQueueDispatchTimeoutMs(timeoutMs, operationStopwatch.ElapsedMilliseconds));
@@ -973,7 +1018,7 @@ internal sealed class LifecycleCapabilityModule
             return CreateLoadGameReadyQueueFailure(safeName, path, mainThreadReady, ex);
         }
 
-        var wait = RimWorldWaits.WaitForGameLoadedResult(ResolveRemainingTimeoutMs(timeoutMs, operationStopwatch.ElapsedMilliseconds), pollIntervalMs, readiness, pauseIfNeeded);
+        var wait = RimWorldWaits.WaitForGameLoadedResult(ResolveRemainingTimeoutMs(timeoutMs, operationStopwatch.ElapsedMilliseconds), pollIntervalMs, readiness, pauseIfNeeded, previousGame);
         var success = wait.TryGetValue("success", out var successValue) && successValue is bool satisfied && satisfied;
         wait.TryGetValue("message", out var message);
         wait.TryGetValue("state", out var finalState);
@@ -1381,9 +1426,8 @@ internal sealed class LifecycleCapabilityModule
         if (LongEventHandler.AnyEventNowOrWaiting)
             throw new InvalidOperationException("RimWorld is busy with a long event.");
 
+        // Setting the speed is enough. A forced pause is not a paused speed, and toggling would pause the game.
         Find.TickManager.CurTimeSpeed = speed;
-        if (Find.TickManager.Paused)
-            Find.TickManager.TogglePaused();
     }
 
     private static void PauseIfNeeded()
@@ -1391,8 +1435,7 @@ internal sealed class LifecycleCapabilityModule
         if (Current.Game == null || Find.TickManager == null)
             return;
 
-        if (!Find.TickManager.Paused)
-            Find.TickManager.TogglePaused();
+        SetTimeSpeedPaused(true);
     }
 
     private static bool? RestoreNeverForceNormalSpeed(bool? previousNeverForceNormalSpeed)

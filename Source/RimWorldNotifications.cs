@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using HarmonyLib;
 using RimBridgeServer.Core;
 using RimWorld;
 using RimWorld.Planet;
@@ -443,9 +444,14 @@ internal static class RimWorldNotifications
     {
         var currentTick = Find.TickManager?.TicksGame ?? 0;
         var choiceLetter = letter as ChoiceLetter;
-        var letterText = choiceLetter == null
-            ? null
-            : StringifyTaggedString(choiceLetter.Text);
+        var growthMoment = letter as ChoiceLetter_GrowthMoment;
+        // Not every letter is a ChoiceLetter. The Biotech growth moment derives from LetterWithTimeout, and mods can
+        // derive from Letter directly. Their text is the mouseover text that the letter stack shows.
+        var letterText = choiceLetter != null
+            ? StringifyTaggedString(choiceLetter.Text)
+            : growthMoment != null
+                ? StringifyTaggedString(growthMoment.mouseoverText)
+                : ReadMouseoverText(letter);
         var choices = choiceLetter == null
             ? null
             : choiceLetter.Choices
@@ -469,7 +475,42 @@ internal static class RimWorldNotifications
             debugInfo = string.IsNullOrWhiteSpace(letter.debugInfo) ? null : letter.debugInfo,
             lookTargets = DescribeLookTargets(letter.lookTargets),
             choiceCount = choices?.Count ?? 0,
-            choices
+            choices,
+            growthMoment = growthMoment == null ? null : DescribeGrowthMoment(growthMoment)
+        };
+    }
+
+    private static readonly MethodInfo LetterMouseoverTextMethod = AccessTools.Method(typeof(Letter), "GetMouseoverText");
+
+    private static string ReadMouseoverText(Letter letter)
+    {
+        try
+        {
+            return LetterMouseoverTextMethod?.Invoke(letter, null) is string text && !string.IsNullOrWhiteSpace(text)
+                ? text.StripTags().Trim()
+                : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // A growth moment asks the player to choose passions and a trait in its own dialog, not through DiaOptions.
+    private static object DescribeGrowthMoment(ChoiceLetter_GrowthMoment letter)
+    {
+        return new
+        {
+            pawnId = letter.pawn == null ? null : RimWorldState.GetThingId(letter.pawn),
+            pawnName = letter.pawn?.Name?.ToStringShort ?? letter.pawn?.LabelShort,
+            growthTier = letter.growthTier,
+            choiceMade = letter.choiceMade,
+            passionGainsCount = letter.passionGainsCount,
+            passionChoices = letter.passionChoices?.Where(skill => skill != null).Select(skill => skill.defName).ToList(),
+            traitChoices = letter.traitChoices?.Where(trait => trait != null).Select(trait => trait.LabelCap.ToString()).ToList(),
+            chosenPassions = letter.chosenPassions?.Where(skill => skill != null).Select(skill => skill.defName).ToList(),
+            chosenTrait = letter.chosenTrait?.LabelCap.ToString(),
+            enabledWorkTypes = letter.enabledWorkTypes
         };
     }
 
@@ -908,9 +949,10 @@ internal static class RimWorldNotifications
             : ex;
     }
 
+    // Letter and alert text holds name and color tags such as (*Name)Frog(/Name). Agents read plain text.
     private static string StringifyTaggedString(TaggedString taggedString)
     {
-        var text = taggedString.ToString();
+        var text = taggedString.ToString().StripTags();
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 

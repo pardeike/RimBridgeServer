@@ -19,7 +19,9 @@ internal static class RimWorldMapSummary
         map.gameConditionManager.GetAllGameConditionsAffectingMap(map, conditions);
         // The wealth getters recount when the last count is more than 5000 ticks old, as for the game's own displays.
         // A forced recount would also move the game's recount schedule, which the storyteller's threat points read.
-        var roles = pawns.AllPawnsSpawned.GroupBy(RimWorldPawns.RoleOf).ToDictionary(group => group.Key, group => group.Count());
+        // The same pawns as rimworld/list_pawns, including pawns that a building holds.
+        var listedPawns = RimWorldState.AllCurrentMapPawnsIncludingHeld(map);
+        var roles = listedPawns.GroupBy(RimWorldPawns.RoleOf).ToDictionary(group => group.Key, group => group.Count());
         int CountRole(string role) => roles.TryGetValue(role, out var count) ? count : 0;
         return new
         {
@@ -60,7 +62,8 @@ internal static class RimWorldMapSummary
                 hostiles = CountRole("hostile"),
                 others = CountRole("other"),
                 colonyAnimals = pawns.SpawnedColonyAnimals.Count,
-                total = pawns.AllPawnsSpawnedCount
+                held = listedPawns.Count(pawn => !pawn.Spawned),
+                total = listedPawns.Count
             }
         };
     }

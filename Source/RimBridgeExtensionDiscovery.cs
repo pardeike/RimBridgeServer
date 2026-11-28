@@ -281,9 +281,12 @@ internal static class RimBridgeExtensionDiscovery
                 {
                     var methods = typeGroup
                         .Select(candidate => candidate.Method)
+                        .Where(method => HasLoadableSignature(method, assemblyGroup.Key))
                         .OrderBy(method => method.Name, StringComparer.Ordinal)
                         .ThenBy(GetMetadataToken)
                         .ToList();
+                    if (methods.Count == 0)
+                        continue;
 
                     if (!TryCreateInstance(typeGroup.Key, methods, out var instance, out var error))
                     {
@@ -311,13 +314,42 @@ internal static class RimBridgeExtensionDiscovery
             var representative = providerCandidates[0].Candidate;
             var providerId = CreateProviderId(representative);
             MarkPrepared(assemblyGroup.Key, providerId, toolClasses.Count, toolClasses.Sum(toolClass => toolClass.Methods.Count));
-            providers.Add(new AnnotatedExtensionCapabilityProvider(
-                providerId: providerId,
-                category: "extension",
-                toolClasses: toolClasses));
+            // One companion must not stop the bridge. The provider reads every tool signature in its constructor.
+            try
+            {
+                providers.Add(new AnnotatedExtensionCapabilityProvider(
+                    providerId: providerId,
+                    category: "extension",
+                    toolClasses: toolClasses));
+            }
+            catch (Exception ex)
+            {
+                MarkProviderRegistrationFailed(providerId, ex);
+                Log.Error($"[RimBridge] Failed to build companion tool provider '{providerId}' from '{assemblyGroup.Key}': {ex}");
+            }
         }
 
         return providers;
+    }
+
+    // A parameter or return type from an assembly that is not loaded, for example from a disabled mod, throws only
+    // when the signature is read. Skip that tool and keep the others of the companion.
+    private static bool HasLoadableSignature(MethodInfo method, string assemblyPath)
+    {
+        try
+        {
+            _ = method.ReturnType;
+            foreach (var parameter in method.GetParameters())
+                _ = parameter.ParameterType;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            var error = $"Skipping companion tool method '{method.DeclaringType?.FullName}.{method.Name}', because its signature cannot load: {ex.GetBaseException().Message}";
+            AddWarning(assemblyPath, error);
+            Log.Warning($"[RimBridge] {error}");
+            return false;
+        }
     }
 
     private static bool TryCreateInstance(

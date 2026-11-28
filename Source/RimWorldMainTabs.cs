@@ -93,7 +93,8 @@ internal static class RimWorldMainTabs
 
     internal static bool IsWorldViewOpen()
     {
-        return Current.Game != null && Find.World?.renderer?.wantedMode == WorldRenderMode.Planet;
+        // WorldSelected is also true when there is no current map, for example when every colonist is in a caravan.
+        return Current.Game != null && WorldRendererUtility.WorldSelected;
     }
 
     public static object CloseMainTabResponse(string mainTabId = null)

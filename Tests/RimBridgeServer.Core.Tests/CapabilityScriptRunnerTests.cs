@@ -156,6 +156,48 @@ public class CapabilityScriptRunnerTests
         Assert.Equal("script.invalid_step", report.Steps[0].Error.Code);
     }
 
+    [Theory]
+    [InlineData("rimbridge/run_lua")]
+    [InlineData("rimbridge/run_lua_file")]
+    [InlineData("test.scripting/run-lua")]
+    public void RejectsNestedLuaRunsByAliasOrCapabilityId(string call)
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new NestedRunnerProvider());
+        var runner = new CapabilityScriptRunner(registry);
+
+        var report = runner.Execute(new CapabilityScriptDefinition
+        {
+            Steps = [new CapabilityScriptStep { Call = call }]
+        });
+
+        Assert.False(report.Success);
+        Assert.Equal("script.invalid_step", report.Steps[0].Error.Code);
+        Assert.Equal(0, NestedRunnerProvider.Invocations);
+    }
+
+    private sealed class NestedRunnerProvider : IRimBridgeCapabilityProvider
+    {
+        public static int Invocations;
+
+        public string ProviderId => "test.scripting";
+
+        public IEnumerable<RimBridgeCapabilityRegistration> GetCapabilities()
+        {
+            foreach (var (id, alias) in new[] { ("test.scripting/run-lua", "rimbridge/run_lua"), ("test.scripting/run-lua-file", "rimbridge/run_lua_file") })
+            {
+                var capabilityId = id;
+                yield return new RimBridgeCapabilityRegistration(
+                    new CapabilityDescriptor { Id = capabilityId, ProviderId = ProviderId, Category = "scripting", Aliases = [alias] },
+                    (_, _) =>
+                    {
+                        System.Threading.Interlocked.Increment(ref Invocations);
+                        return System.Threading.Tasks.Task.FromResult(OperationEnvelope.Completed("op", capabilityId, System.DateTimeOffset.UtcNow, null));
+                    });
+            }
+        }
+    }
+
     [Fact]
     public void CanReferencePreviousStepResults()
     {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using RimBridgeServer.Contracts;
 
@@ -77,7 +78,17 @@ public sealed class OperationRunner
         }
     }
 
-    public async Task<OperationEnvelope> RunAsync(Func<Task<object>> func, OperationExecutionOptions options)
+    public Task<OperationEnvelope> RunAsync(Func<Task<object>> func, OperationExecutionOptions options)
+    {
+        if (func == null)
+            throw new ArgumentNullException(nameof(func));
+
+        return RunAsync(_ => func(), options, CancellationToken.None);
+    }
+
+    // Runs asynchronous work with options.TimeoutMs as a deadline. The work gets a token that is cancelled at the
+    // deadline or when the caller cancels. At the deadline the result is TimedOut, even if the work never completes.
+    public async Task<OperationEnvelope> RunAsync(Func<CancellationToken, Task<object>> func, OperationExecutionOptions options, CancellationToken cancellationToken)
     {
         if (func == null)
             throw new ArgumentNullException(nameof(func));
@@ -88,10 +99,39 @@ public sealed class OperationRunner
             ? "op_" + Guid.NewGuid().ToString("N")
             : options.OperationId;
         var startedAtUtc = options.StartedAtUtc ?? DateTimeOffset.UtcNow;
+        var deadline = options.TimeoutMs > 0 ? new CancellationTokenSource() : null;
+        var linked = deadline == null ? null : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
 
         try
         {
-            var result = await func().ConfigureAwait(false);
+            Task<object> work;
+            try
+            {
+                work = func(linked?.Token ?? cancellationToken) ?? Task.FromResult<object>(null);
+            }
+            catch (Exception ex)
+            {
+                work = Task.FromException<object>(ex);
+            }
+
+            if (deadline != null && await WaitForDeadlineAsync(work, options.TimeoutMs).ConfigureAwait(false) == false)
+            {
+                deadline.Cancel();
+                var source = linked;
+                var timer = deadline;
+                linked = null;
+                deadline = null;
+                _ = work.ContinueWith(completed =>
+                {
+                    _ = completed.Exception;
+                    source.Dispose();
+                    timer.Dispose();
+                }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                var timeout = new TimeoutException($"The operation did not finish within {options.TimeoutMs} ms.");
+                return OperationEnvelope.TimedOut(operationId, options.CapabilityId, startedAtUtc, CreateError(timeout, options.TimeoutCode));
+            }
+
+            var result = await work.ConfigureAwait(false);
             return OperationEnvelope.Completed(operationId, options.CapabilityId, startedAtUtc, result);
         }
         catch (OperationCanceledException ex)
@@ -106,6 +146,20 @@ public sealed class OperationRunner
         {
             return OperationEnvelope.Failed(operationId, options.CapabilityId, startedAtUtc, CreateError(ex, options.FailureCode));
         }
+        finally
+        {
+            linked?.Dispose();
+            deadline?.Dispose();
+        }
+    }
+
+    private static async Task<bool> WaitForDeadlineAsync(Task work, int timeoutMs)
+    {
+        using var delayCancellation = new CancellationTokenSource();
+        var delay = Task.Delay(timeoutMs, delayCancellation.Token);
+        var finished = await Task.WhenAny(work, delay).ConfigureAwait(false);
+        delayCancellation.Cancel();
+        return finished == work;
     }
 
     private static OperationError CreateError(Exception exception, string code)

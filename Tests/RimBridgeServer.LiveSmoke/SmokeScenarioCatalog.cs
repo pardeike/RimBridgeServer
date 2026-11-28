@@ -16,7 +16,7 @@ internal sealed class SmokeScenarioDefinition
     public required SmokeScenarioRunner RunAsync { get; init; }
 }
 
-internal static class SmokeScenarioCatalog
+internal static partial class SmokeScenarioCatalog
 {
     public const string DebugGameLoadScenarioName = "debug-game-load";
     public const string DebugGamePauseOnLoadScenarioName = "debug-game-pause-on-load";
@@ -67,7 +67,16 @@ internal static class SmokeScenarioCatalog
     private const string RimBridgePackageId = "brrainz.rimbridgeserver";
     private const string RimBridgeSteamPackageId = "brrainz.rimbridgeserver_steam";
 
-    private static readonly IReadOnlyDictionary<string, SmokeScenarioDefinition> Definitions =
+    private static readonly IReadOnlyDictionary<string, SmokeScenarioDefinition> Definitions = WithRegressionScenarios(CoreDefinitions);
+
+    private static IReadOnlyDictionary<string, SmokeScenarioDefinition> WithRegressionScenarios(Dictionary<string, SmokeScenarioDefinition> definitions)
+    {
+        foreach (var (name, definition) in RegressionScenarios())
+            definitions.Add(name, definition);
+        return definitions;
+    }
+
+    private static Dictionary<string, SmokeScenarioDefinition> CoreDefinitions =>
         new Dictionary<string, SmokeScenarioDefinition>(StringComparer.Ordinal)
         {
             [DebugGameLoadScenarioName] = new SmokeScenarioDefinition
@@ -307,7 +316,7 @@ internal static class SmokeScenarioCatalog
             [DlcPawnStatesScenarioName] = new SmokeScenarioDefinition
             {
                 Name = DlcPawnStatesScenarioName,
-                Description = "Needs Royalty, Ideology, Biotech and Anomaly. Make DLC pawn states with the game's debug actions: a pacifist gene, a recruited Knight, an enslaved villager, a child, a colony ghoul, a shambler, a hostile and a recruited lifter mech, each Ideology role, a bliss lobotomy, a newborn, a Pyromaniac trait that a FireTerror gene suppresses, a berserk colonist and a slave rebellion. The roles and the hediff come from the debug option dialog, which the scenario drives with rimworld/get_ui_layout and rimworld/click_ui_target. Verify the roles and hostility of rimworld/list_pawns, the disabled and permanently disabled work types and skills and the suppressed traits of rimworld/get_pawn_details and the role counts of rimworld/get_map_summary, then destroy the spawned pawns.",
+                Description = "Needs Royalty, Ideology, Biotech and Anomaly. Make DLC pawn states with the game's debug actions: a pacifist gene, a recruited Knight, an enslaved villager, a child, a colony ghoul, a shambler, a hostile and a recruited lifter mech, each Ideology role, a bliss lobotomy, a newborn, a Pyromaniac trait that a FireTerror gene suppresses, a berserk colonist and a slave rebellion. The roles and the hediff come from the debug option dialog, which the scenario drives with rimworld/get_ui_layout and rimworld/click_ui_target. Verify the roles and hostility of rimworld/list_pawns, the disabled and permanently disabled work types and skills, the suppressed traits and the identity of rimworld/get_pawn_details and the role counts of rimworld/get_map_summary. Verify that rimworld/set_draft drafts the ghoul and finds the mech, that rimworld/execute_gizmo refuses the hemogen bar, and that the child's growth moment letter has plain text and growthMoment. Then destroy the spawned pawns.",
                 RunAsync = RunDlcPawnStatesAsync
             }
         };
@@ -837,6 +846,7 @@ internal static class SmokeScenarioCatalog
                 throw new InvalidOperationException("The restored mod did not return to its original active load-order index.");
 
             restoreReached = true;
+            await RunModReorderDownCheckAsync(context, cancellationToken);
 
             context.SetSummaryValue("modId", targetModId);
             context.SetSummaryValue("packageId", targetPackageId);
@@ -3560,6 +3570,10 @@ internal static class SmokeScenarioCatalog
         Exception? scenarioError = null;
         try
         {
+            // The metal tiles need Smithing. The Architect lists and applies only designators that the game shows,
+            // and god mode shows all of them.
+            await EnsureGodModeAsync(context, "architect_floor.enable_god_mode_for_listing", true, cancellationToken);
+
             var categories = await context.CallGameToolAsync("architect_floor.list_categories", "rimworld/list_architect_categories", new
             {
                 includeHidden = false,
@@ -3667,6 +3681,8 @@ internal static class SmokeScenarioCatalog
                     ],
                     cancellationToken);
             }
+
+            await RunDropdownChildChecksAsync(context, floorsCategoryId, designatorArray, dropdownParentId, dropdownFloorDesignatorId, floorRect, colonists.StructuredContent, cancellationToken);
 
             context.SetSummaryValue("floorsCategoryId", floorsCategoryId);
             context.SetSummaryValue("dropdownParentId", dropdownParentId);
@@ -4113,18 +4129,31 @@ internal static class SmokeScenarioCatalog
             if (!string.Equals(JsonNodeHelpers.ReadString(setZoneTarget.StructuredContent, "zone", "id"), createdZoneId, StringComparison.Ordinal))
                 throw new InvalidOperationException("set_zone_target did not report the expected zone id.");
 
-            var secondZoneRect = await FindAcceptedArchitectPlacementCellAsync(
-                context,
-                "architect_state.find_second_zone_rect",
-                stockpileDesignatorId,
-                colonists.StructuredContent,
-                zoneCandidateSet,
-                cancellationToken,
-                width: 2,
-                height: 2,
-                minRadius: 36,
-                maxRadius: 52,
-                preflightAsync: RectangleHasNoZoneAsync);
+            // A target zone grows as in the game: by unzoned cells that connect to it. So the second rectangle
+            // touches the 3x2 stockpile on one side.
+            (int X, int Z)? adjacentRect = null;
+            foreach (var (dx, dz) in new[] { (3, 0), (-2, 0), (0, 2), (0, -2) })
+            {
+                var candidate = (X: firstZoneRect.X + dx, Z: firstZoneRect.Z + dz);
+                if (!await RectangleHasNoZoneAsync(context, candidate.X, candidate.Z, 2, 2, cancellationToken))
+                    continue;
+                var dryRun = await context.CallGameToolAsync($"architect_state.dry_run_adjacent_{dx}_{dz}", "rimworld/apply_architect_designator", new
+                {
+                    designatorId = stockpileDesignatorId,
+                    x = candidate.X,
+                    z = candidate.Z,
+                    width = 2,
+                    height = 2,
+                    dryRun = true
+                }, cancellationToken);
+                if (dryRun.Success && JsonNodeHelpers.ReadInt32(dryRun.StructuredContent, "acceptedCellCount") == 4)
+                {
+                    adjacentRect = candidate;
+                    break;
+                }
+            }
+
+            var secondZoneRect = adjacentRect ?? throw new InvalidOperationException($"No 2x2 rectangle next to the stockpile at ({firstZoneRect.X}, {firstZoneRect.Z}) accepts the stockpile designator.");
             zoneRects = (firstZoneRect, secondZoneRect);
 
             var expandZonePlacement = await context.CallGameToolAsync("architect_state.expand_existing_zone", "rimworld/apply_architect_designator", new
@@ -5736,8 +5765,16 @@ internal static class SmokeScenarioCatalog
 
         var colonists = await context.CallGameToolAsync("map_left_click.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
         context.EnsureSucceeded(colonists, "Listing current-map colonists");
-        var colonist = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists").FirstOrDefault()
-            ?? throw new InvalidOperationException("The map click scenario needs a current-map colonist.");
+        // A click selects the first selectable thing of the cell. A pet often stands on its owner's cell at the
+        // start, so the scenario clicks a colonist that is alone on its cell.
+        var allPawns = await context.CallGameToolAsync("map_left_click.list_pawns", "rimworld/list_pawns", new { }, cancellationToken);
+        context.EnsureSucceeded(allPawns, "Listing current-map pawns");
+        var pawnsByCell = JsonNodeHelpers.ReadArray(allPawns.StructuredContent, "pawns")
+            .GroupBy(row => CellKey(JsonNodeHelpers.ReadInt32(row, "position", "x") ?? -1, JsonNodeHelpers.ReadInt32(row, "position", "z") ?? -1))
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var colonist = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists")
+            .FirstOrDefault(candidate => pawnsByCell.GetValueOrDefault(CellKey(JsonNodeHelpers.ReadInt32(candidate, "position", "x") ?? -1, JsonNodeHelpers.ReadInt32(candidate, "position", "z") ?? -1)) == 1)
+            ?? throw new InvalidOperationException("The map click scenario needs a current-map colonist that is alone on its cell.");
         var pawnId = JsonNodeHelpers.ReadString(colonist, "pawnId");
         var x = JsonNodeHelpers.ReadInt32(colonist, "position", "x") ?? throw new InvalidOperationException("The colonist has no x position.");
         var z = JsonNodeHelpers.ReadInt32(colonist, "position", "z") ?? throw new InvalidOperationException("The colonist has no z position.");
@@ -5769,8 +5806,9 @@ internal static class SmokeScenarioCatalog
 
         var colonists = await context.CallGameToolAsync("map_shift_queue.list_colonists", "rimworld/list_colonists", new { currentMapOnly = true }, cancellationToken);
         context.EnsureSucceeded(colonists, "Listing current-map colonists");
-        var colonist = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists").FirstOrDefault()
-            ?? throw new InvalidOperationException("The queued-order scenario needs a current-map colonist.");
+        // The game does not draft a downed colonist.
+        var colonist = JsonNodeHelpers.ReadArray(colonists.StructuredContent, "colonists").FirstOrDefault(candidate => JsonNodeHelpers.ReadBoolean(candidate, "downed") != true)
+            ?? throw new InvalidOperationException("The queued-order scenario needs a current-map colonist who is not downed.");
         var pawnId = JsonNodeHelpers.ReadString(colonist, "pawnId");
         var x = JsonNodeHelpers.ReadInt32(colonist, "position", "x") ?? throw new InvalidOperationException("The colonist has no x position.");
         var z = JsonNodeHelpers.ReadInt32(colonist, "position", "z") ?? throw new InvalidOperationException("The colonist has no z position.");
@@ -5953,6 +5991,9 @@ internal static class SmokeScenarioCatalog
         var originalGodMode = JsonNodeHelpers.ReadBoolean(designatorState.StructuredContent, "godMode") == true;
         try
         {
+            // The battery needs the Electricity research. The Architect lists only what the game shows, and god mode
+            // shows everything.
+            await EnsureGodModeAsync(context, "pawn_power.enable_god_mode_for_listing", true, cancellationToken);
             var categories = await context.CallGameToolAsync("pawn_power.list_categories", "rimworld/list_architect_categories", new { includeHidden = false, includeEmpty = false }, cancellationToken);
             context.EnsureSucceeded(categories, "Listing architect categories");
             var designators = await context.CallGameToolAsync("pawn_power.list_designators", "rimworld/list_architect_designators", new
@@ -6116,8 +6157,10 @@ internal static class SmokeScenarioCatalog
         // list_colonists lists colony slaves too, and list_pawns reports those as slave.
         var (colonistRows, colonistTotal) = await ListRoleAsync("list_pawns.role_colonist", "colonist");
         var (slaveRows, slaveTotal) = await ListRoleAsync("list_pawns.role_slave", "slave");
-        if (colonistTotal + slaveTotal != colonistNodes.Count)
-            throw new InvalidOperationException($"Colonists plus slaves must equal the list_colonists count {colonistNodes.Count}: {colonistTotal} and {slaveTotal}.");
+        // list_colonists lists spawned pawns. list_pawns also lists a colonist that a building holds, with heldBy.
+        var spawnedColonistsAndSlaves = colonistRows.Concat(slaveRows).Count(row => JsonNodeHelpers.GetPath(row, "heldBy") == null);
+        if (spawnedColonistsAndSlaves != colonistNodes.Count)
+            throw new InvalidOperationException($"The spawned colonists plus slaves must equal the list_colonists count {colonistNodes.Count}: {spawnedColonistsAndSlaves} of {colonistTotal} and {slaveTotal}.");
         foreach (var colonist in colonistNodes)
         {
             var pawnId = ReadRequiredString(colonist, "pawnId");
@@ -6344,7 +6387,16 @@ internal static class SmokeScenarioCatalog
             var visit = await context.CallGameToolAsync(Step("visitors"), "rimworld/execute_debug_action", new { path = "Actions\\Do incident\\VisitorGroup" }, cancellationToken);
             context.EnsureSucceeded(visit, "Running the VisitorGroup incident");
             var visitors = (await RowsAsync()).Where(pair => beforeVisit.Contains(pair.Key) == false).ToList();
-            spawned.AddRange(visitors.Select(pair => pair.Key));
+            // Destroying a faction leader skips the game's leader succession, and the next load of a save then logs
+            // an error. So a visiting leader stays and leaves with the group.
+            foreach (var (visitorId, _) in visitors)
+            {
+                var visitorDetails = await context.CallGameToolAsync(Step("visitor_details"), "rimworld/get_pawn_details", new { pawnId = visitorId }, cancellationToken);
+                if (JsonNodeHelpers.ReadBoolean(visitorDetails.StructuredContent, "identity", "factionLeader") == true)
+                    context.Note($"The visitor '{visitorId}' leads its faction, so the cleanup leaves it.");
+                else
+                    spawned.Add(visitorId);
+            }
             var humanVisitors = visitors.Where(pair => JsonNodeHelpers.ReadString(pair.Value, "role") != "animal").ToList();
             if (humanVisitors.Count == 0)
                 throw new InvalidOperationException("The VisitorGroup incident must bring at least one visitor.");
@@ -6565,9 +6617,18 @@ internal static class SmokeScenarioCatalog
         var counts = JsonNodeHelpers.GetPath(payload, "pawnCounts");
         var colonistCount = JsonNodeHelpers.ReadInt32(counts, "colonists") ?? -1;
         var slaveCount = JsonNodeHelpers.ReadInt32(counts, "slaves") ?? -1;
-        // list_colonists counts the colony's slaves too.
-        if (colonistCount + slaveCount != JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count"))
-            throw new InvalidOperationException($"pawnCounts.colonists plus pawnCounts.slaves must equal the list_colonists count: {colonistCount}, {slaveCount} and {colonists.StructuredContent?["count"]}.");
+        // list_colonists counts the colony's slaves too, but only spawned pawns. pawnCounts counts the pawns of
+        // list_pawns, which also lists pawns that a building holds.
+        var heldColonistsAndSlaves = 0;
+        foreach (var role in new[] { "colonist", "slave" })
+        {
+            var roleRows = await context.CallGameToolAsync($"map_summary.list_pawns_{role}", "rimworld/list_pawns", new { role }, cancellationToken);
+            context.EnsureSucceeded(roleRows, $"Listing the pawns with role {role}");
+            heldColonistsAndSlaves += JsonNodeHelpers.ReadArray(roleRows.StructuredContent, "pawns").Count(row => JsonNodeHelpers.GetPath(row, "heldBy") != null);
+        }
+
+        if (colonistCount + slaveCount - heldColonistsAndSlaves != JsonNodeHelpers.ReadInt32(colonists.StructuredContent, "count"))
+            throw new InvalidOperationException($"pawnCounts.colonists plus pawnCounts.slaves without the {heldColonistsAndSlaves} held ones must equal the list_colonists count: {colonistCount}, {slaveCount} and {colonists.StructuredContent?["count"]}.");
         var sum = 0;
         foreach (var (role, field) in new[] { ("colonist", "colonists"), ("prisoner", "prisoners"), ("slave", "slaves"), ("animal", "animals"), ("mech", "mechs"), ("hostile", "hostiles"), ("other", "others") })
         {
@@ -6786,6 +6847,24 @@ internal static class SmokeScenarioCatalog
                     throw new InvalidOperationException($"The ViolenceDisabled gene must permanently disable the {skill} skill: {Entry(pacifist, "skills", skill)?.ToJsonString()}");
             }
 
+            var pacifistGene = JsonNodeHelpers.ReadArray(pacifist, "identity", "genes").FirstOrDefault(gene => JsonNodeHelpers.ReadString(gene, "defName") == "ViolenceDisabled");
+            if (JsonNodeHelpers.ReadBoolean(pacifistGene, "xenogene") != true || JsonNodeHelpers.ReadBoolean(pacifistGene, "active") != true
+                || string.IsNullOrEmpty(JsonNodeHelpers.ReadString(pacifist, "identity", "xenotype")))
+                throw new InvalidOperationException($"identity must list the added ViolenceDisabled xenogene as active, and the xenotype: {pacifist?["identity"]?.ToJsonString()}");
+
+            // A gene resource bar is a gizmo, but not a command. It reacts to the mouse in its own drawing.
+            await PawnActionAsync(pacifistId, "Actions\\Add Gene...\\Xenogene\\Hemogenic");
+            var selectPacifist = await context.CallGameToolAsync(Step("select_hemogenic"), "rimworld/select_pawn", new { pawnId = pacifistId }, cancellationToken);
+            context.EnsureSucceeded(selectPacifist, "Selecting the hemogenic colonist");
+            var hemogenGizmos = await context.CallGameToolAsync(Step("hemogen_gizmos"), "rimworld/list_selected_gizmos", new { }, cancellationToken);
+            context.EnsureSucceeded(hemogenGizmos, "Listing the gizmos of the hemogenic colonist");
+            var resourceGizmo = JsonNodeHelpers.ReadArray(hemogenGizmos.StructuredContent, "gizmos").FirstOrDefault(gizmo => JsonNodeHelpers.ReadBoolean(gizmo, "executable") == false)
+                ?? throw new InvalidOperationException($"The hemogenic colonist must have a gizmo that is not a command: {hemogenGizmos.StructuredContent?.ToJsonString()}");
+            var executeResource = await context.CallGameToolAsync(Step("execute_resource_gizmo"), "rimworld/execute_gizmo", new { gizmoId = ReadRequiredString(resourceGizmo, "id") }, cancellationToken);
+            if (executeResource.Success && JsonNodeHelpers.ReadBoolean(executeResource.StructuredContent, "success") != false)
+                throw new InvalidOperationException($"rimworld/execute_gizmo must refuse a gizmo that is not a command: {executeResource.StructuredContent?.ToJsonString()}");
+            await context.CallGameToolAsync(Step("clear_selection"), "rimworld/clear_selection", new { }, cancellationToken);
+
             // Royalty title. The Knight title disables ManualDumb, that is Hauling and Cleaning, for a conceited noble.
             // A backstory can disable both permanently. Then the title's effect is hidden, so spawn another Knight.
             string? knightId = null;
@@ -6803,12 +6882,17 @@ internal static class SmokeScenarioCatalog
             if (knightId == null)
                 throw new InvalidOperationException("Each of four recruited Knights had Hauling and Cleaning permanently disabled.");
             ExpectRow(await RowAsync(knightId), "colonist", false, true, "The recruited Knight");
+            var knightIdentity = (await DetailsAsync(knightId))?["identity"];
+            if (JsonNodeHelpers.ReadArray(knightIdentity, "royalTitles").All(title => JsonNodeHelpers.ReadString(title, "title") != "Knight"))
+                throw new InvalidOperationException($"identity must list the Knight title: {knightIdentity?.ToJsonString()}");
 
             // Ideology slave. Slavery disables some work types. The game skips a slave's backstory and traits.
             var slaveId = await SpawnAsync("Villager");
             await PawnActionAsync(slaveId, "Actions\\T: Enslave");
             ExpectRow(await RowAsync(slaveId), "slave", false, true, "The enslaved villager");
             var slave = await DetailsAsync(slaveId);
+            if (JsonNodeHelpers.ReadString(slave, "identity", "guestStatus") != "Slave")
+                throw new InvalidOperationException($"identity must report the guest status Slave: {slave?["identity"]?.ToJsonString()}");
             foreach (var workType in new[] { "Warden", "Hunting", "Art", "Research" })
             {
                 if (Disabled(slave, workType) != true)
@@ -6833,6 +6917,23 @@ internal static class SmokeScenarioCatalog
             var child = await DetailsAsync(childId);
             if (Disabled(child, "Smithing") != true || Disabled(child, "Research") != true || Permanent(child, "Smithing") != false && Permanent(child, "Research") != false)
                 throw new InvalidOperationException($"A child must not do Smithing or Research, and age must not disable them permanently: {Entry(child, "workPriorities", "Smithing")?.ToJsonString()} {Entry(child, "workPriorities", "Research")?.ToJsonString()}");
+            if (JsonNodeHelpers.ReadString(child, "identity", "developmentalStage") != "Child")
+                throw new InvalidOperationException($"identity must report the developmental stage Child: {child?["identity"]?.ToJsonString()}");
+
+            // A growth moment letter is not a ChoiceLetter. Its text and choices must still come through. A child has
+            // a growth moment on the birthdays 7, 10 and 13.
+            JsonNode? growthLetter = null;
+            for (var birthday = 0; birthday < 13 && growthLetter == null; birthday++)
+            {
+                await PawnActionAsync(childId, "Actions\\T: Force Birthday");
+                var letters = await context.CallGameToolAsync(Step("letters"), "rimworld/list_letters", new { limit = 40 }, cancellationToken);
+                context.EnsureSucceeded(letters, "Listing letters after a birthday");
+                growthLetter = JsonNodeHelpers.ReadArray(letters.StructuredContent, "letters").FirstOrDefault(letter => JsonNodeHelpers.ReadString(letter, "growthMoment", "pawnId") == childId);
+            }
+
+            var growthText = JsonNodeHelpers.ReadString(growthLetter, "text") ?? string.Empty;
+            if (growthLetter == null || growthText.Length == 0 || growthText.Contains("(*", StringComparison.Ordinal) || JsonNodeHelpers.ReadBoolean(growthLetter, "growthMoment", "choiceMade") != false)
+                throw new InvalidOperationException($"A growth moment of the child must have a letter with plain text and growthMoment: {growthLetter?.ToJsonString()}");
 
             // Anomaly ghoul. A colony ghoul is not a colonist. Its mutation disables the AllWork tag permanently.
             // Patient and PatientBedRest have no work tags, so a ghoul can still be a patient.
@@ -6840,6 +6941,13 @@ internal static class SmokeScenarioCatalog
             await PawnActionAsync(ghoulId, "Actions\\Set mutant...\\Ghoul");
             ExpectRow(await RowAsync(ghoulId), "other", false, true, "The colony ghoul");
             var ghoul = await DetailsAsync(ghoulId);
+            if (JsonNodeHelpers.ReadString(ghoul, "identity", "mutant") != "Ghoul")
+                throw new InvalidOperationException($"identity must report the mutant Ghoul: {ghoul?["identity"]?.ToJsonString()}");
+            var ghoulDraft = await context.CallGameToolAsync(Step("draft_ghoul"), "rimworld/set_draft", new { pawnId = ghoulId, drafted = true }, cancellationToken);
+            context.EnsureSucceeded(ghoulDraft, "Drafting the colony ghoul");
+            if (JsonNodeHelpers.ReadBoolean(ghoulDraft.StructuredContent, "success") != true || JsonNodeHelpers.ReadBoolean(ghoulDraft.StructuredContent, "drafted") != true)
+                throw new InvalidOperationException($"A colony ghoul must be draftable: {ghoulDraft.StructuredContent?.ToJsonString()}");
+            await context.CallGameToolAsync(Step("undraft_ghoul"), "rimworld/set_draft", new { pawnId = ghoulId, drafted = false }, cancellationToken);
             var ghoulWork = JsonNodeHelpers.ReadArray(ghoul, "workPriorities");
             if (ghoulWork.Count == 0)
                 throw new InvalidOperationException($"The colony ghoul must report work priorities: {ghoul?.ToJsonString()}");
@@ -6862,6 +6970,15 @@ internal static class SmokeScenarioCatalog
             await PawnActionAsync(colonyMechId, "Actions\\T: Recruit");
             ExpectRow(await RowAsync(colonyMechId), "mech", false, true, "The recruited lifter");
             var mech = await DetailsAsync(colonyMechId);
+            // The game drafts a colony mech only near its mechanitor. The recruited lifter may have none, and then the
+            // draft toggle is disabled with a reason. Either way the bridge must find the mech.
+            // A recruited mech without a mechanitor has no mech control group, and the game shows no draft toggle then.
+            var mechDraft = await context.CallGameToolAsync(Step("draft_mech"), "rimworld/set_draft", new { pawnId = colonyMechId, drafted = true }, cancellationToken);
+            var mechDraftMessage = JsonNodeHelpers.ReadString(mechDraft.StructuredContent, "message") ?? mechDraft.Message ?? string.Empty;
+            if (mechDraft.Success && JsonNodeHelpers.ReadBoolean(mechDraft.StructuredContent, "drafted") == true)
+                await context.CallGameToolAsync(Step("undraft_mech"), "rimworld/set_draft", new { pawnId = colonyMechId, drafted = false }, cancellationToken);
+            else if (string.IsNullOrWhiteSpace(JsonNodeHelpers.ReadString(mechDraft.StructuredContent, "pawnInfo", "pawnId")) || mechDraftMessage.Contains("mechanitor", StringComparison.Ordinal) == false)
+                throw new InvalidOperationException($"Drafting a colony mech must find the mech and draft it or name the missing mechanitor: {mechDraftMessage}");
             var mechWork = JsonNodeHelpers.ReadArray(mech, "workPriorities");
             if (mechWork.Count == 0)
                 throw new InvalidOperationException($"The colony lifter must report work priorities: {mech?.ToJsonString()}");

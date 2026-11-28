@@ -51,8 +51,42 @@ public class FloatMenuTargetLayoutCalculatorTests
         Assert.Equal(0, rects[1].ColumnIndex);
         Assert.Equal(66f, rects[1].Y);
         Assert.Equal(1, rects[2].ColumnIndex);
-        Assert.Equal(165f, rects[2].X);
+        Assert.Equal(164f, rects[2].X);
         Assert.Equal(37f, rects[2].Y);
+    }
+
+    [Fact]
+    public void WrapsLikeTheGameWhenTheOverlapLetsAnOptionFit()
+    {
+        // FloatMenu.DoWindowContents wraps when y + height - 1 > maxViewHeight. Three options of 30 then fit in 88.
+        var rects = FloatMenuTargetLayoutCalculator.Compute(new FloatMenuTargetLayoutRequest
+        {
+            ColumnWidth = 100f,
+            ColumnCount = 2,
+            MaxViewHeight = 88f,
+            OptionHeights = [30f, 30f, 30f, 30f]
+        });
+
+        Assert.Equal([0, 0, 0, 1], rects.Select(rect => rect.ColumnIndex).ToArray());
+        Assert.Equal(58f, rects[2].Y);
+        Assert.Equal(99f, rects[3].X);
+    }
+
+    [Fact]
+    public void ShiftsOptionsByTheScrollPosition()
+    {
+        var rects = FloatMenuTargetLayoutCalculator.Compute(new FloatMenuTargetLayoutRequest
+        {
+            WindowX = 10f,
+            WindowY = 10f,
+            ColumnWidth = 100f,
+            MaxViewHeight = 1000f,
+            ScrollY = 40f,
+            OptionHeights = [30f, 30f]
+        });
+
+        Assert.Equal(-30f, rects[0].Y);
+        Assert.Equal(-1f, rects[1].Y);
     }
 
     [Fact]

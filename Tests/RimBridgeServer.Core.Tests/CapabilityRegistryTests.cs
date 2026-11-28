@@ -97,6 +97,52 @@ public class CapabilityRegistryTests
     }
 
     [Fact]
+    public void RejectsCollidingProviderWithoutRegisteringAnyOfItsTools()
+    {
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new FakeProvider());
+
+        Assert.Throws<System.InvalidOperationException>(() => registry.RegisterProvider(new PartlyCollidingProvider()));
+
+        Assert.Throws<System.InvalidOperationException>(() => registry.ResolveDescriptor("modb/first"));
+        Assert.Throws<System.InvalidOperationException>(() => registry.ResolveDescriptor("modb.provider/first"));
+        Assert.Throws<System.InvalidOperationException>(() => registry.ResolveDescriptor("modb/last"));
+        Assert.Equal("rimbridge.core/diagnostics/ping", registry.ResolveDescriptor("rimbridge/ping").Id);
+        Assert.Single(registry.GetCapabilities());
+    }
+
+    [Fact]
+    public void WarnsAboutUnknownArgumentsButNotAboutHostOptions()
+    {
+        var registry = new CapabilityRegistry();
+        var registration = Tool("modd.provider", "modd.provider/echo", "modd/echo");
+        registration.Descriptor.Parameters = [new CapabilityParameterDescriptor { Name = "text", ParameterType = "string" }];
+        registry.RegisterProvider(new ListProvider("modd.provider", registration));
+
+        var envelope = registry.Invoke("modd/echo", new Dictionary<string, object>
+        {
+            ["text"] = "hi",
+            ["_rimBridgeTimeoutMs"] = 5000,
+            ["bogus"] = 1
+        });
+
+        var warning = Assert.Single(envelope.Warnings);
+        Assert.Equal("arguments.unknown", warning.Code);
+        Assert.Contains("bogus", warning.Message);
+        Assert.DoesNotContain("_rimBridgeTimeoutMs", warning.Message);
+    }
+
+    [Fact]
+    public void RejectsProviderWithAliasRepeatedInsideIt()
+    {
+        var registry = new CapabilityRegistry();
+
+        Assert.Throws<System.InvalidOperationException>(() => registry.RegisterProvider(new SelfCollidingProvider()));
+
+        Assert.Empty(registry.GetCapabilities());
+    }
+
+    [Fact]
     public void RejectsNonCanonicalCapabilityAliases()
     {
         var registry = new CapabilityRegistry();
@@ -230,6 +276,49 @@ public class CapabilityRegistryTests
                     Aliases = ["rimbridge/ping"]
                 },
                 (_, _) => Task.FromResult(OperationEnvelope.Completed("op_2", "rimbridge.core/other/ping", System.DateTimeOffset.UtcNow, new { message = "pong" })));
+        }
+    }
+
+    private static RimBridgeCapabilityRegistration Tool(string providerId, string id, string alias)
+    {
+        return new RimBridgeCapabilityRegistration(
+            new CapabilityDescriptor
+            {
+                Id = id,
+                ProviderId = providerId,
+                Category = "test",
+                Aliases = [alias]
+            },
+            (_, _) => Task.FromResult(OperationEnvelope.Completed("op", id, System.DateTimeOffset.UtcNow, new { })));
+    }
+
+    private sealed class ListProvider(string providerId, params RimBridgeCapabilityRegistration[] registrations) : IRimBridgeCapabilityProvider
+    {
+        public string ProviderId => providerId;
+
+        public IEnumerable<RimBridgeCapabilityRegistration> GetCapabilities() => registrations;
+    }
+
+    private sealed class PartlyCollidingProvider : IRimBridgeCapabilityProvider
+    {
+        public string ProviderId => "modb.provider";
+
+        public IEnumerable<RimBridgeCapabilityRegistration> GetCapabilities()
+        {
+            yield return Tool(ProviderId, "modb.provider/first", "modb/first");
+            yield return Tool(ProviderId, "modb.provider/shared", "rimbridge/ping");
+            yield return Tool(ProviderId, "modb.provider/last", "modb/last");
+        }
+    }
+
+    private sealed class SelfCollidingProvider : IRimBridgeCapabilityProvider
+    {
+        public string ProviderId => "modc.provider";
+
+        public IEnumerable<RimBridgeCapabilityRegistration> GetCapabilities()
+        {
+            yield return Tool(ProviderId, "modc.provider/one", "modc/same");
+            yield return Tool(ProviderId, "modc.provider/two", "modc/same");
         }
     }
 

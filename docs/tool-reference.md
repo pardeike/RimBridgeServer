@@ -221,7 +221,10 @@ Parameters: none.
 
 ### `rimworld/pause_game`
 
-Pause or unpause the game
+Pause or unpause the game by its time speed
+
+Returns:
+- timeSpeed is the time speed after the call. paused is true when the game does not run, also while a window, a long event or a cutscene forces a pause. forcePaused is true during such a forced pause. A forced pause does not change the time speed. So after an unpause the game runs when the forced pause ends.
 
 Parameters:
 - `pause` (`bool`, `optional`, default `true`): True to pause, false to unpause
@@ -306,7 +309,7 @@ Parameters:
 
 ### `rimworld/execute_debug_action`
 
-Execute a supported RimWorld debug action leaf by stable path, including ToolMap actions targeted by cell or current-map thing
+Execute a supported RimWorld debug action leaf by stable path, including ToolMap actions targeted by cell or current-map thing. A pawn target can also be a pawn that a building of the current map holds, as with the debug tool of the game
 
 Parameters:
 - `path` (`string`, `required`): Stable debug action path returned by the discovery tools
@@ -355,6 +358,9 @@ Parameters: none.
 
 Enable or disable one installed mod by stable mod id, package id, name, or folder name, optionally persisting the updated ModsConfig.xml immediately
 
+Returns:
+- saved is false and notSavedReason tells why when RimWorld does not write ModsConfig.xml. This happens when the game started with a -mod command-line mod list.
+
 Parameters:
 - `modId` (`string`, `required`): Stable modId from rimworld/list_mods, or an exact package id / package id (player-facing) / name / folder name match
 - `enabled` (`bool`, `required`): True to enable the mod in the current configuration, false to disable it
@@ -364,6 +370,9 @@ Parameters:
 ### `rimworld/reorder_mod`
 
 Move one currently enabled mod to a new zero-based active load-order index, optionally persisting the updated ModsConfig.xml immediately
+
+Returns:
+- currentIndex is the index of the mod after the move. saved is false and notSavedReason tells why when RimWorld does not write ModsConfig.xml. This happens when the game started with a -mod command-line mod list.
 
 Parameters:
 - `modId` (`string`, `required`): Stable modId from rimworld/list_mods, or an exact package id / package id (player-facing) / name / folder name match
@@ -437,7 +446,7 @@ Parameters:
 
 ### `rimworld/list_architect_designators`
 
-List Architect designators for one category, flattening dropdown widgets into actionable child designators
+List Architect designators for one category, flattening dropdown widgets into actionable child designators. visible is false for a designator that the Architect menu hides, for example because its research is not finished. Designator ids do not depend on the game language or on the active child of a dropdown
 
 Parameters:
 - `categoryId` (`string`, `required`): Stable category id from rimworld/list_architect_categories or the raw category defName
@@ -447,14 +456,17 @@ Parameters:
 
 ### `rimworld/select_architect_designator`
 
-Select an Architect designator by stable id without relying on foreground UI interaction
+Select an Architect designator by stable id without relying on foreground UI interaction. For a dropdown child, the child becomes the active and selected designator, as in the game. A designator that the Architect menu hides is refused unless god mode is on
 
 Parameters:
 - `designatorId` (`string`, `required`): Stable designator id returned by rimworld/list_architect_designators
 
 ### `rimworld/apply_architect_designator`
 
-Apply an Architect designator to one cell or a rectangle, with optional dry-run validation, material and rotation; zone designators create a new zone unless rimworld/set_zone_target chose an existing one
+Apply an Architect designator to one cell or a rectangle, with optional dry-run validation, material and rotation. Zone designators create a new zone unless rimworld/set_zone_target chose an existing one. A designator that the Architect menu hides, for example because its research is not finished, is refused unless god mode is on
+
+Returns:
+- acceptedCellCount counts the cells that the designator accepts. For a zone, appliedCellCount counts the cells that this call put into a zone, and zone is the zone that got them. A target zone from rimworld/set_zone_target only grows. It takes unzoned cells that connect to it, as the game does. Cells of another zone and cells that do not connect are in rejectedCells with a reason. A fishing zone takes only cells of its own water type.
 
 Parameters:
 - `designatorId` (`string`, `required`): Stable designator id returned by rimworld/list_architect_designators
@@ -539,13 +551,16 @@ Parameters:
 Read the current map in one call: date, weather, temperature, active game conditions, wealth and pawn counts
 
 Returns:
-- The map summary. date.dayOfQuadrum is 1 to 15, as the game shows it. date.hour is 0 to 23 in local map time. outdoorTemperatureC is the current outdoor temperature in degrees Celsius. activeConditions lists the game conditions that affect the map, world conditions included, and is omitted when none is active. wealth comes from the game's wealth count. The game counts again when the last count is more than 5000 ticks old, so wealth can be up to 5000 ticks old. pawnCounts counts spawned pawns only. colonists, prisoners, slaves, animals, mechs, hostiles and others count the roles of rimworld/list_pawns, so they add up to total. colonists does not count the colony's slaves, and rimworld/list_colonists counts both. colonyAnimals counts the player's animals in any role.
+- The map summary. date.dayOfQuadrum is 1 to 15, as the game shows it. date.hour is 0 to 23 in local map time. outdoorTemperatureC is the current outdoor temperature in degrees Celsius. activeConditions lists the game conditions that affect the map, world conditions included, and is omitted when none is active. wealth comes from the game's wealth count. The game counts again when the last count is more than 5000 ticks old, so wealth can be up to 5000 ticks old. pawnCounts counts the pawns of rimworld/list_pawns, so it includes pawns that a building holds. held counts these held pawns. colonists, prisoners, slaves, animals, mechs, hostiles and others count the roles of rimworld/list_pawns, so they add up to total. colonyAnimals counts spawned colony animals. colonists does not count the colony's slaves, and rimworld/list_colonists counts both. colonyAnimals counts the player's animals in any role.
 
 Parameters: none.
 
 ### `rimworld/get_cell_info`
 
-Inspect one map cell, including things, blueprints, frames, designations, zones, and areas
+Inspect one map cell, including terrain layers, things, blueprints, frames, designations, zones, and areas
+
+Returns:
+- terrainDefName is the top terrain. underTerrainDefName is the terrain under a floor. foundationDefName is a foundation such as a bridge or the Odyssey substructure. polluted is reported with Biotech. vacuum is reported with Odyssey when the cell is in vacuum, from 0 to 1.
 
 Parameters:
 - `x` (`int`, `required`): Target cell x coordinate
@@ -577,7 +592,10 @@ Parameters:
 
 ### `rimworld/get_cells_info`
 
-Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas
+Inspect every map cell in a rectangle up to 1024 cells, including terrain layers, things, blueprints, frames, designations, zones, and areas
+
+Returns:
+- terrain is the top terrain. underTerrain is the terrain under a floor. foundation is a foundation such as a bridge or the Odyssey substructure. polluted is true for a polluted cell with Biotech. vacuum is the vacuum of the cell with Odyssey, from 0 to 1. A null field does not apply to the cell.
 
 Parameters:
 - `x` (`int`, `required`): South-west cell x coordinate. This is the cell with the lowest x and the lowest z in the rectangle
@@ -770,13 +788,13 @@ Parameters: none.
 
 ### `rimworld/press_cancel`
 
-Send semantic cancel input to the active RimWorld window stack without requiring OS focus
+Send semantic cancel input as the Escape key does, without requiring OS focus. It ends an active debug tool first. Then the open windows get it. With no window that closes on cancel, it deselects the selected Architect designator
 
 Parameters: none.
 
 ### `rimworld/close_window`
 
-Close an open RimWorld window by type name or, if omitted, the topmost window
+Close an open RimWorld window by type name or, if omitted, the topmost window. Without a type, the tool skips ImmediateWindow helpers such as tooltips
 
 Parameters:
 - `windowType` (`string`, `optional`, default `null`): Optional short or full .NET type name of the target window
@@ -798,7 +816,7 @@ Parameters:
 
 ### `rimworld/switch_language`
 
-Switch RimWorld to an installed language by the recommendedQuery from rimworld/list_languages or another exact language name match, mirroring the main-menu language picker and saving prefs
+Switch RimWorld to an installed language by the recommendedQuery from rimworld/list_languages or another exact language name match, mirroring the main-menu language picker and saving prefs. This works only at the main menu, because a switch reloads all game data
 
 Parameters:
 - `language` (`string`, `required`): Prefer the recommendedQuery from rimworld/list_languages; exact language ids and exact display/native/English names also work
@@ -836,10 +854,10 @@ Parameters:
 
 ### `rimworld/list_pawns`
 
-List every spawned pawn on the current map with its role, faction, position and job
+List every living pawn on the current map with its role, faction, position and job. This includes pawns that a building holds, such as an entity on a holding platform or a colonist in a cryptosleep casket
 
 Returns:
-- The pawns, paged. role is colonist, prisoner, slave, animal, mech, hostile or other. Every pawn has exactly one role. A prisoner or a slave of the colony has that role. rimworld/list_colonists also lists slaves. Any other pawn that is hostile to the player has role hostile, so a manhunter animal is hostile. A colony mech has role mech. other includes visitors, traders and colony ghouls. hostileToPlayer is true while the pawn is hostile to the player, also during a prison break, a slave rebellion or a berserk mental state. factionIsPlayer is true for the player's pawns, including colony animals and mechs. Use pawnId with rimworld/get_pawn_details for skills, needs, hediffs, traits and work priorities. page.total is the number of pawns after the role filter. The reply includes page.nextOffset when more pawns remain.
+- The pawns, paged. role is colonist, prisoner, slave, animal, mech, hostile or other. Every pawn has exactly one role. A prisoner or a slave of the colony has that role. rimworld/list_colonists also lists slaves. Any other pawn that is hostile to the player has role hostile, so a manhunter animal is hostile. A colony mech has role mech. other includes visitors, traders and colony ghouls. hostileToPlayer is true while the pawn is hostile to the player, also during a prison break, a slave rebellion or a berserk mental state. factionIsPlayer is true for the player's pawns, including colony animals and mechs. A held pawn has heldBy, which is the thing that holds it, and position is the cell of that thing. A carried baby has the carrying pawn as heldBy. Use pawnId with rimworld/get_pawn_details for skills, needs, hediffs, traits and work priorities. page.total is the number of pawns after the role filter. The reply includes page.nextOffset when more pawns remain.
 
 Parameters:
 - `role` (`string`, `optional`, default `null`): Optional role filter: colonist, prisoner, slave, animal, mech, hostile or other. Leave it empty to list every pawn
@@ -853,7 +871,7 @@ Parameters: none.
 
 ### `rimworld/select_pawn`
 
-Select a single colonist by name or stable pawn id
+Select one spawned pawn of the current map by name or stable pawn id, as a click in the game does. The pawn can be a colonist, an animal, a mech, a visitor or an enemy
 
 Parameters:
 - `pawnName` (`string`, `optional`, default `null`): Optional colonist name, short name, or full name
@@ -870,7 +888,10 @@ Parameters:
 
 ### `rimworld/set_draft`
 
-Draft or undraft a colonist by name or stable pawn id
+Draft or undraft a spawned player pawn by name or stable pawn id: a colonist, a slave, a colony mech or a colony ghoul. The tool uses the draft toggle of the game, so the rules of the game apply
+
+Returns:
+- success is false when the game shows no draft toggle or disables it. disabledReason then gives the reason of the game, for example a downed pawn, a mech outside the range of its mechanitor or a ritual that does not allow drafting. changed is false when the pawn already had the requested state.
 
 Parameters:
 - `pawnName` (`string`, `optional`, default `null`): Optional colonist name
@@ -879,10 +900,10 @@ Parameters:
 
 ### `rimworld/get_pawn_details`
 
-Read one pawn of any faction by name or stable pawn id: skills with base level, aptitude and disabled state, current job, job queue, needs, hediffs, traits and work priorities
+Read one pawn of any faction by name or stable pawn id: identity, skills with base level, aptitude and disabled state, current job, job queue, needs, hediffs, traits and work priorities
 
 Returns:
-- The pawn details. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. traits[].degree is the trait degree. traits[].suppressed is true when a gene or another trait suppresses the trait, or when another gene overrides the gene that gives it. workPriorities lists all work types with the highest natural priority first. The Work tab shows the visible work types in this order. visible is true for the work types that the Work tab shows. disabled is true when the game disables the work type for the pawn now. permanentlyDisabled uses the game's permanent list. It is true when a backstory or a trait disables the work type, or when a colony mech or a turned mutant cannot do it. Other causes, such as genes, health, a role, a royal title, a quest, slavery or age, set only disabled. A slave's backstory and traits do not disable its work types, but its skills can still be permanently disabled. skills[].permanentlyDisabled is also true when a disabled work tag is a disabling work tag of the skill. In the base game and the DLCs, only Shooting and Melee have such a tag, which is Violent. So a disabled Violent tag, for example from a pacifist gene or the medical specialist role, permanently disables these two skills, but not their work types. Other skills are disabled only when all of their work types are disabled. If a role or a health condition disables those work types, totallyDisabled is true and permanentlyDisabled is false. priority 1 is the highest. Vanilla uses priorities 1 to 4, and mods can add more. priority 0 means that the work type is not assigned. If a mod sets priorities by the hour or for each work giver, priority is the value that the game reports at the time of the call. For a humanlike pawn, priority is 3 for each assigned work type when useWorkPriorities is false. useWorkPriorities is the game-wide manual priorities setting. The reply omits useWorkPriorities and workPriorities when the pawn has no work settings. A prisoner has work settings but does not work. The reply omits job when the pawn has no current job. The reply omits skills, needs, hediffs and traits when they do not apply to the pawn. An empty list means that the pawn has none.
+- The pawn details. pawn.heldBy is the thing that holds an unspawned pawn, and pawn.position is then the cell of that thing. identity has the role from rimworld/list_pawns, factionLeader for the leader of a faction, the gender, the ages, the life stage and the developmental stage. It also has the guest status of a prisoner or a slave, the xenotype and the genes, the ideoligion, its certainty and the role in it, the royal titles, the psylink level, the abilities, the mutant def and the overseer of a mech. A field is omitted when it does not apply, for example without the DLC that adds it. genes[].xenogene is false for an endogene. genes[].active is false when another gene overrides the gene. skills[].level is the level with aptitudes and is 0 when totallyDisabled is true. skills[].levelInt is the base level. passion is None, Minor or Major. jobQueue lists the queued jobs without reports. traits[].degree is the trait degree. traits[].suppressed is true when a gene or another trait suppresses the trait, or when another gene overrides the gene that gives it. workPriorities lists all work types with the highest natural priority first. The Work tab shows the visible work types in this order. visible is true for the work types that the Work tab shows. disabled is true when the game disables the work type for the pawn now. permanentlyDisabled uses the game's permanent list. It is true when a backstory or a trait disables the work type, or when a colony mech or a turned mutant cannot do it. Other causes, such as genes, health, a role, a royal title, a quest, slavery or age, set only disabled. A slave's backstory and traits do not disable its work types, but its skills can still be permanently disabled. skills[].permanentlyDisabled is also true when a disabled work tag is a disabling work tag of the skill. In the base game and the DLCs, only Shooting and Melee have such a tag, which is Violent. So a disabled Violent tag, for example from a pacifist gene or the medical specialist role, permanently disables these two skills, but not their work types. Other skills are disabled only when all of their work types are disabled. If a role or a health condition disables those work types, totallyDisabled is true and permanentlyDisabled is false. priority 1 is the highest. Vanilla uses priorities 1 to 4, and mods can add more. priority 0 means that the work type is not assigned. If a mod sets priorities by the hour or for each work giver, priority is the value that the game reports at the time of the call. For a humanlike pawn, priority is 3 for each assigned work type when useWorkPriorities is false. useWorkPriorities is the game-wide manual priorities setting. The reply omits useWorkPriorities and workPriorities when the pawn has no work settings. A prisoner has work settings but does not work. The reply omits job when the pawn has no current job. The reply omits skills, needs, hediffs and traits when they do not apply to the pawn. An empty list means that the pawn has none.
 
 Parameters:
 - `pawnName` (`string`, `optional`, default `null`): Optional pawn name, short name, or full name. It matches living pawns of any faction on all maps, in caravans and in travelling transporters
@@ -904,6 +925,9 @@ Parameters: none.
 
 List the current selection's actionable grouped gizmos using deterministic selection-scoped gizmo ids
 
+Returns:
+- executable is true for a command. rimworld/execute_gizmo runs only commands. A gizmo that is not a command, such as the psyfocus bar or the hemogen slider, reacts to the mouse inside its own drawing. Use rimworld/get_ui_layout and rimworld/click_ui_target for it.
+
 Parameters: none.
 
 ### `rimworld/execute_gizmo`
@@ -923,6 +947,9 @@ Parameters:
 ### `rimworld/list_letters`
 
 List current letter-stack entries with native letter ids, semantic letter content, and structured look-target metadata
+
+Returns:
+- text is the letter text. For a letter that is not a choice letter, text is the mouseover text of the letter stack. choices lists the options of a choice letter. A Biotech growth moment has growthMoment instead. It lists passionChoices and traitChoices, which the player chooses in its own dialog, and choiceMade is true after the choice.
 
 Parameters:
 - `limit` (`int`, `optional`, default `40`): Maximum number of letters to return
@@ -1090,7 +1117,7 @@ Parameters:
 Spawn a thing or a generated pawn on the current map at a target cell
 
 Returns:
-- The spawned thing. A thing made from stuff uses the default stuff of its def, and stuff reports it. A thing that can have a faction, such as a building, belongs to the player, as with the game's own debug spawner. An insect cocoon belongs to the insects. A pawn also reports pawnKindDef, faction and factionIsPlayer. If a pawn race does not have exactly one pawn kind, the call fails. pawnKinds then lists the kinds of that race.
+- The spawned thing. A thing made from stuff uses the default stuff of its def, and stuff reports it. A thing that can have a faction, such as a building, belongs to the player, as with the game's own debug spawner. An insect cocoon belongs to the insects. A thing that is larger than one cell must fit in the map, and the target cell is its center cell. A pawn also reports pawnKindDef, faction and factionIsPlayer. If a pawn race does not have exactly one pawn kind, the call fails. pawnKinds then lists the kinds of that race.
 
 Parameters:
 - `defName` (`string`, `required`): ThingDef defName to spawn. A pawn race ThingDef or a PawnKindDef defName spawns a generated pawn with the kind's default faction.
@@ -1129,7 +1156,7 @@ Parameters:
 
 ### `rimworld/open_context_menu`
 
-Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open
+Dispatch a live map click at a target pawn or cell and capture the resulting context menu when one remains open. The tool refuses while the world view is open, because the game would send the input to the world map
 
 Parameters:
 - `targetPawnName` (`string`, `optional`, default `null`): Optional target pawn name on the current map.
@@ -1143,7 +1170,7 @@ Parameters:
 
 ### `rimworld/right_click_cell`
 
-Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click
+Dispatch a live map click interaction for the current pawn selection so vanilla and modded handlers see the same input path as a real click. The tool refuses while the world view is open, because the game would send the input to the world map
 
 Parameters:
 - `targetPawnName` (`string`, `optional`, default `null`): Optional target pawn name on the current map.
@@ -1156,7 +1183,7 @@ Parameters:
 
 ### `rimworld/click_cell`
 
-Dispatch a live map click at a current-map cell without requiring OS focus, using left, right, or middle mouse button and reporting before/after selection
+Dispatch a live map click at a current-map cell without requiring OS focus, using left, right, or middle mouse button and reporting before/after selection. The tool refuses while the world view is open, because the game would send the input to the world map
 
 Parameters:
 - `x` (`int`, `optional`, default `0`): Target cell x coordinate
@@ -1167,7 +1194,7 @@ Parameters:
 
 ### `rimworld/drag_cell`
 
-Dispatch a literal live map mouse drag from one current-map cell to another without requiring OS focus, publishing mouse position plus held/down/up button state so vanilla and modded input handlers see the gesture. Left drag can select, right drag can drive drafted formation targets, and middle drag can pan the camera.
+Dispatch a literal live map mouse drag from one current-map cell to another without requiring OS focus, publishing mouse position plus held/down/up button state so vanilla and modded input handlers see the gesture. Left drag can select, right drag can drive drafted formation targets, and middle drag can pan the camera. The tool refuses while the world view is open, because the game would send the input to the world map
 
 Parameters:
 - `fromX` (`int`, `optional`, default `0`): Start cell x coordinate

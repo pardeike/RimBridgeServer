@@ -20,6 +20,7 @@ internal static class RimWorldPawnDetails
         {
             success = true,
             pawn = RimWorldState.DescribePawn(pawn),
+            identity = DescribeIdentity(pawn),
             skills = pawn.skills?.skills?.Select(DescribeSkill).ToList(),
             job = DescribeJob(pawn.jobs?.curJob, pawn.jobs?.curJob?.GetReport(pawn)),
             jobQueue = pawn.jobs?.jobQueue?.Select(queued => DescribeJob(queued.job, report: null)).ToList(),
@@ -28,6 +29,52 @@ internal static class RimWorldPawnDetails
             traits = pawn.story?.traits?.allTraits?.Select(DescribeTrait).ToList(),
             useWorkPriorities = pawn.workSettings?.EverWork == true ? Find.PlaySettings?.useWorkPriorities : null,
             workPriorities = DescribeWorkPriorities(pawn)
+        };
+    }
+
+    // Who the pawn is beyond skills and health, compact. A field is null when it does not apply, for example without
+    // the DLC that adds it. Tests of genes, ideoligion roles, titles, psycasts, children and mutants read it here.
+    private static object DescribeIdentity(Pawn pawn)
+    {
+        var genes = ModsConfig.BiotechActive ? pawn.genes : null;
+        var ideo = ModsConfig.IdeologyActive ? pawn.Ideo : null;
+        var role = ideo?.GetRole(pawn);
+        var titles = ModsConfig.RoyaltyActive ? pawn.royalty?.AllTitlesForReading : null;
+        var abilities = pawn.abilities?.AllAbilitiesForReading;
+        var overseer = ModsConfig.BiotechActive && pawn.RaceProps?.IsMechanoid == true ? pawn.GetOverseer() : null;
+
+        return new
+        {
+            role = RimWorldPawns.RoleOf(pawn),
+            factionLeader = pawn.Faction != null && pawn.Faction.leader == pawn ? true : (bool?)null,
+            gender = pawn.gender.ToString(),
+            ageBiologicalYears = pawn.ageTracker?.AgeBiologicalYears,
+            ageChronologicalYears = pawn.ageTracker?.AgeChronologicalYears,
+            lifeStage = pawn.ageTracker?.CurLifeStage?.defName,
+            developmentalStage = pawn.RaceProps?.Humanlike == true ? pawn.DevelopmentalStage.ToString() : null,
+            guestStatus = pawn.guest?.GuestStatus is GuestStatus status && (pawn.IsPrisoner || pawn.IsSlave) ? status.ToString() : null,
+            xenotype = genes?.Xenotype?.defName,
+            xenotypeLabel = genes == null ? null : genes.XenotypeLabel,
+            genes = genes?.GenesListForReading?
+                .Where(gene => gene?.def != null)
+                .Select(gene => new
+                {
+                    defName = gene.def.defName,
+                    xenogene = genes.IsXenogene(gene),
+                    active = gene.Active
+                })
+                .ToList(),
+            ideo = ideo?.name,
+            ideoCertainty = ideo == null || pawn.ideo == null ? null : (float?)System.Math.Round(pawn.ideo.Certainty, 3),
+            ideoRole = role?.def?.defName,
+            ideoRoleLabel = role?.LabelCap.ToString(),
+            royalTitles = titles == null || titles.Count == 0
+                ? null
+                : titles.Select(title => new { title = title.def?.defName, faction = title.faction?.Name }).ToList(),
+            psylinkLevel = ModsConfig.RoyaltyActive && pawn.RaceProps?.Humanlike == true ? pawn.GetPsylinkLevel() : (int?)null,
+            abilities = abilities == null || abilities.Count == 0 ? null : abilities.Select(ability => ability.def?.defName).ToList(),
+            mutant = ModsConfig.AnomalyActive ? pawn.mutant?.Def?.defName : null,
+            overseerPawnId = overseer == null ? null : RimWorldState.GetThingId(overseer)
         };
     }
 

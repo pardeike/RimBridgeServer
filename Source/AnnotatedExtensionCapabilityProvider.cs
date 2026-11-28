@@ -176,12 +176,14 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
         var sdkContext = RimBridgeSdkHost.CreateContext(operationContext);
         var timeoutMs = ResolveExecutionTimeoutMs(invocation.Arguments);
 
+        // The runner cancels the token at the timeout, so a tool that observes it stops, and the caller gets
+        // capability.timed_out even from a tool that never completes.
         return _runner.RunAsync(
-            () => RimBridgeAsyncScheduler.RunAsync(
-                () => InvokeMethodAsync(toolClass, method, invocation.Arguments, sdkContext, cancellationToken),
+            token => RimBridgeAsyncScheduler.RunAsync(
+                () => InvokeMethodAsync(toolClass, method, invocation.Arguments, sdkContext, token),
                 sdkContext,
                 operationContext,
-                cancellationToken),
+                token),
             new OperationExecutionOptions
             {
                 OperationId = invocation.OperationId,
@@ -192,7 +194,8 @@ internal sealed class AnnotatedExtensionCapabilityProvider : IRimBridgeCapabilit
                 FailureCode = "capability.failed",
                 TimeoutCode = "capability.timed_out",
                 CancellationCode = "capability.cancelled"
-            });
+            },
+            cancellationToken);
     }
 
     private static async Task<object> InvokeMethodAsync(

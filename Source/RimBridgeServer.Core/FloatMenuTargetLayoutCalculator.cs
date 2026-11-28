@@ -22,6 +22,11 @@ public sealed class FloatMenuTargetLayoutRequest
 
     public int ColumnCount { get; set; } = 1;
 
+    // FloatMenu.scrollPosition. A long menu with a scroll bar draws its options shifted by it.
+    public float ScrollX { get; set; }
+
+    public float ScrollY { get; set; }
+
     public IReadOnlyList<float> OptionHeights { get; set; } = [];
 }
 
@@ -51,37 +56,38 @@ public static class FloatMenuTargetLayoutCalculator
         if (optionHeights.Count == 0)
             return [];
 
-        var columnCount = Math.Max(request.ColumnCount, 1);
+        // Mirrors FloatMenu.DoWindowContents: an option starts a new column when y + height + spacing exceeds the view
+        // height, and the next column starts at columnWidth + spacing. The spacing is -1, so options overlap by a pixel.
         var columnWidth = Math.Max(request.ColumnWidth, 0f);
         var maxViewHeight = request.MaxViewHeight > 0f ? request.MaxViewHeight : float.PositiveInfinity;
-        var startX = request.WindowX + request.Margin;
-        var startY = request.WindowY + request.Margin + Math.Max(request.TitleHeight, 0f);
+        var startX = request.WindowX + request.Margin - request.ScrollX;
+        var startY = request.WindowY + request.Margin + Math.Max(request.TitleHeight, 0f) - request.ScrollY;
         var currentColumn = 0;
-        var currentY = startY;
+        var columnX = 0f;
+        var y = 0f;
         var results = new List<FloatMenuTargetRect>(optionHeights.Count);
 
         for (var i = 0; i < optionHeights.Count; i++)
         {
             var optionHeight = Math.Max(optionHeights[i], 0f);
-            if (currentColumn < columnCount - 1
-                && currentY > startY
-                && currentY + optionHeight > startY + maxViewHeight)
+            if (y + optionHeight + request.OptionSpacing > maxViewHeight)
             {
+                y = 0f;
+                columnX += columnWidth + request.OptionSpacing;
                 currentColumn++;
-                currentY = startY;
             }
 
             results.Add(new FloatMenuTargetRect
             {
                 Index = i + 1,
                 ColumnIndex = currentColumn,
-                X = startX + (currentColumn * columnWidth),
-                Y = currentY,
+                X = startX + columnX,
+                Y = startY + y,
                 Width = columnWidth,
                 Height = optionHeight
             });
 
-            currentY += optionHeight + request.OptionSpacing;
+            y += optionHeight + request.OptionSpacing;
         }
 
         return results;

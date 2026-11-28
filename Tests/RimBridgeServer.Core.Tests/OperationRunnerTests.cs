@@ -98,6 +98,65 @@ public class OperationRunnerTests
     }
 
     [Fact]
+    public async System.Threading.Tasks.Task RunAsyncTimesOutWorkThatNeverCompletes()
+    {
+        var runner = new OperationRunner(new FakeDispatcher());
+        System.Threading.CancellationToken observed = default;
+        var never = new System.Threading.Tasks.TaskCompletionSource<object>();
+
+        var run = runner.RunAsync(token =>
+        {
+            observed = token;
+            return never.Task;
+        }, new OperationExecutionOptions
+        {
+            CapabilityId = "mymod/wait_forever",
+            TimeoutMs = 100,
+            TimeoutCode = "capability.timed_out"
+        }, System.Threading.CancellationToken.None);
+
+        var finished = await System.Threading.Tasks.Task.WhenAny(run, System.Threading.Tasks.Task.Delay(5000));
+
+        Assert.Same(run, finished);
+        var envelope = await run;
+        Assert.Equal(OperationStatus.TimedOut, envelope.Status);
+        Assert.Equal("capability.timed_out", envelope.Error.Code);
+        Assert.True(observed.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task RunAsyncCompletesWorkThatFinishesBeforeTheTimeout()
+    {
+        var runner = new OperationRunner(new FakeDispatcher());
+
+        var envelope = await runner.RunAsync(async token =>
+        {
+            await System.Threading.Tasks.Task.Delay(10, token);
+            return (object)"done";
+        }, new OperationExecutionOptions { CapabilityId = "mymod/quick", TimeoutMs = 5000 }, System.Threading.CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Completed, envelope.Status);
+        Assert.Equal("done", envelope.Result);
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task RunAsyncReportsCallerCancellationAsCancelled()
+    {
+        var runner = new OperationRunner(new FakeDispatcher());
+        using var caller = new System.Threading.CancellationTokenSource();
+        caller.CancelAfter(50);
+
+        var envelope = await runner.RunAsync(async token =>
+        {
+            await System.Threading.Tasks.Task.Delay(System.Threading.Timeout.Infinite, token);
+            return null;
+        }, new OperationExecutionOptions { CapabilityId = "mymod/cancel", TimeoutMs = 5000, CancellationCode = "capability.cancelled" }, caller.Token);
+
+        Assert.Equal(OperationStatus.Cancelled, envelope.Status);
+        Assert.Equal("capability.cancelled", envelope.Error.Code);
+    }
+
+    [Fact]
     public void ConvertsTimeoutExceptionsIntoTimedOutOperationEnvelopes()
     {
         var dispatcher = new TimeoutDispatcher();

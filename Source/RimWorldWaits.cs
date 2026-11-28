@@ -63,7 +63,9 @@ internal static class RimWorldWaits
             : targetReadiness;
     }
 
-    public static Dictionary<string, object> WaitForGameLoadedResult(int timeoutMs = 30000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false)
+    // previousGame is the game that was loaded when a load was queued. GameDataSaveLoader.LoadGame only queues a long
+    // event, so for at least one frame Current.Game is still that game, with its maps. It never counts as loaded.
+    public static Dictionary<string, object> WaitForGameLoadedResult(int timeoutMs = 30000, int pollIntervalMs = 50, string readiness = AutomationReadiness.DefaultTargetName, bool pauseIfNeeded = false, Game previousGame = null)
     {
         if (AutomationReadiness.TryParseTarget(readiness, out var target) == false)
             return CreateInvalidReadinessResponse(readiness);
@@ -73,18 +75,23 @@ internal static class RimWorldWaits
         {
             var status = RimWorldState.ReadStatus();
             var readinessEvaluation = status.Readiness;
-            var satisfied = readinessEvaluation.IsSatisfied(target);
+            var previousGameStillLoaded = previousGame != null && ReferenceEquals(Current.Game, previousGame);
+            var satisfied = !previousGameStillLoaded && readinessEvaluation.IsSatisfied(target);
             var state = RimWorldState.ToolStateSnapshot(status);
 
-            if (satisfied && pauseIfNeeded && status.HasCurrentGame && status.Paused == false && Find.TickManager != null)
+            if (satisfied && pauseIfNeeded && status.HasCurrentGame && Find.TickManager != null && Find.TickManager.CurTimeSpeed != TimeSpeed.Paused)
             {
-                Find.TickManager.TogglePaused();
+                LifecycleCapabilityModule.SetTimeSpeedPaused(true);
                 status = RimWorldState.ReadStatus();
                 state = RimWorldState.ToolStateSnapshot(status);
             }
 
-            var blockingReason = DescribeBlockingReason(status, readinessEvaluation, target);
-            var message = DescribeLoadedWaitState(status, readinessEvaluation, target, pauseIfNeeded, blockingReason);
+            var blockingReason = previousGameStillLoaded
+                ? "The previous game is still loaded. The queued load has not started yet."
+                : DescribeBlockingReason(status, readinessEvaluation, target);
+            var message = previousGameStillLoaded
+                ? $"Waiting for RimWorld readiness '{AutomationReadiness.FormatTarget(target)}'. {blockingReason}"
+                : DescribeLoadedWaitState(status, readinessEvaluation, target, pauseIfNeeded, blockingReason);
 
             return new WaitProbeResult
             {

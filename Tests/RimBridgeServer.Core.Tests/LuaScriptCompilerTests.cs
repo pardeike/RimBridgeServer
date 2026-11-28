@@ -94,6 +94,72 @@ public class LuaScriptCompilerTests
     }
 
     [Fact]
+    public void ReportsUnknownToolAsFailedStepAndKeepsEarlierOutput()
+    {
+        var definition = new LuaScriptCompiler().Compile("""
+            print("before")
+            rb.call("test/echo", {})
+            rb.call("test/typo", {})
+            return 1
+            """);
+
+        var registry = new CapabilityRegistry();
+        registry.RegisterProvider(new LuaScriptTestProvider());
+        var report = new CapabilityScriptRunner(registry).Execute(definition);
+
+        Assert.False(report.Success);
+        Assert.Equal("before", Assert.Single(report.Output).Message);
+        Assert.Equal(2, report.Steps.Count);
+        Assert.True(report.Steps[0].Success);
+        Assert.False(report.Steps[1].Success);
+        Assert.Equal("test/typo", report.Steps[1].Call);
+        Assert.Equal("capability.not_found", report.Steps[1].Error.Code);
+    }
+
+    [Theory]
+    [InlineData("-1 % 5", 4)]
+    [InlineData("7 % -3", -2)]
+    [InlineData("7 % 3", 1)]
+    [InlineData("-7 % -3", -1)]
+    public void ModuloFollowsLuaFlooredDivision(string expression, int expected)
+    {
+        var definition = new LuaScriptCompiler().Compile($"return {expression}");
+
+        var report = new CapabilityScriptRunner(new CapabilityRegistry()).Execute(definition);
+
+        Assert.True(report.Success, report.Error?.Message);
+        Assert.Equal(expected, System.Convert.ToInt32(report.Result, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Theory]
+    [InlineData("\"1,5\" == \"15\"", false)]
+    [InlineData("\"1.0\" == \"1\"", false)]
+    [InlineData("\"abc\" == \"abc\"", true)]
+    [InlineData("1 == 1.0", true)]
+    public void EqualityComparesStringsAsStrings(string expression, bool expected)
+    {
+        var definition = new LuaScriptCompiler().Compile($"return {expression}");
+
+        var report = new CapabilityScriptRunner(new CapabilityRegistry()).Execute(definition);
+
+        Assert.True(report.Success, report.Error?.Message);
+        Assert.Equal(expected, report.Result);
+    }
+
+    [Fact]
+    public void ComparesNotANumberWithoutThrowing()
+    {
+        var definition = new LuaScriptCompiler().Compile("""
+            return params.value == 1
+            """, new Dictionary<string, object> { ["value"] = double.NaN });
+
+        var report = new CapabilityScriptRunner(new CapabilityRegistry()).Execute(definition);
+
+        Assert.True(report.Success, report.Error?.Message);
+        Assert.Equal(false, report.Result);
+    }
+
+    [Fact]
     public void AcceptsEmptyTableAsCallArguments()
     {
         var definition = new LuaScriptCompiler().Compile("""
