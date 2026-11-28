@@ -601,8 +601,8 @@ public class RimBridgeTools
     [ReadmeTool("Architect And Map State", "Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas")]
     [Tool("rimworld/get_cells_info", Description = "Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas")]
     public object GetCellsInfo(
-        [ToolParameter(Description = "Top-left cell x coordinate")] int x,
-        [ToolParameter(Description = "Top-left cell z coordinate")] int z,
+        [ToolParameter(Description = "South-west cell x coordinate. This is the cell with the lowest x and the lowest z in the rectangle")] int x,
+        [ToolParameter(Description = "South-west cell z coordinate. z grows north")] int z,
         [ToolParameter(Description = "Rectangle width in cells; width * height must not exceed 1024")] int width = 1,
         [ToolParameter(Description = "Rectangle height in cells; width * height must not exceed 1024")] int height = 1,
         [ToolParameter(Description = "Zero-based row-major cell offset for paging; large rectangles return page.nextOffset when the response size budget is reached")] int offset = 0)
@@ -619,7 +619,7 @@ public class RimBridgeTools
         [ToolParameter(Description = "Maximum search radius in cells")] int maxSearchRadius = 60,
         [ToolParameter(Description = "Footprint width to validate at each candidate cell")] int width = 1,
         [ToolParameter(Description = "Footprint height to validate at each candidate cell")] int height = 1,
-        [ToolParameter(Description = "Interpret the candidate cell as the footprint's top_left or center anchor")] string footprintAnchor = "top_left",
+        [ToolParameter(Description = "Interpret the candidate cell as the footprint's top_left or center anchor. top_left is the south-west cell of the footprint")] string footprintAnchor = "top_left",
         [ToolParameter(Description = "Require every footprint cell to be walkable")] bool requireWalkable = false,
         [ToolParameter(Description = "Require every footprint cell to be standable")] bool requireStandable = false,
         [ToolParameter(Description = "Require every footprint cell to be unfogged")] bool requireNotFogged = false,
@@ -655,7 +655,7 @@ public class RimBridgeTools
         [ToolParameter(Description = "Maximum number of matching cells to include in the returned sample list")] int maxReturnedCells = 64,
         [ToolParameter(Description = "Footprint width to validate at each visited cell")] int width = 1,
         [ToolParameter(Description = "Footprint height to validate at each visited cell")] int height = 1,
-        [ToolParameter(Description = "Interpret each visited cell as the footprint's top_left or center anchor")] string footprintAnchor = "top_left",
+        [ToolParameter(Description = "Interpret each visited cell as the footprint's top_left or center anchor. top_left is the south-west cell of the footprint")] string footprintAnchor = "top_left",
         [ToolParameter(Description = "Require every footprint cell to be walkable")] bool requireWalkable = false,
         [ToolParameter(Description = "Require every footprint cell to be standable")] bool requireStandable = false,
         [ToolParameter(Description = "Require every footprint cell to be unfogged")] bool requireNotFogged = false,
@@ -1109,8 +1109,8 @@ public class RimBridgeTools
     [ReadmeTool("Camera And Screenshots", "Frame a requested map-cell rectangle plus optional margin cells at the current camera zoom, or at an explicit root size when provided")]
     [Tool("rimworld/frame_cell_rect", Description = "Frame a requested map-cell rectangle plus optional margin cells at the current camera zoom, or at an explicit root size when provided")]
     public object FrameCellRect(
-        [ToolParameter(Description = "Top-left cell x coordinate of the requested rectangle")] int x,
-        [ToolParameter(Description = "Top-left cell z coordinate of the requested rectangle")] int z,
+        [ToolParameter(Description = "South-west cell x coordinate of the requested rectangle. This is the cell with the lowest x and the lowest z")] int x,
+        [ToolParameter(Description = "South-west cell z coordinate of the requested rectangle. z grows north")] int z,
         [ToolParameter(Description = "Requested rectangle width in map cells")] int width = 1,
         [ToolParameter(Description = "Requested rectangle height in map cells")] int height = 1,
         [ToolParameter(Description = "Extra margin cells to add around the requested rectangle before framing and cropping")] int paddingCells = 4,
@@ -1122,8 +1122,8 @@ public class RimBridgeTools
     [ReadmeTool("Camera And Screenshots", "Center a requested map-cell rectangle plus optional margin cells at the current camera zoom, capture it, crop to the cell bounds, and restore the prior camera immediately after by default")]
     [Tool("rimworld/screenshot_cell_rect", Description = "Center a requested map-cell rectangle plus optional margin cells at the current camera zoom, capture it, crop to the cell bounds, and restore the prior camera immediately after by default")]
     public object ScreenshotCellRect(
-        [ToolParameter(Description = "Top-left cell x coordinate of the requested rectangle")] int x,
-        [ToolParameter(Description = "Top-left cell z coordinate of the requested rectangle")] int z,
+        [ToolParameter(Description = "South-west cell x coordinate of the requested rectangle. This is the cell with the lowest x and the lowest z")] int x,
+        [ToolParameter(Description = "South-west cell z coordinate of the requested rectangle. z grows north")] int z,
         [ToolParameter(Description = "Requested rectangle width in map cells")] int width = 1,
         [ToolParameter(Description = "Requested rectangle height in map cells")] int height = 1,
         [ToolParameter(Description = "Extra margin cells to add around the requested rectangle before framing and cropping")] int paddingCells = 4,

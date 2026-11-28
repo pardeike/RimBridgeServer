@@ -556,8 +556,8 @@ Parameters:
 Inspect every map cell in a rectangle up to 1024 cells, including things, blueprints, frames, designations, zones, and areas
 
 Parameters:
-- `x` (`int`, `required`): Top-left cell x coordinate
-- `z` (`int`, `required`): Top-left cell z coordinate
+- `x` (`int`, `required`): South-west cell x coordinate. This is the cell with the lowest x and the lowest z in the rectangle
+- `z` (`int`, `required`): South-west cell z coordinate. z grows north
 - `width` (`int`, `optional`, default `1`): Rectangle width in cells; width * height must not exceed 1024
 - `height` (`int`, `optional`, default `1`): Rectangle height in cells; width * height must not exceed 1024
 - `offset` (`int`, `optional`, default `0`): Zero-based row-major cell offset for paging; large rectangles return page.nextOffset when the response size budget is reached
@@ -573,7 +573,7 @@ Parameters:
 - `maxSearchRadius` (`int`, `optional`, default `60`): Maximum search radius in cells
 - `width` (`int`, `optional`, default `1`): Footprint width to validate at each candidate cell
 - `height` (`int`, `optional`, default `1`): Footprint height to validate at each candidate cell
-- `footprintAnchor` (`string`, `optional`, default `"top_left"`): Interpret the candidate cell as the footprint's top_left or center anchor
+- `footprintAnchor` (`string`, `optional`, default `"top_left"`): Interpret the candidate cell as the footprint's top_left or center anchor. top_left is the south-west cell of the footprint
 - `requireWalkable` (`bool`, `optional`, default `false`): Require every footprint cell to be walkable
 - `requireStandable` (`bool`, `optional`, default `false`): Require every footprint cell to be standable
 - `requireNotFogged` (`bool`, `optional`, default `false`): Require every footprint cell to be unfogged
@@ -594,7 +594,7 @@ Parameters:
 - `maxReturnedCells` (`int`, `optional`, default `64`): Maximum number of matching cells to include in the returned sample list
 - `width` (`int`, `optional`, default `1`): Footprint width to validate at each visited cell
 - `height` (`int`, `optional`, default `1`): Footprint height to validate at each visited cell
-- `footprintAnchor` (`string`, `optional`, default `"top_left"`): Interpret each visited cell as the footprint's top_left or center anchor
+- `footprintAnchor` (`string`, `optional`, default `"top_left"`): Interpret each visited cell as the footprint's top_left or center anchor. top_left is the south-west cell of the footprint
 - `requireWalkable` (`bool`, `optional`, default `false`): Require every footprint cell to be walkable
 - `requireStandable` (`bool`, `optional`, default `false`): Require every footprint cell to be standable
 - `requireNotFogged` (`bool`, `optional`, default `false`): Require every footprint cell to be unfogged
@@ -999,8 +999,8 @@ Parameters:
 Frame a requested map-cell rectangle plus optional margin cells at the current camera zoom, or at an explicit root size when provided
 
 Parameters:
-- `x` (`int`, `required`): Top-left cell x coordinate of the requested rectangle
-- `z` (`int`, `required`): Top-left cell z coordinate of the requested rectangle
+- `x` (`int`, `required`): South-west cell x coordinate of the requested rectangle. This is the cell with the lowest x and the lowest z
+- `z` (`int`, `required`): South-west cell z coordinate of the requested rectangle. z grows north
 - `width` (`int`, `optional`, default `1`): Requested rectangle width in map cells
 - `height` (`int`, `optional`, default `1`): Requested rectangle height in map cells
 - `paddingCells` (`int`, `optional`, default `4`): Extra margin cells to add around the requested rectangle before framing and cropping
@@ -1011,8 +1011,8 @@ Parameters:
 Center a requested map-cell rectangle plus optional margin cells at the current camera zoom, capture it, crop to the cell bounds, and restore the prior camera immediately after by default
 
 Parameters:
-- `x` (`int`, `required`): Top-left cell x coordinate of the requested rectangle
-- `z` (`int`, `required`): Top-left cell z coordinate of the requested rectangle
+- `x` (`int`, `required`): South-west cell x coordinate of the requested rectangle. This is the cell with the lowest x and the lowest z
+- `z` (`int`, `required`): South-west cell z coordinate of the requested rectangle. z grows north
 - `width` (`int`, `optional`, default `1`): Requested rectangle width in map cells
 - `height` (`int`, `optional`, default `1`): Requested rectangle height in map cells
 - `paddingCells` (`int`, `optional`, default `4`): Extra margin cells to add around the requested rectangle before framing and cropping
